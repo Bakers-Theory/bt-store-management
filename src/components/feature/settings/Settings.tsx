@@ -162,7 +162,7 @@ export function Settings() {
       </div>
 
       <div className="p-5 text-center text-xs text-ink-light">
-        Bakers Theory v2.0
+        Bakers Theory v0.1
         <br />
         Runs locally on your device
       </div>
