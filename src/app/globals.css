@@ -1,0 +1,273 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brown: #7c4a1e;
+  --color-brown-dark: #5a3414;
+  --color-brown-light: #a0622a;
+  --color-cream: #fdf6ee;
+  --color-cream-dark: #f5e8d3;
+  --color-warm-white: #fffcf8;
+  --color-ink: #2c1a0e;
+  --color-ink-muted: #7a5c3e;
+  --color-ink-light: #b08060;
+  --color-success: #2d7a3a;
+  --color-danger: #c0392b;
+  --color-warn: #b8860b;
+  --color-line: #e8d5bb;
+  --color-line-strong: #c9a97a;
+
+  --shadow-card: 0 2px 12px rgba(100, 60, 20, 0.12);
+  --font-sans: "Segoe UI", system-ui, sans-serif;
+
+  --animate-fade-in: fade-in 0.2s ease;
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+@layer base {
+  body {
+    font-family: var(--font-sans);
+    background: var(--color-cream);
+    color: var(--color-ink);
+    min-height: 100vh;
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+  h1 {
+    font-size: 22px;
+    font-weight: 700;
+  }
+  h2 {
+    font-size: 18px;
+    font-weight: 600;
+  }
+  h3 {
+    font-size: 16px;
+    font-weight: 600;
+  }
+  input,
+  select,
+  textarea {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 15px;
+    border: 1.5px solid var(--color-line);
+    border-radius: 12px;
+    background: var(--color-warm-white);
+    color: var(--color-ink);
+    outline: none;
+    transition: border 0.2s;
+  }
+  input:focus,
+  select:focus,
+  textarea:focus {
+    border-color: var(--color-brown);
+  }
+  textarea {
+    resize: vertical;
+    min-height: 60px;
+  }
+}
+
+/*
+ * Kept as component classes (per the "utilities in JSX + keep primitives"
+ * decision): heavily-repeated primitives — buttons, cards, badges, form atoms —
+ * plus the thermal receipt, which the @media print block below targets by class.
+ * Everything else is styled with Tailwind utilities directly in the JSX.
+ */
+@layer components {
+  .btn-primary,
+  .btn-secondary,
+  .btn-danger,
+  .btn-success {
+    font-weight: 600;
+    font-size: 15px;
+    cursor: pointer;
+    border: none;
+    border-radius: 12px;
+    padding: 11px 18px;
+    transition: all 0.15s;
+  }
+  .btn-primary {
+    background: var(--color-brown);
+    color: #fff;
+  }
+  .btn-primary:active {
+    background: var(--color-brown-dark);
+  }
+  .btn-secondary {
+    background: transparent;
+    border: 1.5px solid var(--color-brown);
+    color: var(--color-brown);
+  }
+  .btn-secondary:active {
+    background: var(--color-cream-dark);
+  }
+  .btn-danger {
+    background: var(--color-danger);
+    color: #fff;
+  }
+  .btn-success {
+    background: var(--color-success);
+    color: #fff;
+  }
+  .btn-sm {
+    padding: 7px 13px;
+    font-size: 13px;
+  }
+
+  .card {
+    background: #fff;
+    border-radius: 12px;
+    border: 1px solid var(--color-line);
+    padding: 16px;
+    margin-bottom: 12px;
+    box-shadow: var(--shadow-card);
+  }
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+
+  .badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 9999px;
+  }
+  .badge-success {
+    background: #d4edda;
+    color: var(--color-success);
+  }
+  .badge-danger {
+    background: #fde8e7;
+    color: var(--color-danger);
+  }
+  .badge-warn {
+    background: #fff3cd;
+    color: var(--color-warn);
+  }
+  .badge-brown {
+    background: var(--color-cream-dark);
+    color: var(--color-brown-dark);
+  }
+
+  .form-group {
+    margin-bottom: 14px;
+  }
+  .form-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-ink-muted);
+    margin-bottom: 5px;
+  }
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .receipt {
+    font-family: "Courier New", monospace;
+    font-size: 13px;
+    background: #fff;
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px dashed var(--color-line-strong);
+    max-width: 300px;
+    margin: 0 auto;
+  }
+  .receipt-center {
+    text-align: center;
+  }
+  .receipt-divider {
+    border-top: 1px dashed #999;
+    margin: 6px 0;
+  }
+  .receipt-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+  .receipt-logo {
+    width: 60px;
+    height: 60px;
+    object-fit: cover;
+    border-radius: 8px;
+    margin: 0 auto 8px;
+    display: block;
+  }
+  .receipt-logo-placeholder {
+    width: 60px;
+    height: 60px;
+    background: var(--color-cream-dark);
+    border-radius: 8px;
+    margin: 0 auto 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+  }
+
+  .toast {
+    position: fixed;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--color-ink);
+    color: #fff;
+    padding: 10px 18px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    z-index: 999;
+    white-space: nowrap;
+    transition: opacity 0.3s;
+  }
+}
+
+/* Print — only the receipt inside .print-area is visible */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+  .print-area {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 76mm;
+    background: #fff;
+    font-family: "Courier New", monospace;
+  }
+  .print-area .receipt {
+    padding: 4mm;
+    font-size: 11px;
+    border: none;
+    max-width: none;
+  }
+  .print-area .receipt-divider {
+    border-top: 1px dashed #000;
+    margin: 4px 0;
+  }
+  .print-area .receipt-logo,
+  .print-area .receipt-logo-placeholder {
+    width: 15mm;
+    height: 15mm;
+  }
+}
