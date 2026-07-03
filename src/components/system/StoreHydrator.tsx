@@ -2,11 +2,17 @@
 
 import { useEffect } from "react";
 import { useBakeryStore } from "@/lib/store";
+import { useAuth } from "@/components/system/AuthProvider";
 
-/** Triggers persisted-state hydration once, after the first client render. */
+/** Loads store data from Supabase once the user is authenticated. */
 export function StoreHydrator() {
+  const { user, ready } = useAuth();
+  const uid = user?.id;
+  const load = useBakeryStore((s) => s.load);
+
   useEffect(() => {
-    useBakeryStore.persist.rehydrate();
-  }, []);
+    if (ready && uid) load();
+  }, [ready, uid, load]);
+
   return null;
 }

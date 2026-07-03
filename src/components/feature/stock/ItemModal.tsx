@@ -39,13 +39,13 @@ export function ItemModal({
         )
       : undefined;
 
-  const save = () => {
+  const save = async () => {
     const trimmed = name.trim();
     if (!trimmed) {
       setNameErr("Item name is required");
       return;
     }
-    const r = saveItem(
+    const r = await saveItem(
       {
         name: trimmed,
         emoji,

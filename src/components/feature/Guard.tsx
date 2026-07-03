@@ -1,6 +1,6 @@
 "use client";
 
-import { useCurrentUser } from "@/lib/store";
+import { useCurrentUser } from "@/components/system/AuthProvider";
 import { canAccessSection } from "@/lib/permissions";
 import { NoAccess } from "./NoAccess";
 

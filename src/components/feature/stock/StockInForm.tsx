@@ -16,8 +16,8 @@ export function StockInForm({ onSuccess }: { onSuccess?: () => void } = {}) {
   const [notes, setNotes] = useState("");
   const [err, setErr] = useState("");
 
-  const submit = () => {
-    const r = stockIn(itemId, parseFloat(qty), supplier, notes);
+  const submit = async () => {
+    const r = await stockIn(itemId, parseFloat(qty), supplier, notes);
     if (!r.ok) {
       setErr(r.error ?? "");
       return;

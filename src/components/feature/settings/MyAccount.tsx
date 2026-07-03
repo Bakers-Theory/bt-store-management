@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
-import { useBakeryStore, useCurrentUser } from "@/lib/store";
+import { useAuth, useCurrentUser } from "@/components/system/AuthProvider";
+import { createClient } from "@/utils/supabase/client";
 import { useUIStore } from "@/lib/ui-store";
 
 const inputCls =
@@ -15,8 +16,7 @@ const permOffCls = "rounded-lg border border-[#ece0cd] bg-[#f4ece0] px-3 py-[5px
 export function MyAccount() {
   const router = useRouter();
   const user = useCurrentUser();
-  const changeOwnPassword = useBakeryStore((s) => s.changeOwnPassword);
-  const logout = useBakeryStore((s) => s.logout);
+  const { signOut } = useAuth();
   const toast = useUIStore((s) => s.toast);
 
   const [password, setPassword] = useState("");
@@ -25,10 +25,15 @@ export function MyAccount() {
   if (!user) return null;
   const p = user.permissions;
 
-  const change = () => {
-    const r = changeOwnPassword(password);
-    if (!r.ok) {
-      setErr(r.error ?? "");
+  const change = async () => {
+    if (!password || password.length < 4) {
+      setErr("Password must be at least 4 characters.");
+      return;
+    }
+    const supabase = createClient();
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) {
+      setErr(error.message);
       return;
     }
     toast("Password updated");
@@ -36,8 +41,8 @@ export function MyAccount() {
     setErr("");
   };
 
-  const doLogout = () => {
-    logout();
+  const doLogout = async () => {
+    await signOut();
     router.replace("/login");
   };
 

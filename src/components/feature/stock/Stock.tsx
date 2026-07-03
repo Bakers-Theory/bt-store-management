@@ -45,8 +45,8 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
   const lowOrOut = items.filter((i) => i.qty <= lowStockAlert).length;
 
   const remove = (id: string, name: string) => {
-    requireOwnerAuth(`delete item "${name}"`, () => {
-      deleteItem(id);
+    requireOwnerAuth(`delete item "${name}"`, async () => {
+      await deleteItem(id);
       toast("Item deleted");
     });
   };

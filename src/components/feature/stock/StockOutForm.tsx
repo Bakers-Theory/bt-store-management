@@ -17,8 +17,8 @@ export function StockOutForm({ onSuccess }: { onSuccess?: () => void } = {}) {
   const [notes, setNotes] = useState("");
   const [err, setErr] = useState("");
 
-  const submit = () => {
-    const r = stockOut(itemId, parseFloat(qty), reason, notes);
+  const submit = async () => {
+    const r = await stockOut(itemId, parseFloat(qty), reason, notes);
     if (!r.ok) {
       setErr(r.error ?? "");
       return;

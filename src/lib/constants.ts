@@ -1,4 +1,4 @@
-import type { Bakery, User } from "./types";
+import type { Bakery } from "./types";
 
 export const EMOJIS = [
   "🥐", "🥖", "🍞", "🧁", "🎂", "🍰", "🍩", "🍪", "🧇", "🥞", "🍫", "🥛",
@@ -28,15 +28,3 @@ export const DEFAULT_BAKERY: Bakery = {
   taxRate: 0,
   lowStockAlert: 5,
 };
-
-/** The fixed Owner account, always seeded if missing. */
-export function makeOwner(): User {
-  return {
-    id: "owner",
-    name: "Prateek Kumar Patel",
-    userId: "7873557430",
-    password: "Dominar@400",
-    role: "Owner",
-    permissions: { sales: true, inventory: true, analytics: true },
-  };
-}

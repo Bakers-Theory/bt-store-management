@@ -2,48 +2,75 @@
 
 import { useState } from "react";
 import { Modal } from "@/components/ui/Modal";
-import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
-import type { Permissions } from "@/lib/types";
+import type { Permissions, User } from "@/lib/types";
 
 const inputCls =
   "w-full rounded-[11px] border border-line bg-cream px-[13px] py-[11px] text-sm outline-none focus:border-brown";
 const labelCls = "mb-[5px] block text-xs font-bold text-[#8a6a3c]";
 
 export function UserModal({
-  userId,
+  user,
   onClose,
+  onSaved,
 }: {
-  userId: string | null; // null = add
+  user: User | null; // null = add
   onClose: () => void;
+  onSaved: () => void;
 }) {
-  const users = useBakeryStore((s) => s.users);
-  const addUser = useBakeryStore((s) => s.addUser);
-  const editUser = useBakeryStore((s) => s.editUser);
   const toast = useUIStore((s) => s.toast);
 
-  const editing = userId ? users.find((u) => u.id === userId) : undefined;
-  const [name, setName] = useState(editing?.name ?? "");
-  const [uidField, setUidField] = useState(editing?.userId ?? "");
-  const [password, setPassword] = useState(editing?.password ?? "");
+  const [name, setName] = useState(user?.name ?? "");
+  const [uidField, setUidField] = useState(user?.userId ?? "");
+  const [password, setPassword] = useState("");
   const [perm, setPerm] = useState<Permissions>(
-    editing?.permissions ?? { sales: false, inventory: false, analytics: false },
+    user?.permissions ?? { sales: false, inventory: false, analytics: false },
   );
   const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  const save = () => {
-    const input = {
-      name: name.trim(),
-      userId: uidField.trim(),
-      password,
-      permissions: perm,
-    };
-    const r = userId ? editUser(userId, input) : addUser(input);
-    if (!r.ok) {
-      setErr(r.error ?? "");
+  const save = async () => {
+    if (!name.trim() || (!user && !uidField.trim())) {
+      setErr("Name and User ID are required.");
       return;
     }
-    toast(userId ? "User updated" : "User created");
+    if (!user && !password) {
+      setErr("Set a password for the new staff member.");
+      return;
+    }
+    setBusy(true);
+    setErr("");
+
+    const res = user
+      ? await fetch("/api/staff", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: user.id,
+            name: name.trim(),
+            permissions: perm,
+            password: password || undefined,
+          }),
+        })
+      : await fetch("/api/staff", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: uidField.trim(),
+            name: name.trim(),
+            password,
+            permissions: perm,
+          }),
+        });
+
+    const body = await res.json();
+    if (!res.ok) {
+      setErr(body.error ?? "Could not save user");
+      setBusy(false);
+      return;
+    }
+    toast(user ? "User updated" : "User created");
+    onSaved();
     onClose();
   };
 
@@ -51,7 +78,7 @@ export function UserModal({
     setPerm((p) => ({ ...p, [key]: !p[key] }));
 
   return (
-    <Modal title={userId ? "Edit staff" : "Add staff"} onClose={onClose}>
+    <Modal title={user ? "Edit staff" : "Add staff"} onClose={onClose}>
       <div className="mb-3.5">
         <label className={labelCls}>Full name *</label>
         <input
@@ -69,15 +96,21 @@ export function UserModal({
           className={inputCls}
           placeholder="e.g. phone number or username"
           value={uidField}
+          disabled={!!user}
           onChange={(e) => setUidField(e.target.value)}
         />
+        {user && (
+          <div className="mt-1 text-[11px] text-ink-light">
+            User ID can&apos;t be changed after creation.
+          </div>
+        )}
       </div>
       <div className="mb-3.5">
-        <label className={labelCls}>Password *</label>
+        <label className={labelCls}>{user ? "Reset password (optional)" : "Password *"}</label>
         <input
           type="text"
           className={inputCls}
-          placeholder="Set a password"
+          placeholder={user ? "Leave blank to keep current" : "Set a password"}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
@@ -116,10 +149,11 @@ export function UserModal({
       </div>
       {err && <div className="mb-2.5 text-[13px] font-bold text-danger">{err}</div>}
       <button
-        className="w-full rounded-xl border-none bg-brown p-3 text-sm font-bold text-warm-white"
+        className="w-full rounded-xl border-none bg-brown p-3 text-sm font-bold text-warm-white disabled:opacity-60"
         onClick={save}
+        disabled={busy}
       >
-        {userId ? "Save changes" : "Create staff"}
+        {busy ? "Saving…" : user ? "Save changes" : "Create staff"}
       </button>
     </Modal>
   );

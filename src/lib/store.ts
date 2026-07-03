@@ -1,21 +1,24 @@
 "use client";
 
 import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
-import type {
-  Bakery,
-  BakeryState,
-  Bill,
-  BillLine,
-  Item,
-  Permissions,
-  User,
-} from "./types";
-import { DEFAULT_BAKERY, makeOwner } from "./constants";
-import { computeTotals } from "./bill";
-import { round3, uid } from "./format";
+import type { Bakery, Bill, BillLine, Item, Log, Permissions } from "./types";
+import { DEFAULT_BAKERY } from "./constants";
+import {
+  fetchStoreData,
+  rpcCancelBill,
+  rpcClearAllData,
+  rpcCreateItem,
+  rpcDeleteBill,
+  rpcDeleteItem,
+  rpcGenerateBill,
+  rpcSaveSettings,
+  rpcStockIn,
+  rpcStockOut,
+  rpcUpdateItem,
+  rpcUpdateLogo,
+} from "./supabase-data";
 
-// ─── Action result types ──────────────────────────────────────────────
+// ─── Action result types (unchanged contract) ─────────────────────────────
 export type SaveItemResult =
   | { kind: "added" }
   | { kind: "updated" }
@@ -44,13 +47,6 @@ export interface ItemInput {
   qty: number;
 }
 
-export interface UserInput {
-  name: string;
-  userId: string;
-  password: string;
-  permissions: Permissions;
-}
-
 export interface SettingsInput {
   name: string;
   tagline: string;
@@ -62,423 +58,164 @@ export interface SettingsInput {
   lowStockAlert: number;
 }
 
-interface Actions {
-  setHasHydrated: () => void;
-  seedOwner: () => void;
-  login: (userId: string, password: string) => Result & { user?: User };
-  logout: () => void;
+interface StoreState {
+  bakery: Bakery;
+  items: Item[];
+  bills: Bill[];
+  logs: Log[];
+  _hasHydrated: boolean;
 
-  saveItem: (input: ItemInput, id?: string) => SaveItemResult;
-  deleteItem: (id: string) => void;
-  stockIn: (itemId: string, qty: number, supplier: string, notes: string) => StockResult;
-  stockOut: (itemId: string, qty: number, reason: string, notes: string) => StockResult;
+  /** Load all data from Supabase into the client cache. */
+  load: () => Promise<void>;
+
+  saveItem: (input: ItemInput, id?: string) => Promise<SaveItemResult>;
+  deleteItem: (id: string) => Promise<void>;
+  stockIn: (itemId: string, qty: number, supplier: string, notes: string) => Promise<StockResult>;
+  stockOut: (itemId: string, qty: number, reason: string, notes: string) => Promise<StockResult>;
 
   generateBill: (
     customer: { name: string; phone: string },
     lines: BillLine[],
-  ) => Bill;
-  cancelBill: (id: string, byName: string) => Result & { billNo?: number };
-  deleteBill: (id: string, byName: string) => Result & { billNo?: number };
+  ) => Promise<Bill>;
+  cancelBill: (id: string, byName: string) => Promise<Result & { billNo?: number }>;
+  deleteBill: (id: string, byName: string) => Promise<Result & { billNo?: number }>;
 
-  addUser: (input: UserInput) => Result;
-  editUser: (id: string, input: UserInput) => Result;
-  deleteUser: (id: string) => { ok: boolean; wasCurrentUser: boolean };
-  changeOwnPassword: (password: string) => Result;
-
-  saveSettings: (input: SettingsInput) => void;
-  uploadLogo: (dataUrl: string) => void;
-  removeLogo: () => void;
-  clearAllData: () => void;
+  saveSettings: (input: SettingsInput) => Promise<void>;
+  uploadLogo: (dataUrl: string) => Promise<void>;
+  removeLogo: () => Promise<void>;
+  clearAllData: () => Promise<void>;
 }
 
-interface StoreState extends BakeryState, Actions {
-  _hasHydrated: boolean;
-}
+const errMsg = (e: unknown): string =>
+  e instanceof Error ? e.message : "Something went wrong";
 
-const initialData: BakeryState = {
+export const useBakeryStore = create<StoreState>()((set, get) => ({
   bakery: { ...DEFAULT_BAKERY },
   items: [],
   bills: [],
   logs: [],
-  nextBillNo: 1001,
-  users: [makeOwner()],
-  sessionUserId: null,
-};
+  _hasHydrated: false,
 
-/** Immutably replace the item with `id`, applying `fn` to a copy. */
-function patchItem(items: Item[], id: string, fn: (i: Item) => Item): Item[] {
-  return items.map((i) => (i.id === id ? fn({ ...i }) : i));
-}
+  load: async () => {
+    try {
+      const data = await fetchStoreData();
+      set({ ...data, _hasHydrated: true });
+    } catch {
+      set({ _hasHydrated: true });
+    }
+  },
 
-export const useBakeryStore = create<StoreState>()(
-  persist(
-    (set, get) => ({
-      ...initialData,
-      _hasHydrated: false,
+  // ─── Items ───────────────────────────────────────────────────────────────
+  saveItem: async (input, id) => {
+    if (id) {
+      await rpcUpdateItem(id, input);
+      await get().load();
+      return { kind: "updated" };
+    }
+    const r = await rpcCreateItem(input);
+    await get().load();
+    if (r.kind === "merged") {
+      return { kind: "merged", name: r.name ?? input.name, qty: r.qty ?? input.qty, unit: r.unit ?? input.unit };
+    }
+    return { kind: "added" };
+  },
 
-      setHasHydrated: () => set({ _hasHydrated: true }),
+  deleteItem: async (id) => {
+    await rpcDeleteItem(id);
+    await get().load();
+  },
 
-      seedOwner: () => {
-        const { users } = get();
-        if (!users.some((u) => u.role === "Owner")) {
-          set({ users: [makeOwner(), ...users] });
-        }
-      },
+  stockIn: async (itemId, qty, supplier, notes) => {
+    if (!itemId) return { ok: false, error: "Please select an item" };
+    if (!qty || qty <= 0) return { ok: false, error: "Enter a valid quantity" };
+    const item = get().items.find((i) => i.id === itemId);
+    try {
+      await rpcStockIn(itemId, qty, supplier, notes);
+      await get().load();
+      return { ok: true, name: item?.name, unit: item?.unit, qty };
+    } catch (e) {
+      return { ok: false, error: errMsg(e) };
+    }
+  },
 
-      login: (userId, password) => {
-        if (!userId || !password) {
-          return { ok: false, error: "Please enter your User ID and Password." };
-        }
-        const user = get().users.find(
-          (u) => u.userId === userId && u.password === password,
-        );
-        if (!user) return { ok: false, error: "Invalid User ID or Password" };
-        set({ sessionUserId: user.id });
-        return { ok: true, user };
-      },
+  stockOut: async (itemId, qty, reason, notes) => {
+    if (!itemId) return { ok: false, error: "Please select an item" };
+    if (!qty || qty <= 0) return { ok: false, error: "Enter a valid quantity" };
+    const item = get().items.find((i) => i.id === itemId);
+    try {
+      await rpcStockOut(itemId, qty, reason, notes);
+      await get().load();
+      return { ok: true, name: item?.name, unit: item?.unit, qty };
+    } catch (e) {
+      return { ok: false, error: errMsg(e) };
+    }
+  },
 
-      logout: () => set({ sessionUserId: null }),
+  // ─── Bills ───────────────────────────────────────────────────────────────
+  generateBill: async (customer, lines) => {
+    const row = await rpcGenerateBill(
+      customer,
+      lines.map((l) => ({ itemId: l.itemId, qty: l.qty })),
+    );
+    const bill: Bill = {
+      id: row.id,
+      billNo: row.bill_no,
+      customerName: customer.name,
+      customerPhone: customer.phone,
+      items: lines.map((l) => ({ ...l })),
+      subtotal: row.subtotal,
+      tax: row.tax,
+      total: row.total,
+      taxRate: row.tax_rate,
+      date: row.created_at,
+      status: "active",
+    };
+    await get().load();
+    return bill;
+  },
 
-      // ─── Items ───────────────────────────────────────────────────────
-      saveItem: (input, id) => {
-        const state = get();
-        if (id) {
-          const existing = state.items.find((i) => i.id === id);
-          const oldQty = existing ? existing.qty : 0;
-          const items = patchItem(state.items, id, (i) => ({
-            ...i,
-            name: input.name,
-            emoji: input.emoji,
-            category: input.category,
-            unit: input.unit,
-            price: input.price,
-            costPrice: input.costPrice,
-            qty: input.qty,
-          }));
-          const logs = [...state.logs];
-          if (input.qty !== oldQty) {
-            logs.push({
-              id: uid(),
-              type: input.qty > oldQty ? "in" : "out",
-              itemId: id,
-              itemName: input.name,
-              qty: Math.abs(input.qty - oldQty),
-              notes: "Manual adjustment",
-              date: new Date().toISOString(),
-            });
-          }
-          set({ items, logs });
-          return { kind: "updated" };
-        }
+  cancelBill: async (id, byName) => {
+    const bill = get().bills.find((b) => b.id === id);
+    try {
+      await rpcCancelBill(id, byName);
+      await get().load();
+      return { ok: true, billNo: bill?.billNo };
+    } catch (e) {
+      return { ok: false, error: errMsg(e) };
+    }
+  },
 
-        // Add — merge into an existing (case-insensitive) name instead of duplicating.
-        const dup = state.items.find(
-          (i) => i.name.trim().toLowerCase() === input.name.toLowerCase(),
-        );
-        if (dup) {
-          const logs = [...state.logs];
-          let items = state.items;
-          if (input.qty > 0) {
-            items = patchItem(state.items, dup.id, (i) => ({
-              ...i,
-              qty: round3(i.qty + input.qty),
-            }));
-            logs.push({
-              id: uid(),
-              type: "in",
-              itemId: dup.id,
-              itemName: dup.name,
-              qty: input.qty,
-              notes: "Added via New Item form (existing item)",
-              date: new Date().toISOString(),
-            });
-          }
-          set({ items, logs });
-          return { kind: "merged", name: dup.name, qty: input.qty, unit: dup.unit };
-        }
+  deleteBill: async (id, byName) => {
+    const bill = get().bills.find((b) => b.id === id);
+    try {
+      await rpcDeleteBill(id, byName);
+      await get().load();
+      return { ok: true, billNo: bill?.billNo };
+    } catch (e) {
+      return { ok: false, error: errMsg(e) };
+    }
+  },
 
-        const newItem: Item = {
-          id: uid(),
-          name: input.name,
-          emoji: input.emoji,
-          category: input.category,
-          unit: input.unit,
-          price: input.price,
-          costPrice: input.costPrice,
-          qty: input.qty,
-        };
-        const logs = [...state.logs];
-        if (input.qty > 0) {
-          logs.push({
-            id: uid(),
-            type: "in",
-            itemId: newItem.id,
-            itemName: input.name,
-            qty: input.qty,
-            notes: "Initial stock",
-            date: new Date().toISOString(),
-          });
-        }
-        set({ items: [...state.items, newItem], logs });
-        return { kind: "added" };
-      },
+  // ─── Settings ──────────────────────────────────────────────────────────────
+  saveSettings: async (input) => {
+    await rpcSaveSettings(input);
+    await get().load();
+  },
 
-      deleteItem: (id) =>
-        set((s) => ({ items: s.items.filter((i) => i.id !== id) })),
+  uploadLogo: async (dataUrl) => {
+    await rpcUpdateLogo(dataUrl);
+    await get().load();
+  },
 
-      stockIn: (itemId, qty, supplier, notes) => {
-        if (!itemId) return { ok: false, error: "Please select an item" };
-        if (!qty || qty <= 0) return { ok: false, error: "Enter a valid quantity" };
-        const state = get();
-        const item = state.items.find((i) => i.id === itemId);
-        if (!item) return { ok: false, error: "Item not found" };
-        const items = patchItem(state.items, itemId, (i) => ({
-          ...i,
-          qty: round3(i.qty + qty),
-        }));
-        set({
-          items,
-          logs: [
-            ...state.logs,
-            { id: uid(), type: "in", itemId, itemName: item.name, qty, supplier, notes, date: new Date().toISOString() },
-          ],
-        });
-        return { ok: true, name: item.name, unit: item.unit, qty };
-      },
+  removeLogo: async () => {
+    await rpcUpdateLogo(null);
+    await get().load();
+  },
 
-      stockOut: (itemId, qty, reason, notes) => {
-        if (!itemId) return { ok: false, error: "Please select an item" };
-        if (!qty || qty <= 0) return { ok: false, error: "Enter a valid quantity" };
-        const state = get();
-        const item = state.items.find((i) => i.id === itemId);
-        if (!item) return { ok: false, error: "Item not found" };
-        if (qty > item.qty)
-          return { ok: false, error: `Only ${item.qty} ${item.unit} available` };
-        const items = patchItem(state.items, itemId, (i) => ({
-          ...i,
-          qty: round3(i.qty - qty),
-        }));
-        set({
-          items,
-          logs: [
-            ...state.logs,
-            { id: uid(), type: "out", itemId, itemName: item.name, qty, reason, notes, date: new Date().toISOString() },
-          ],
-        });
-        return { ok: true, name: item.name, unit: item.unit, qty };
-      },
+  clearAllData: async () => {
+    await rpcClearAllData();
+    await get().load();
+  },
+}));
 
-      // ─── Bills ───────────────────────────────────────────────────────
-      generateBill: (customer, lines) => {
-        const state = get();
-        const { subtotal, tax, total } = computeTotals(lines, state.bakery.taxRate);
-        const now = new Date();
-        const billNo = state.nextBillNo;
-
-        let items = state.items;
-        lines.forEach((bi) => {
-          items = patchItem(items, bi.itemId, (i) => ({
-            ...i,
-            qty: Math.max(0, round3(i.qty - bi.qty)),
-          }));
-        });
-
-        const bill: Bill = {
-          id: uid(),
-          billNo,
-          customerName: customer.name,
-          customerPhone: customer.phone,
-          items: lines.map((l) => ({ ...l })),
-          subtotal,
-          tax,
-          total,
-          taxRate: state.bakery.taxRate,
-          date: now.toISOString(),
-          status: "active",
-        };
-        set({
-          items,
-          bills: [...state.bills, bill],
-          nextBillNo: billNo + 1,
-          logs: [
-            ...state.logs,
-            { id: uid(), type: "bill", billNo, items: lines.map((b) => b.name).join(", "), total, date: now.toISOString() },
-          ],
-        });
-        return bill;
-      },
-
-      cancelBill: (id, byName) => {
-        const state = get();
-        const bill = state.bills.find((b) => b.id === id);
-        if (!bill) return { ok: false };
-        if (bill.status === "cancelled") return { ok: false, error: "Already cancelled" };
-        let items = state.items;
-        bill.items.forEach((bi) => {
-          items = patchItem(items, bi.itemId, (i) => ({
-            ...i,
-            qty: round3(i.qty + bi.qty),
-          }));
-        });
-        const now = new Date().toISOString();
-        const bills = state.bills.map((b) =>
-          b.id === id
-            ? { ...b, status: "cancelled" as const, cancelledAt: now, cancelledBy: byName }
-            : b,
-        );
-        set({
-          items,
-          bills,
-          logs: [
-            ...state.logs,
-            { id: uid(), type: "cancel", billNo: bill.billNo, items: bill.items.map((i) => i.name).join(", "), total: bill.total, notes: `Cancelled by ${byName}`, date: now },
-          ],
-        });
-        return { ok: true, billNo: bill.billNo };
-      },
-
-      deleteBill: (id, byName) => {
-        const state = get();
-        const bill = state.bills.find((b) => b.id === id);
-        if (!bill) return { ok: false };
-        let items = state.items;
-        if (bill.status !== "cancelled") {
-          bill.items.forEach((bi) => {
-            items = patchItem(items, bi.itemId, (i) => ({
-              ...i,
-              qty: round3(i.qty + bi.qty),
-            }));
-          });
-        }
-        set({
-          items,
-          bills: state.bills.filter((b) => b.id !== id),
-          logs: [
-            ...state.logs,
-            { id: uid(), type: "delete", billNo: bill.billNo, items: bill.items.map((i) => i.name).join(", "), total: bill.total, notes: `Deleted by ${byName}`, date: new Date().toISOString() },
-          ],
-        });
-        return { ok: true, billNo: bill.billNo };
-      },
-
-      // ─── Users ───────────────────────────────────────────────────────
-      addUser: (input) => {
-        const state = get();
-        if (!input.name || !input.userId || !input.password)
-          return { ok: false, error: "All fields marked * are required." };
-        if (state.users.some((u) => u.userId === input.userId))
-          return { ok: false, error: "This User ID is already taken." };
-        const user: User = {
-          id: uid(),
-          name: input.name,
-          userId: input.userId,
-          password: input.password,
-          role: "Staff",
-          permissions: input.permissions,
-        };
-        set({ users: [...state.users, user] });
-        return { ok: true };
-      },
-
-      editUser: (id, input) => {
-        const state = get();
-        if (!input.name || !input.userId || !input.password)
-          return { ok: false, error: "All fields marked * are required." };
-        if (state.users.some((u) => u.userId === input.userId && u.id !== id))
-          return { ok: false, error: "This User ID is already taken." };
-        set({
-          users: state.users.map((u) =>
-            u.id === id
-              ? { ...u, name: input.name, userId: input.userId, password: input.password, permissions: input.permissions }
-              : u,
-          ),
-        });
-        return { ok: true };
-      },
-
-      deleteUser: (id) => {
-        const state = get();
-        const u = state.users.find((x) => x.id === id);
-        if (!u || u.role === "Owner") return { ok: false, wasCurrentUser: false };
-        const wasCurrentUser = state.sessionUserId === id;
-        set({
-          users: state.users.filter((x) => x.id !== id),
-          sessionUserId: wasCurrentUser ? null : state.sessionUserId,
-        });
-        return { ok: true, wasCurrentUser };
-      },
-
-      changeOwnPassword: (password) => {
-        const state = get();
-        if (!password || password.length < 4)
-          return { ok: false, error: "Password must be at least 4 characters." };
-        if (!state.sessionUserId) return { ok: false, error: "Not logged in." };
-        set({
-          users: state.users.map((u) =>
-            u.id === state.sessionUserId ? { ...u, password } : u,
-          ),
-        });
-        return { ok: true };
-      },
-
-      // ─── Settings ──────────────────────────────────────────────────────
-      saveSettings: (input) =>
-        set((s) => ({
-          bakery: {
-            ...s.bakery,
-            name: input.name || "My Bakery",
-            tagline: input.tagline,
-            address: input.address,
-            phone: input.phone,
-            gst: input.gst,
-            currency: input.currency,
-            taxRate: input.taxRate,
-            lowStockAlert: input.lowStockAlert,
-          } as Bakery,
-        })),
-
-      uploadLogo: (dataUrl) =>
-        set((s) => ({ bakery: { ...s.bakery, logo: dataUrl } })),
-
-      removeLogo: () => set((s) => ({ bakery: { ...s.bakery, logo: null } })),
-
-      clearAllData: () =>
-        set({ items: [], bills: [], logs: [], nextBillNo: 1001 }),
-    }),
-    {
-      name: "bt-store-management",
-      // Hydrate explicitly from a mount effect (see StoreHydrator) so the first
-      // client render matches the server (both pre-hydration), avoiding a
-      // hydration mismatch on this fully client-driven app.
-      skipHydration: true,
-      storage: createJSONStorage(() =>
-        typeof window !== "undefined"
-          ? window.localStorage
-          : (undefined as unknown as Storage),
-      ),
-      partialize: (s) => ({
-        bakery: s.bakery,
-        items: s.items,
-        bills: s.bills,
-        logs: s.logs,
-        nextBillNo: s.nextBillNo,
-        users: s.users,
-        sessionUserId: s.sessionUserId,
-      }),
-      // Runs synchronously during create() for localStorage, so it must not
-      // reference `useBakeryStore` (not yet assigned — TDZ). Use the store's
-      // own actions, which close over `set`/`get`.
-      onRehydrateStorage: () => (state) => {
-        state?.seedOwner();
-        state?.setHasHydrated();
-      },
-    },
-  ),
-);
-
-/** The logged-in user derived from the persisted session id. */
-export function useCurrentUser(): User | null {
-  return useBakeryStore(
-    (s) => s.users.find((u) => u.id === s.sessionUserId) ?? null,
-  );
-}
+export type { Permissions };

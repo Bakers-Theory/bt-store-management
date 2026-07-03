@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { navItems } from "@/lib/permissions";
-import { useBakeryStore, useCurrentUser } from "@/lib/store";
+import { useAuth, useCurrentUser } from "@/components/system/AuthProvider";
 import { Croissant } from "lucide-react";
 
 const ICONS: Record<string, React.ReactNode> = {
@@ -54,12 +54,12 @@ export function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const user = useCurrentUser();
-  const logout = useBakeryStore((s) => s.logout);
+  const { signOut } = useAuth();
 
   const items = [...navItems(user), { key: "settings", href: "/settings", icon: "⚙", label: "Settings" }];
 
-  const doSignOut = () => {
-    logout();
+  const doSignOut = async () => {
+    await signOut();
     router.push("/login");
   };
 

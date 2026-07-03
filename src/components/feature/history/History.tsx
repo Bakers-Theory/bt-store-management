@@ -11,7 +11,8 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
-import { useBakeryStore, useCurrentUser } from "@/lib/store";
+import { useBakeryStore } from "@/lib/store";
+import { useCurrentUser } from "@/components/system/AuthProvider";
 import { useUIStore } from "@/lib/ui-store";
 import { hasPermission } from "@/lib/permissions";
 import { formatDateFull } from "@/lib/format";
@@ -89,20 +90,22 @@ export function History() {
 
   const itemEmoji = (itemId?: string) => items.find((i) => i.id === itemId)?.emoji || "📦";
 
-  const doCancel = (b: Bill) => {
+  const doCancel = async (b: Bill) => {
     if (b.status === "cancelled") {
       toast("Already cancelled");
       return;
     }
     if (!confirm(`Cancel Bill #${b.billNo}? Stock quantities will be restored.`)) return;
-    const r = cancelBill(b.id, user?.name ?? "Unknown");
+    const r = await cancelBill(b.id, user?.name ?? "Unknown");
     if (r.ok) toast(`Bill #${r.billNo} cancelled`);
+    else if (r.error) toast(r.error);
   };
 
   const doDelete = (b: Bill) => {
-    requireOwnerAuth(`permanently delete Bill #${b.billNo}`, () => {
-      const r = deleteBill(b.id, user?.name ?? "Unknown");
+    requireOwnerAuth(`permanently delete Bill #${b.billNo}`, async () => {
+      const r = await deleteBill(b.id, user?.name ?? "Unknown");
       if (r.ok) toast(`Bill #${r.billNo} deleted`);
+      else if (r.error) toast(r.error);
     });
   };
 

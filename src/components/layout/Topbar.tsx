@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, usePathname } from "next/navigation";
-import { useBakeryStore, useCurrentUser } from "@/lib/store";
+import { useAuth, useCurrentUser } from "@/components/system/AuthProvider";
 import { hasPermission } from "@/lib/permissions";
 
 const TITLES: Record<string, [string, string]> = {
@@ -32,15 +32,15 @@ export function Topbar() {
   const router = useRouter();
   const pathname = usePathname();
   const user = useCurrentUser();
-  const logout = useBakeryStore((s) => s.logout);
+  const { signOut } = useAuth();
 
   const [title, subtitle] = TITLES[pathname] ?? [
     "Dashboard",
     dashboardSubtitle(user?.name.split(" ")[0] ?? ""),
   ];
 
-  const doLogout = () => {
-    logout();
+  const doLogout = async () => {
+    await signOut();
     router.push("/login");
   };
 

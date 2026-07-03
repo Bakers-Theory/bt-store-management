@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { navItems, type NavItem } from "@/lib/permissions";
-import { useCurrentUser } from "@/lib/store";
+import { useCurrentUser } from "@/components/system/AuthProvider";
 
 const ICONS: Record<string, React.ReactNode> = {
   dashboard: (

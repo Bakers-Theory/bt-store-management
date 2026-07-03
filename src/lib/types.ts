@@ -82,17 +82,6 @@ export interface User {
   id: string;
   name: string;
   userId: string;
-  password: string;
   role: UserRole;
   permissions: Permissions;
-}
-
-export interface BakeryState {
-  bakery: Bakery;
-  items: Item[];
-  bills: Bill[];
-  logs: Log[];
-  nextBillNo: number;
-  users: User[];
-  sessionUserId: string | null;
 }

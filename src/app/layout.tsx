@@ -1,6 +1,7 @@
+import "./globals.css";
 import type { Metadata, Viewport } from "next";
 import { Figtree, Newsreader } from "next/font/google";
-import "./globals.css";
+import { AuthProvider } from "@/components/system/AuthProvider";
 import { StoreHydrator } from "@/components/system/StoreHydrator";
 import { ToastHost } from "@/components/system/ToastHost";
 import { OwnerAuthHost } from "@/components/system/OwnerAuthHost";
@@ -40,11 +41,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${figtree.variable} ${newsreader.variable}`}>
       <body>
-        {children}
-        <StoreHydrator />
-        <ToastHost />
-        <OwnerAuthHost />
-        <PrintHost />
+        <AuthProvider>
+          {children}
+          <StoreHydrator />
+          <ToastHost />
+          <OwnerAuthHost />
+          <PrintHost />
+        </AuthProvider>
       </body>
     </html>
   );

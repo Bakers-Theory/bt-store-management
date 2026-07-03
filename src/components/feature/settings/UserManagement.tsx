@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Eye, Pencil, Plus, Trash2 } from "lucide-react";
-import { useBakeryStore } from "@/lib/store";
+import { useCallback, useEffect, useState } from "react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
+import { fetchStaff } from "@/lib/supabase-data";
 import { useUIStore } from "@/lib/ui-store";
 import { UserModal } from "./UserModal";
 import type { Permissions, User } from "@/lib/types";
@@ -21,29 +20,32 @@ function initials(name: string): string {
 }
 
 export function UserManagement() {
-  const router = useRouter();
-  const users = useBakeryStore((s) => s.users);
-  const deleteUser = useBakeryStore((s) => s.deleteUser);
   const toast = useUIStore((s) => s.toast);
+  const [users, setUsers] = useState<User[]>([]);
+  const [modal, setModal] = useState<{ user: User | null } | null>(null);
 
-  const [modal, setModal] = useState<{ id: string | null } | null>(null);
-  const [revealed, setRevealed] = useState<Set<string>>(new Set());
+  const reload = useCallback(async () => {
+    setUsers(await fetchStaff());
+  }, []);
 
-  const toggleReveal = (id: string) =>
-    setRevealed((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  const remove = async (u: User) => {
+    if (!confirm(`Delete user "${u.name}"? This cannot be undone.`)) return;
+    const res = await fetch("/api/staff", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: u.id }),
     });
-
-  const remove = (id: string, name: string) => {
-    if (!confirm(`Delete user "${name}"? This cannot be undone.`)) return;
-    const r = deleteUser(id);
-    if (r.wasCurrentUser) {
-      router.replace("/login");
+    const body = await res.json();
+    if (!res.ok) {
+      toast(body.error ?? "Could not delete user");
       return;
     }
-    if (r.ok) toast("User deleted");
+    toast("User deleted");
+    reload();
   };
 
   const permPill = (label: string, on: boolean) => (
@@ -89,30 +91,19 @@ export function UserManagement() {
         </div>
 
         {!isOwner && (
-          <div className="mt-[11px] flex items-center justify-between border-t border-line-soft pt-[11px]">
-            <div className="flex items-center gap-1.5 text-xs text-ink-muted">
-              <span className="font-mono">{revealed.has(u.id) ? u.password : "••••••••"}</span>
-              <button
-                className="cursor-pointer rounded-md border-none bg-cream px-1.5 py-0.5 text-[11px]"
-                onClick={() => toggleReveal(u.id)}
-              >
-                <Eye size={14} />
-              </button>
-            </div>
-            <div className="flex gap-1.5">
-              <button
-                className="cursor-pointer rounded-lg border border-line bg-warm-white px-2.5 py-1.5 text-xs font-bold text-ink-muted"
-                onClick={() => setModal({ id: u.id })}
-              >
-                <Pencil size={14} />
-              </button>
-              <button
-                className="cursor-pointer rounded-lg border-none bg-danger px-2.5 py-1.5 text-xs text-white"
-                onClick={() => remove(u.id, u.name)}
-              >
-                <Trash2 size={14} />
-              </button>
-            </div>
+          <div className="mt-[11px] flex items-center justify-end gap-1.5 border-t border-line-soft pt-[11px]">
+            <button
+              className="cursor-pointer rounded-lg border border-line bg-warm-white px-2.5 py-1.5 text-xs font-bold text-ink-muted"
+              onClick={() => setModal({ user: u })}
+            >
+              <Pencil size={14} />
+            </button>
+            <button
+              className="cursor-pointer rounded-lg border-none bg-danger px-2.5 py-1.5 text-xs text-white"
+              onClick={() => remove(u)}
+            >
+              <Trash2 size={14} />
+            </button>
           </div>
         )}
       </div>
@@ -125,7 +116,7 @@ export function UserManagement() {
         <h3 className="text-[15.5px] font-extrabold">Staff &amp; permissions</h3>
         <button
           className="inline-flex cursor-pointer items-center gap-1.5 rounded-[9px] border-none bg-[#f4e7d2] px-3 py-[7px] text-[12.5px] font-bold text-brown"
-          onClick={() => setModal({ id: null })}
+          onClick={() => setModal({ user: null })}
         >
           <Plus size={16} /> Add staff
         </button>
@@ -133,7 +124,13 @@ export function UserManagement() {
 
       <div className="flex flex-col gap-3">{users.map(staffCard)}</div>
 
-      {modal && <UserModal userId={modal.id} onClose={() => setModal(null)} />}
+      {modal && (
+        <UserModal
+          user={modal.user}
+          onClose={() => setModal(null)}
+          onSaved={reload}
+        />
+      )}
     </div>
   );
 }

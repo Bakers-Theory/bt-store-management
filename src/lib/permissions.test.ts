@@ -3,11 +3,11 @@ import { hasPermission, navItems, canAccessSection, defaultRoute } from "./permi
 import type { User } from "./types";
 
 const owner: User = {
-  id: "owner", name: "O", userId: "o", password: "p", role: "Owner",
+  id: "owner", name: "O", userId: "o", role: "Owner",
   permissions: { sales: false, inventory: false, analytics: false },
 };
 const staff = (p: Partial<User["permissions"]>): User => ({
-  id: "s", name: "S", userId: "s", password: "p", role: "Staff",
+  id: "s", name: "S", userId: "s", role: "Staff",
   permissions: { sales: false, inventory: false, analytics: false, ...p },
 });
 

@@ -76,15 +76,19 @@ export function Bill() {
 
   const clearCart = () => setLines([]);
 
-  const generate = () => {
+  const generate = async () => {
     if (lines.length === 0) {
       toast("Add items to the order first");
       return;
     }
-    const bill = generateBill(customer, lines);
-    setLines([]);
-    setCustomer({ name: "", phone: "" });
-    setReceipt(bill);
+    try {
+      const bill = await generateBill(customer, lines);
+      setLines([]);
+      setCustomer({ name: "", phone: "" });
+      setReceipt(bill);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not generate bill");
+    }
   };
 
   const done = () => setReceipt(null);

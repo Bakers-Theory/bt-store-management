@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Lightbulb, Package, Download, Receipt, Plus } from "lucide-react";
-import { useBakeryStore, useCurrentUser } from "@/lib/store";
+import { useBakeryStore } from "@/lib/store";
+import { useCurrentUser } from "@/components/system/AuthProvider";
 import { useUIStore } from "@/lib/ui-store";
 import { hasPermission } from "@/lib/permissions";
 import { isActiveBill, formatDate } from "@/lib/format";

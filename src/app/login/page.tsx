@@ -2,36 +2,63 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useBakeryStore, useCurrentUser } from "@/lib/store";
+import { createClient } from "@/utils/supabase/client";
+import {
+  PROFILE_COLUMNS,
+  profileToUser,
+  userIdToEmail,
+  type ProfileRow,
+} from "@/lib/auth";
 import { defaultRoute } from "@/lib/permissions";
+import { useAuthReady, useCurrentUser } from "@/components/system/AuthProvider";
 import { Croissant } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
-  const hydrated = useBakeryStore((s) => s._hasHydrated);
-  const login = useBakeryStore((s) => s.login);
+  const ready = useAuthReady();
   const user = useCurrentUser();
 
   const [userId, setUserId] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  // If already logged in, skip the login screen.
+  // If already signed in, skip the login screen.
   useEffect(() => {
-    if (hydrated && user) router.replace(defaultRoute(user));
-  }, [hydrated, user, router]);
+    if (ready && user) router.replace(defaultRoute(user));
+  }, [ready, user, router]);
 
-  const submit = () => {
-    const r = login(userId.trim(), password);
-    if (!r.ok) {
-      setError(r.error ?? "");
+  const submit = async () => {
+    if (!userId.trim() || !password) {
+      setError("Please enter your User ID and Password.");
       return;
     }
+    setBusy(true);
     setError("");
-    router.replace(defaultRoute(r.user!));
+
+    const supabase = createClient();
+    const { data: auth, error: signErr } = await supabase.auth.signInWithPassword({
+      email: userIdToEmail(userId),
+      password,
+    });
+    if (signErr || !auth.user) {
+      setError("Invalid User ID or Password");
+      setBusy(false);
+      return;
+    }
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select(PROFILE_COLUMNS)
+      .eq("id", auth.user.id)
+      .single();
+
+    router.replace(
+      profile ? defaultRoute(profileToUser(profile as ProfileRow)) : "/dashboard",
+    );
   };
 
-  if (!hydrated || user) return null;
+  if (!ready || user) return null;
 
   return (
     <div className="fixed inset-0 z-[300] flex items-center justify-center bg-[radial-gradient(circle_at_30%_12%,#fff7ec,#efdfc4)] p-6">
@@ -73,13 +100,13 @@ export default function LoginPage() {
         {error && (
           <div className="mb-3 text-left text-[13px] font-semibold text-danger">{error}</div>
         )}
-        <button className="btn-primary w-full p-3.5 text-[15px]" onClick={submit}>
-          Sign in
+        <button
+          className="btn-primary w-full p-3.5 text-[15px] disabled:opacity-60"
+          onClick={submit}
+          disabled={busy}
+        >
+          {busy ? "Signing in…" : "Sign in"}
         </button>
-        <div className="mt-4 text-center text-xs text-ink-light">
-          Owner demo · ID{" "}
-          <span className="num font-bold text-[#8a6a3c]">7873557430</span>
-        </div>
       </div>
     </div>
   );

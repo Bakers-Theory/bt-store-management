@@ -3,7 +3,8 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Croissant, Download, Trash2, X } from "lucide-react";
-import { useBakeryStore, useCurrentUser } from "@/lib/store";
+import { useBakeryStore } from "@/lib/store";
+import { useCurrentUser } from "@/components/system/AuthProvider";
 import { useUIStore } from "@/lib/ui-store";
 import { CURRENCIES } from "@/lib/constants";
 import { exportExcelReport } from "@/lib/excel";
@@ -41,12 +42,12 @@ export function Settings() {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => uploadLogo(ev.target?.result as string);
+    reader.onload = (ev) => void uploadLogo(ev.target?.result as string);
     reader.readAsDataURL(file);
   };
 
-  const save = () => {
-    saveSettings({
+  const save = async () => {
+    await saveSettings({
       name: name.trim(),
       tagline: tagline.trim(),
       address: address.trim(),
@@ -66,10 +67,10 @@ export function Settings() {
     toast(r.ok ? "Excel report downloaded" : r.error ?? "Export failed");
   };
 
-  const clearData = () => {
+  const clearData = async () => {
     if (!confirm("This will delete all items, bills, and history. Are you sure?")) return;
     if (!confirm("Last chance — really delete everything?")) return;
-    clearAllData();
+    await clearAllData();
     toast("All data cleared");
     router.push("/dashboard");
   };

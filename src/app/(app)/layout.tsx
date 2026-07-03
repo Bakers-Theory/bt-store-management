@@ -2,21 +2,21 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useBakeryStore, useCurrentUser } from "@/lib/store";
+import { useAuthReady, useCurrentUser } from "@/components/system/AuthProvider";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { BottomNav } from "@/components/layout/BottomNav";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const hydrated = useBakeryStore((s) => s._hasHydrated);
+  const ready = useAuthReady();
   const user = useCurrentUser();
 
   useEffect(() => {
-    if (hydrated && !user) router.replace("/login");
-  }, [hydrated, user, router]);
+    if (ready && !user) router.replace("/login");
+  }, [ready, user, router]);
 
-  if (!hydrated || !user) return null;
+  if (!ready || !user) return null;
 
   return (
     <div className="flex min-h-screen bg-cream">
