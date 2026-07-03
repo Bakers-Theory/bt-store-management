@@ -51,7 +51,7 @@ export function MyAccount() {
   );
 
   return (
-    <>
+    <div className="mx-auto max-w-2xl">
       <div className="mb-4 rounded-[18px] border border-line bg-warm-white p-[22px] shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
         <h3 className="mb-4 text-[15.5px] font-extrabold">My account</h3>
         <div className="flex items-center gap-[11px] pb-4">
@@ -99,13 +99,6 @@ export function MyAccount() {
           Update password
         </button>
       </div>
-
-      <button
-        className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border-none bg-danger p-3 text-sm font-bold text-warm-white"
-        onClick={doLogout}
-      >
-        <LogOut size={16} /> Logout
-      </button>
-    </>
+    </div>
   );
 }

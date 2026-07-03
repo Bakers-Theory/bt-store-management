@@ -24,7 +24,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar />
         <main className="flex-1 overflow-y-auto p-4 lg:px-8 lg:py-6 animate-fade-in">
-          {children}
+          <div className="mx-auto w-full max-w-[1400px]">{children}</div>
         </main>
         <BottomNav />
       </div>
