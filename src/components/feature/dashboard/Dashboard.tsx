@@ -7,7 +7,15 @@ import { useUIStore } from "@/lib/ui-store";
 import { hasPermission } from "@/lib/permissions";
 import { isActiveBill, formatDate } from "@/lib/format";
 import { exportExcelReport } from "@/lib/excel";
-import { weeklySales, topItems, categoryRevenue } from "@/lib/analytics";
+import {
+  weeklySales,
+  topItems,
+  categoryRevenue,
+  categoryPL,
+  stockHealth,
+  recommendations,
+  type StockVerdict,
+} from "@/lib/analytics";
 import { ItemModal } from "@/components/feature/stock/ItemModal";
 import { ViewBillModal } from "@/components/feature/bill/ViewBillModal";
 import { StockInForm } from "@/components/feature/stock/StockInForm";
@@ -16,6 +24,29 @@ import { SalesChart } from "./SalesChart";
 import { TopItemsChart } from "./TopItemsChart";
 import { CategoryChart } from "./CategoryChart";
 import type { Bill } from "@/lib/types";
+
+const priorityBadge: Record<string, string> = {
+  High: "badge-danger",
+  Medium: "badge-warn",
+  Low: "badge-success",
+  Info: "badge-brown",
+};
+
+const verdictBadge: Record<StockVerdict, string> = {
+  "Reorder now": "badge-danger",
+  "Reorder soon": "badge-warn",
+  "Dead stock": "badge-brown",
+  "Slow-moving": "badge-warn",
+  Healthy: "badge-success",
+};
+
+const verdictRank: Record<StockVerdict, number> = {
+  "Reorder now": 0,
+  "Dead stock": 1,
+  "Reorder soon": 2,
+  "Slow-moving": 3,
+  Healthy: 4,
+};
 
 function initials(name: string): string {
   const trimmed = name.trim();
@@ -76,6 +107,11 @@ export function Dashboard() {
   const chartData = weeklySales(bills, now);
   const topItemsData = topItems(bills);
   const categoryData = categoryRevenue(bills, items);
+  const categoryPLData = categoryPL(bills, items);
+  const recs = recommendations(bills, items, lowStockAlert, currency);
+  const attention = stockHealth(bills, items, lowStockAlert)
+    .filter((s) => s.verdict !== "Healthy")
+    .sort((a, b) => verdictRank[a.verdict] - verdictRank[b.verdict]);
 
   const doExport = async () => {
     const { bakery, items, bills, logs } = useBakeryStore.getState();
@@ -162,9 +198,65 @@ export function Dashboard() {
 
               <div className="card">
                 <div className="card-header">
-                  <h3>Sales by category</h3>
+                  <h3>Sales &amp; profit by category</h3>
                 </div>
                 <CategoryChart data={categoryData} currency={currency} />
+                {categoryPLData.length > 0 && (
+                  <div className="mt-3 overflow-x-auto">
+                    <table className="w-full text-[12px]">
+                      <thead>
+                        <tr className="text-left text-ink-muted">
+                          <th className="pb-1.5 font-semibold">Category</th>
+                          <th className="pb-1.5 text-right font-semibold">Revenue</th>
+                          <th className="pb-1.5 text-right font-semibold">Profit</th>
+                          <th className="pb-1.5 text-right font-semibold">Margin</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {categoryPLData.map((c) => (
+                          <tr key={c.category} className="border-t border-line-soft">
+                            <td className="py-1.5 font-semibold text-ink">{c.category}</td>
+                            <td className="num py-1.5 text-right">
+                              {currency}
+                              {c.revenue.toFixed(0)}
+                            </td>
+                            <td
+                              className={`num py-1.5 text-right font-bold ${
+                                c.profit >= 0 ? "text-success" : "text-danger"
+                              }`}
+                            >
+                              {currency}
+                              {c.profit.toFixed(0)}
+                            </td>
+                            <td className="num py-1.5 text-right">
+                              {c.marginPct !== null ? c.marginPct.toFixed(0) + "%" : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              <div className="card">
+                <div className="card-header">
+                  <h3>💡 Business Boosters</h3>
+                </div>
+                {recs.map((r, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-start gap-2.5 border-t border-line-soft py-2.5 first:border-t-0"
+                  >
+                    <span className={`badge ${priorityBadge[r.priority]} flex-shrink-0`}>
+                      {r.priority}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="text-[13px] font-bold text-ink">{r.insight}</div>
+                      <div className="text-[11.5px] text-ink-light">{r.detail}</div>
+                    </div>
+                  </div>
+                ))}
               </div>
 
               <button className="btn-success w-full p-3 text-sm" onClick={doExport}>
@@ -246,34 +338,54 @@ export function Dashboard() {
             </div>
           </div>
 
-          {lowStockItems.length > 0 && (
+          {hasPermission(user, "inventory") && (
             <div className="card">
               <div className="card-header flex items-center justify-between">
-                <h3>⚠ Low Stock Alerts</h3>
-                <span className="rounded-full bg-warn-bg px-2.5 py-0.5 text-[11px] font-bold text-warn">
-                  {lowStock}
-                </span>
+                <h3>📦 Stock Health</h3>
+                {attention.length > 0 && (
+                  <span className="rounded-full bg-warn-bg px-2.5 py-0.5 text-[11px] font-bold text-warn">
+                    {attention.length}
+                  </span>
+                )}
               </div>
-              {lowStockItems.map((i) => (
-                <div
-                  key={i.id}
-                  className="flex items-center gap-2.5 border-t border-line-soft py-2.5 first:border-t-0"
-                >
-                  <div className="text-[22px]">{i.emoji || "📦"}</div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13.5px] font-bold">{i.name}</div>
-                    <div className="text-[11.5px] font-semibold text-danger">
-                      Only {i.qty} {i.unit} left
-                    </div>
-                  </div>
-                  <button
-                    className="rounded-[9px] bg-line-soft px-3 py-1.5 text-[12px] font-bold text-brown"
-                    onClick={() => setStockInOpen(true)}
-                  >
-                    Restock
-                  </button>
+              {attention.length === 0 ? (
+                <div className="p-3 text-center text-[12.5px] text-ink-muted">
+                  All items are healthy 🎉
                 </div>
-              ))}
+              ) : (
+                attention.map((s) => {
+                  const needsRestock =
+                    s.verdict === "Reorder now" || s.verdict === "Reorder soon";
+                  return (
+                    <div
+                      key={s.item.id}
+                      className="flex items-center gap-2.5 border-t border-line-soft py-2.5 first:border-t-0"
+                    >
+                      <div className="text-[22px]">{s.item.emoji || "📦"}</div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate text-[13.5px] font-bold">{s.item.name}</span>
+                          <span className={`badge ${verdictBadge[s.verdict]} flex-shrink-0`}>
+                            {s.verdict}
+                          </span>
+                        </div>
+                        <div className="text-[11.5px] text-ink-light">
+                          {s.item.qty} {s.item.unit} left
+                          {s.daysCover !== null && ` · ${s.daysCover.toFixed(0)}d cover`}
+                        </div>
+                      </div>
+                      {needsRestock && (
+                        <button
+                          className="rounded-[9px] bg-line-soft px-3 py-1.5 text-[12px] font-bold text-brown"
+                          onClick={() => setStockInOpen(true)}
+                        >
+                          Restock
+                        </button>
+                      )}
+                    </div>
+                  );
+                })
+              )}
             </div>
           )}
         </div>

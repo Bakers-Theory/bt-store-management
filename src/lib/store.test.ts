@@ -205,3 +205,71 @@ describe("login / seedOwner / clearAllData", () => {
     expect(s().users).toHaveLength(1); // users preserved
   });
 });
+
+describe("seedDemo", () => {
+  it("seeds items/bills/logs, a demo staff user, and the demo bakery when empty", () => {
+    s().seedDemo();
+    expect(s().items.length).toBeGreaterThan(0);
+    expect(s().bills.length).toBeGreaterThan(0);
+    expect(s().users.some((u) => u.userId === "staff01")).toBe(true);
+    expect(s().bakery.name).toBe("Bakers Theory");
+  });
+
+  it("is a no-op when real data already exists", () => {
+    s().saveItem(itemInput());
+    const before = s().items.length;
+    s().seedDemo();
+    expect(s().items).toHaveLength(before); // not overwritten
+    expect(s().bills).toHaveLength(0);
+  });
+
+  it("does not overwrite a customized bakery name", () => {
+    s().saveSettings({
+      name: "Real Bakery", tagline: "", address: "", phone: "", gst: "",
+      currency: "₹", taxRate: 0, lowStockAlert: 5,
+    });
+    // items/bills still empty, so demo items seed but bakery is preserved
+    s().seedDemo();
+    expect(s().bakery.name).toBe("Real Bakery");
+    expect(s().items.length).toBeGreaterThan(0);
+  });
+});
+
+describe("clearDemo", () => {
+  it("removes demo items/bills/logs, the demo staff user, and resets the demo bakery", () => {
+    s().seedDemo();
+    expect(s().items.length).toBeGreaterThan(0);
+    s().clearDemo();
+    expect(s().items).toHaveLength(0);
+    expect(s().bills).toHaveLength(0);
+    expect(s().logs).toHaveLength(0);
+    expect(s().users.some((u) => u.userId === "staff01")).toBe(false);
+    expect(s().bakery.name).toBe(DEFAULT_BAKERY.name);
+    expect(s().nextBillNo).toBe(1001);
+  });
+
+  it("preserves real data added alongside demo data", () => {
+    s().seedDemo();
+    s().saveItem(itemInput({ name: "Real Item" }));
+    s().clearDemo();
+    expect(s().items).toHaveLength(1);
+    expect(s().items[0].name).toBe("Real Item");
+    expect(s().items[0].id.startsWith("demo-")).toBe(false);
+  });
+
+  it("is a no-op when there is no demo data", () => {
+    s().saveItem(itemInput());
+    const before = s().items.length;
+    s().clearDemo();
+    expect(s().items).toHaveLength(before);
+    expect(s().bakery.name).toBe(DEFAULT_BAKERY.name);
+  });
+
+  it("logs out a session that was the demo staff user", () => {
+    s().seedDemo();
+    const staff = s().users.find((u) => u.userId === "staff01")!;
+    useBakeryStore.setState({ sessionUserId: staff.id });
+    s().clearDemo();
+    expect(s().sessionUserId).toBeNull();
+  });
+});

@@ -1,5 +1,10 @@
 import type { Bakery, Bill, BillLine, Item, Log } from "./types";
 import { isActiveBill } from "./format";
+import {
+  categoryPL as categoryPLData,
+  stockHealth as stockHealthData,
+  recommendations as recommendationsData,
+} from "./analytics";
 
 export interface ReportData {
   bakery: Bakery;
@@ -180,7 +185,39 @@ export function buildReportSheets(data: ReportData, now: Date) {
     }));
   if (stockLog.length === 0) stockLog.push({ Date: "No activity yet", Type: "", "Item / Bill": "", Qty: "", Details: "", Amount: "" });
 
-  return { summary, inventory, sales, growth, topItems, stockLog };
+  // ── 7. Category P&L (per-category profit & loss, active bills only) ──
+  const categoryPL: Record<string, string | number>[] = categoryPLData(bills, items).map((c) => ({
+    Category: c.category,
+    [`Revenue (${cur})`]: +c.revenue.toFixed(2),
+    [`COGS (${cur})`]: +c.cogs.toFixed(2),
+    [`Gross Profit (${cur})`]: +c.profit.toFixed(2),
+    "Margin %": c.marginPct !== null ? c.marginPct.toFixed(1) + "%" : "N/A",
+    "Revenue Share %": c.sharePct !== null ? c.sharePct.toFixed(1) + "%" : "N/A",
+  }));
+  if (categoryPL.length === 0)
+    categoryPL.push({ Category: "No sales yet", Revenue: 0, COGS: 0, "Gross Profit": 0, "Margin %": "N/A", "Revenue Share %": "N/A" });
+
+  // ── 8. Stock Health & Reorder (days-of-cover verdict per item) ──
+  const stockHealth: Record<string, string | number>[] = stockHealthData(bills, items, bakery.lowStockAlert).map((s) => ({
+    "Item Name": s.item.name,
+    Category: s.item.category || "General",
+    "Current Qty": s.item.qty,
+    "Units Sold": +s.sold.toFixed(2),
+    "Avg Sold / Day": +s.perDay.toFixed(2),
+    "Days of Cover": s.daysCover !== null ? +s.daysCover.toFixed(1) : "∞",
+    Verdict: s.verdict,
+  }));
+  if (stockHealth.length === 0)
+    stockHealth.push({ "Item Name": "No items yet", Category: "", "Current Qty": 0, "Units Sold": 0, "Avg Sold / Day": 0, "Days of Cover": "", Verdict: "" });
+
+  // ── 9. Recommendations (plain-language business boosters) ──
+  const recommendations = recommendationsData(bills, items, bakery.lowStockAlert, cur).map((r) => ({
+    Priority: r.priority,
+    Insight: r.insight,
+    Detail: r.detail,
+  }));
+
+  return { summary, inventory, sales, growth, topItems, stockLog, categoryPL, stockHealth, recommendations };
 }
 
 /** Build and download the Excel workbook. Loads `xlsx` on demand. */
@@ -198,6 +235,9 @@ export async function exportExcelReport(data: ReportData): Promise<ReportResult>
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheets.growth), "Growth Analysis");
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheets.topItems), "Top Selling Items");
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheets.stockLog), "Stock Log");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheets.categoryPL), "Category P&L");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheets.stockHealth), "Stock Health");
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheets.recommendations), "Recommendations");
 
   const safeName = (data.bakery.name || "Bakery").replace(/[^a-z0-9]/gi, "_");
   const fileName = `${safeName}_Report_${now.toISOString().slice(0, 10)}.xlsx`;
