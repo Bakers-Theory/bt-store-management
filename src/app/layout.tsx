@@ -19,12 +19,24 @@ const newsreader = Newsreader({
   weight: ["400", "500"],
   variable: "--font-newsreader",
   display: "swap",
+  // Next.js has no fallback metrics for Newsreader; skip the size-adjust
+  // fallback (and its build warning). Provide an explicit serif fallback.
+  adjustFontFallback: false,
+  fallback: ["Georgia", "Cambria", "Times New Roman", "serif"],
 });
 
 export const metadata: Metadata = {
   title: "Bakers Theory",
   description: "Bakers Theory — inventory, billing & analytics for your bakery",
   manifest: "/manifest.json",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon-16x16.png", type: "image/png", sizes: "16x16" },
+      { url: "/favicon-32x32.png", type: "image/png", sizes: "32x32" },
+    ],
+    apple: "/apple-touch-icon.png",
+  },
   appleWebApp: { capable: true, statusBarStyle: "default", title: "Bakers Theory" },
   other: { "mobile-web-app-capable": "yes" },
 };

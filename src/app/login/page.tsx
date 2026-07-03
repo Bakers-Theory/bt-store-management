@@ -69,7 +69,7 @@ export default function LoginPage() {
           </div>
           <div className="wordmark mt-3.5 text-[28px] leading-[1.1]">Bakers Theory</div>
           <div className="mt-1 text-[11.5px] font-bold tracking-[0.08em] text-ink-light">
-            STORE MANAGER
+            STORE MANAGEMENT
           </div>
         </div>
         <div className="mb-3.5 text-left">

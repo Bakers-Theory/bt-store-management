@@ -6,4 +6,4 @@ out
 .gstack/
 .superpowers
 docs
-scripts
+*.tsbuildinfo

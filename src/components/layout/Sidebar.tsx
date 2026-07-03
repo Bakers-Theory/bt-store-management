@@ -71,7 +71,7 @@ export function Sidebar() {
         </div>
         <div className="leading-[1.15]">
           <div className="wordmark text-xl text-ink">Bakers Theory</div>
-          <div className="text-[11px] font-semibold tracking-[.03em] text-ink-light">STORE MANAGER</div>
+          <div className="text-[11px] font-semibold tracking-[.03em] text-ink-light">STORE MANAGEMENT</div>
         </div>
       </div>
 

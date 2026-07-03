@@ -23,7 +23,6 @@ export const DEFAULT_BAKERY: Bakery = {
   address: "123 Baker Street",
   phone: "9876543210",
   gst: "",
-  logo: null,
   currency: "₹",
   taxRate: 0,
   lowStockAlert: 5,

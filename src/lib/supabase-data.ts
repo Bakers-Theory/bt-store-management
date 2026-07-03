@@ -60,7 +60,6 @@ interface SettingsRow {
   address: string;
   phone: string;
   gst: string;
-  logo_url: string | null;
   currency: string;
   tax_rate: number;
   low_stock_alert: number;
@@ -125,7 +124,6 @@ const mapBakery = (r: SettingsRow): Bakery => ({
   address: r.address,
   phone: r.phone,
   gst: r.gst,
-  logo: r.logo_url,
   currency: r.currency,
   taxRate: r.tax_rate,
   lowStockAlert: r.low_stock_alert,
@@ -162,7 +160,7 @@ export async function fetchStoreData(): Promise<StoreData> {
       ? mapBakery(settingsRes.data as SettingsRow)
       : mapBakery({
           name: "My Bakery", tagline: "", address: "", phone: "", gst: "",
-          logo_url: null, currency: "₹", tax_rate: 0, low_stock_alert: 5,
+          currency: "₹", tax_rate: 0, low_stock_alert: 5,
         }),
     items: ((itemsRes.data ?? []) as ItemRow[]).map(mapItem),
     bills: ((billsRes.data ?? []) as BillRow[]).map((b) =>
@@ -226,5 +224,4 @@ export const rpcSaveSettings = (p: {
   name: string; tagline: string; address: string; phone: string;
   gst: string; currency: string; taxRate: number; lowStockAlert: number;
 }) => rpc<void>("save_settings", { p });
-export const rpcUpdateLogo = (url: string | null) => rpc<void>("update_logo", { p_url: url });
 export const rpcClearAllData = () => rpc<void>("clear_all_data", {});
