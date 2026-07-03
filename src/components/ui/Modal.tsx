@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { X } from "lucide-react";
 
 interface ModalProps {
   title: string;
@@ -20,11 +21,11 @@ export function Modal({ title, onClose, children }: ModalProps) {
         <div className="mb-4 flex items-center justify-between">
           <h2 className="font-extrabold text-ink">{title}</h2>
           <button
-            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border-none bg-cream text-[22px] text-ink-muted"
+            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border-none bg-cream text-ink-muted"
             onClick={onClose}
             aria-label="Close"
           >
-            ✕
+            <X size={18} />
           </button>
         </div>
         {children}

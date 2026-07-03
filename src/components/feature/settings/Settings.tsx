@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Croissant, Download, Trash2, X } from "lucide-react";
 import { useBakeryStore, useCurrentUser } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { CURRENCIES } from "@/lib/constants";
@@ -55,21 +56,21 @@ export function Settings() {
       taxRate: parseFloat(taxRate) || 0,
       lowStockAlert: parseInt(lowStockAlert) || 5,
     });
-    toast("✅ Settings saved");
+    toast("Settings saved");
     router.push("/dashboard");
   };
 
   const doExport = async () => {
     const { bakery, items, bills, logs } = useBakeryStore.getState();
     const r = await exportExcelReport({ bakery, items, bills, logs });
-    toast(r.ok ? "📊 Excel report downloaded" : r.error ?? "Export failed");
+    toast(r.ok ? "Excel report downloaded" : r.error ?? "Export failed");
   };
 
   const clearData = () => {
     if (!confirm("This will delete all items, bills, and history. Are you sure?")) return;
     if (!confirm("Last chance — really delete everything?")) return;
     clearAllData();
-    toast("🗑 All data cleared");
+    toast("All data cleared");
     router.push("/dashboard");
   };
 
@@ -89,15 +90,20 @@ export function Settings() {
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={bakery.logo} className="mx-auto mb-2 block h-20 w-20 rounded-xl object-cover" alt="logo" />
               ) : (
-                <div className="mb-2 text-5xl">🧁</div>
+                <div className="mb-2 flex justify-center">
+                  <Croissant size={48} />
+                </div>
               )}
               <div className="text-[13px] text-ink-muted">Tap to upload logo</div>
               <div className="mt-1 text-[11px] text-ink-light">Appears on bills &amp; receipt</div>
             </div>
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onLogoFile} />
             {bakery.logo && (
-              <button className="mt-2 text-xs font-bold text-danger" onClick={() => removeLogo()}>
-                ✕ Remove logo
+              <button
+                className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-danger"
+                onClick={() => removeLogo()}
+              >
+                <X size={16} /> Remove logo
               </button>
             )}
           </div>
@@ -200,20 +206,20 @@ export function Settings() {
           Download a full Excel workbook with your inventory, sales, stock log and business growth analysis.
         </p>
         <button
-          className="w-full rounded-xl border-none bg-success p-3 text-sm font-bold text-warm-white"
+          className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border-none bg-success p-3 text-sm font-bold text-warm-white"
           onClick={doExport}
         >
-          ⬇ Download Excel report
+          <Download size={16} /> Download Excel report
         </button>
       </div>
 
       <div className="mt-4 rounded-[18px] border border-line bg-warm-white p-[22px] shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
         <h3 className="mb-2.5 text-[15.5px] font-extrabold text-danger">Danger zone</h3>
         <button
-          className="w-full rounded-xl border-none bg-danger p-2.5 text-sm font-bold text-warm-white"
+          className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border-none bg-danger p-2.5 text-sm font-bold text-warm-white"
           onClick={clearData}
         >
-          🗑 Clear all data
+          <Trash2 size={16} /> Clear all data
         </button>
       </div>
 

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Eye, Pencil, Plus, Trash2 } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { UserModal } from "./UserModal";
@@ -42,7 +43,7 @@ export function UserManagement() {
       router.replace("/login");
       return;
     }
-    if (r.ok) toast("🗑 User deleted");
+    if (r.ok) toast("User deleted");
   };
 
   const permPill = (label: string, on: boolean) => (
@@ -95,7 +96,7 @@ export function UserManagement() {
                 className="cursor-pointer rounded-md border-none bg-cream px-1.5 py-0.5 text-[11px]"
                 onClick={() => toggleReveal(u.id)}
               >
-                👁
+                <Eye size={14} />
               </button>
             </div>
             <div className="flex gap-1.5">
@@ -103,13 +104,13 @@ export function UserManagement() {
                 className="cursor-pointer rounded-lg border border-line bg-warm-white px-2.5 py-1.5 text-xs font-bold text-ink-muted"
                 onClick={() => setModal({ id: u.id })}
               >
-                ✏
+                <Pencil size={14} />
               </button>
               <button
                 className="cursor-pointer rounded-lg border-none bg-danger px-2.5 py-1.5 text-xs text-white"
                 onClick={() => remove(u.id, u.name)}
               >
-                🗑
+                <Trash2 size={14} />
               </button>
             </div>
           </div>
@@ -123,10 +124,10 @@ export function UserManagement() {
       <div className="mb-4 flex items-center justify-between">
         <h3 className="text-[15.5px] font-extrabold">Staff &amp; permissions</h3>
         <button
-          className="cursor-pointer rounded-[9px] border-none bg-[#f4e7d2] px-3 py-[7px] text-[12.5px] font-bold text-brown"
+          className="inline-flex cursor-pointer items-center gap-1.5 rounded-[9px] border-none bg-[#f4e7d2] px-3 py-[7px] text-[12.5px] font-bold text-brown"
           onClick={() => setModal({ id: null })}
         >
-          + Add staff
+          <Plus size={16} /> Add staff
         </button>
       </div>
 

@@ -223,7 +223,7 @@ export function buildReportSheets(data: ReportData, now: Date) {
 /** Build and download the Excel workbook. Loads `xlsx` on demand. */
 export async function exportExcelReport(data: ReportData): Promise<ReportResult> {
   if (data.items.length === 0 && data.bills.length === 0) {
-    return { ok: false, error: "⚠ No data yet to export" };
+    return { ok: false, error: "No data yet to export" };
   }
   const XLSX = await import("xlsx");
   const now = new Date();

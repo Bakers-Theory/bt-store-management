@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Search, Plus, PackagePlus, PackageMinus, Package, Pencil, Trash2 } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { CATS } from "@/lib/constants";
@@ -46,7 +47,7 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
   const remove = (id: string, name: string) => {
     requireOwnerAuth(`delete item "${name}"`, () => {
       deleteItem(id);
-      toast("🗑 Item deleted");
+      toast("Item deleted");
     });
   };
 
@@ -81,7 +82,7 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
       <div className="mb-3.5 flex flex-wrap items-center gap-3">
         <div className="relative min-w-[200px] flex-1">
           <span className="pointer-events-none absolute left-[13px] top-1/2 -translate-y-1/2 text-ink-light">
-            🔍
+            <Search size={16} />
           </span>
           <input
             type="text"
@@ -95,19 +96,19 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
           className="btn-primary flex items-center gap-1.5 whitespace-nowrap text-[13.5px]"
           onClick={() => setModal({ type: "add" })}
         >
-          ➕ Add item
+          <Plus size={16} /> Add item
         </button>
         <button
           className="btn-secondary flex items-center gap-1.5 whitespace-nowrap text-[13.5px]"
           onClick={() => setModal({ type: "stockin" })}
         >
-          📥 Add stock
+          <PackagePlus size={16} /> Add stock
         </button>
         <button
           className="btn-secondary flex items-center gap-1.5 whitespace-nowrap text-[13.5px]"
           onClick={() => setModal({ type: "stockout" })}
         >
-          📤 Stock out
+          <PackageMinus size={16} /> Stock out
         </button>
       </div>
 
@@ -130,7 +131,9 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
 
       {filtered.length === 0 ? (
         <div className="px-5 py-14 text-center text-ink-muted">
-          <div className="mb-3 text-5xl">📦</div>
+          <div className="mb-3 flex justify-center">
+            <Package size={48} />
+          </div>
           <p className="text-sm">No items found.</p>
         </div>
       ) : (
@@ -177,14 +180,14 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
                       onClick={() => setModal({ type: "edit", id: item.id })}
                       aria-label={`Edit ${item.name}`}
                     >
-                      ✏️
+                      <Pencil size={16} />
                     </button>
                     <button
                       className="flex h-7 w-7 items-center justify-center rounded-lg border-none bg-danger-bg text-sm text-danger"
                       onClick={() => remove(item.id, item.name)}
                       aria-label={`Delete ${item.name}`}
                     >
-                      🗑
+                      <Trash2 size={16} />
                     </button>
                   </div>
                 </div>
@@ -218,14 +221,14 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
                       onClick={() => setModal({ type: "edit", id: item.id })}
                       aria-label={`Edit ${item.name}`}
                     >
-                      ✏️
+                      <Pencil size={16} />
                     </button>
                     <button
                       className="flex h-7 w-7 items-center justify-center rounded-lg border-none bg-danger-bg text-sm text-danger"
                       onClick={() => remove(item.id, item.name)}
                       aria-label={`Delete ${item.name}`}
                     >
-                      🗑
+                      <Trash2 size={16} />
                     </button>
                   </div>
                 </div>
@@ -239,12 +242,12 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
         <ItemModal itemId={modal.id ?? null} onClose={closeModal} />
       )}
       {modal && modal.type === "stockin" && (
-        <Modal title="📥 Add Stock" onClose={closeModal}>
+        <Modal title="Add Stock" onClose={closeModal}>
           <StockInForm onSuccess={closeModal} />
         </Modal>
       )}
       {modal && modal.type === "stockout" && (
-        <Modal title="📤 Stock Out" onClose={closeModal}>
+        <Modal title="Stock Out" onClose={closeModal}>
           <StockOutForm onSuccess={closeModal} />
         </Modal>
       )}

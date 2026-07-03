@@ -1,6 +1,16 @@
 "use client";
 
 import { useState } from "react";
+import {
+  Ban,
+  ClipboardList,
+  PackageMinus,
+  PackagePlus,
+  Receipt as ReceiptIcon,
+  ReceiptText,
+  Search,
+  Trash2,
+} from "lucide-react";
 import { useBakeryStore, useCurrentUser } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { hasPermission } from "@/lib/permissions";
@@ -28,7 +38,7 @@ const chipCls = (active: boolean) =>
   }`;
 
 const logIcon = (t: Log["type"]) =>
-  t === "in" ? "📥" : t === "out" ? "📤" : t === "cancel" ? "🚫" : t === "delete" ? "🗑" : "🧾";
+  t === "in" ? PackagePlus : t === "out" ? PackageMinus : t === "cancel" ? Ban : t === "delete" ? Trash2 : ReceiptIcon;
 
 const logTone = (t: Log["type"]): "success" | "danger" | "brown" =>
   t === "in" ? "success" : t === "out" || t === "cancel" || t === "delete" ? "danger" : "brown";
@@ -86,13 +96,13 @@ export function History() {
     }
     if (!confirm(`Cancel Bill #${b.billNo}? Stock quantities will be restored.`)) return;
     const r = cancelBill(b.id, user?.name ?? "Unknown");
-    if (r.ok) toast(`🚫 Bill #${r.billNo} cancelled`);
+    if (r.ok) toast(`Bill #${r.billNo} cancelled`);
   };
 
   const doDelete = (b: Bill) => {
     requireOwnerAuth(`permanently delete Bill #${b.billNo}`, () => {
       const r = deleteBill(b.id, user?.name ?? "Unknown");
-      if (r.ok) toast(`🗑 Bill #${r.billNo} deleted`);
+      if (r.ok) toast(`Bill #${r.billNo} deleted`);
     });
   };
 
@@ -121,7 +131,7 @@ export function History() {
         <>
           <div className="mb-3.5 flex flex-wrap items-center gap-3">
             <div className="relative min-w-[200px] flex-1">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-base text-ink-light">🔍</span>
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-light" />
               <input
                 type="text"
                 placeholder="Search by bill # or customer…"
@@ -141,7 +151,9 @@ export function History() {
 
           {filteredBills.length === 0 ? (
             <div className="px-5 py-10 text-center text-ink-muted">
-              <div className="mb-3 text-5xl">🧾</div>
+              <div className="mb-3 flex justify-center">
+                <ReceiptText size={48} />
+              </div>
               <p className="text-sm">{bills.length === 0 ? "No bills generated yet" : "No bills match your search"}</p>
             </div>
           ) : (
@@ -169,22 +181,28 @@ export function History() {
                       {currency}{b.total.toFixed(2)}
                     </div>
                     <div className="flex shrink-0 gap-1.5">
-                      <button className="btn-sm btn-secondary" onClick={() => setViewBill(b)} aria-label="View bill">🧾</button>
+                      <button
+                        className="btn-sm btn-secondary inline-flex items-center justify-center"
+                        onClick={() => setViewBill(b)}
+                        aria-label="View bill"
+                      >
+                        <ReceiptIcon size={16} />
+                      </button>
                       {!cancelled && (
                         <button
-                          className="cursor-pointer rounded-lg border-none bg-warn px-2.5 py-1.5 text-xs text-white"
+                          className="inline-flex cursor-pointer items-center justify-center rounded-lg border-none bg-warn px-2.5 py-1.5 text-xs text-white"
                           onClick={() => doCancel(b)}
                           aria-label="Cancel bill"
                         >
-                          🚫
+                          <Ban size={16} />
                         </button>
                       )}
                       <button
-                        className="cursor-pointer rounded-lg border-none bg-danger px-2.5 py-1.5 text-xs text-white"
+                        className="inline-flex cursor-pointer items-center justify-center rounded-lg border-none bg-danger px-2.5 py-1.5 text-xs text-white"
                         onClick={() => doDelete(b)}
                         aria-label="Delete bill"
                       >
-                        🗑
+                        <Trash2 size={16} />
                       </button>
                     </div>
                   </div>
@@ -198,7 +216,9 @@ export function History() {
       {tab === "logs" && (
         logs.length === 0 ? (
           <div className="px-5 py-10 text-center text-ink-muted">
-            <div className="mb-3 text-5xl">📋</div>
+            <div className="mb-3 flex justify-center">
+              <ClipboardList size={48} />
+            </div>
             <p className="text-sm">No activity yet</p>
           </div>
         ) : (
@@ -207,10 +227,11 @@ export function History() {
               const tone = toneClasses[logTone(l.type)];
               const isStock = l.type === "in" || l.type === "out";
               const sign = l.type === "in" ? "+" : "−";
+              const Icon = logIcon(l.type);
               return (
                 <div key={l.id} className="flex items-center gap-3.5 border-t border-line-soft px-5 py-3.5 first:border-t-0">
-                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] text-[15px] font-extrabold ${tone.bg} ${tone.text}`}>
-                    {logIcon(l.type)}
+                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] ${tone.bg} ${tone.text}`}>
+                    <Icon size={18} />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-bold text-ink">

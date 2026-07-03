@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { LockOpen } from "lucide-react";
 import { useUIStore } from "@/lib/ui-store";
 import { useBakeryStore } from "@/lib/store";
 import { Modal } from "@/components/ui/Modal";
@@ -24,7 +25,7 @@ export function OwnerAuthHost() {
   };
   const confirm = () => {
     if (!owner || pwd !== owner.password) {
-      setErr("❌ Incorrect owner password");
+      setErr("Incorrect owner password");
       return;
     }
     const cb = req.onConfirm;
@@ -34,7 +35,7 @@ export function OwnerAuthHost() {
   };
 
   return (
-    <Modal title="🔒 Owner Authorization" onClose={dismiss}>
+    <Modal title="Owner Authorization" onClose={dismiss}>
       <p className="mb-3.5 text-[13px] text-ink-muted">
         This action ({req.label}) can only be authorized with the Owner&apos;s password.
       </p>
@@ -53,8 +54,8 @@ export function OwnerAuthHost() {
         />
       </div>
       {err && <div className="mb-2.5 text-[13px] font-semibold text-danger">{err}</div>}
-      <button className="btn-danger w-full" onClick={confirm}>
-        🔓 Confirm &amp; Continue
+      <button className="btn-danger inline-flex w-full items-center justify-center gap-1.5" onClick={confirm}>
+        <LockOpen size={16} /> Confirm &amp; Continue
       </button>
     </Modal>
   );

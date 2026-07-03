@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Check } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 
@@ -21,7 +22,7 @@ export function StockInForm({ onSuccess }: { onSuccess?: () => void } = {}) {
       setErr(r.error ?? "");
       return;
     }
-    toast(`✅ Added ${r.qty} ${r.unit} of ${r.name}`);
+    toast(`Added ${r.qty} ${r.unit} of ${r.name}`);
     setItemId("");
     setQty("");
     setSupplier("");
@@ -58,8 +59,8 @@ export function StockInForm({ onSuccess }: { onSuccess?: () => void } = {}) {
         <input type="text" placeholder="e.g. Morning delivery" value={notes} onChange={(e) => setNotes(e.target.value)} />
       </div>
       {err && <div className="mb-2.5 text-[13px] font-semibold text-danger">{err}</div>}
-      <button className="btn-success w-full" onClick={submit}>
-        ✅ Confirm Stock In
+      <button className="btn-success flex w-full items-center justify-center gap-2" onClick={submit}>
+        <Check size={16} /> Confirm Stock In
       </button>
     </div>
   );

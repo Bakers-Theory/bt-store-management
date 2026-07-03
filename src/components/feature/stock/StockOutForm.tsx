@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { PackageMinus } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { STOCK_OUT_REASONS } from "@/lib/constants";
@@ -22,7 +23,7 @@ export function StockOutForm({ onSuccess }: { onSuccess?: () => void } = {}) {
       setErr(r.error ?? "");
       return;
     }
-    toast(`📤 Removed ${r.qty} ${r.unit} of ${r.name}`);
+    toast(`Removed ${r.qty} ${r.unit} of ${r.name}`);
     setItemId("");
     setQty("");
     setReason(STOCK_OUT_REASONS[0]);
@@ -63,8 +64,8 @@ export function StockOutForm({ onSuccess }: { onSuccess?: () => void } = {}) {
         <input type="text" placeholder="Additional notes..." value={notes} onChange={(e) => setNotes(e.target.value)} />
       </div>
       {err && <div className="mb-2.5 text-[13px] font-semibold text-danger">{err}</div>}
-      <button className="btn-danger w-full" onClick={submit}>
-        📤 Confirm Stock Out
+      <button className="btn-danger flex w-full items-center justify-center gap-2" onClick={submit}>
+        <PackageMinus size={16} /> Confirm Stock Out
       </button>
     </div>
   );

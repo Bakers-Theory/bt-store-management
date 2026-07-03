@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { AlertTriangle, Lightbulb, Package, Download, Receipt, Plus } from "lucide-react";
 import { useBakeryStore, useCurrentUser } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { hasPermission } from "@/lib/permissions";
@@ -116,14 +117,14 @@ export function Dashboard() {
   const doExport = async () => {
     const { bakery, items, bills, logs } = useBakeryStore.getState();
     const r = await exportExcelReport({ bakery, items, bills, logs });
-    toast(r.ok ? "📊 Excel report downloaded" : r.error ?? "Export failed");
+    toast(r.ok ? "Excel report downloaded" : r.error ?? "Export failed");
   };
 
   return (
     <>
       {lowStock > 0 && (
-        <div className="mb-3 rounded-xl border border-[#ecd9a8] bg-warn-bg px-3.5 py-3 text-[13px] font-semibold text-warn">
-          ⚠ {lowStock} item{lowStock > 1 ? "s" : ""} running low on stock!
+        <div className="mb-3 flex items-center gap-1.5 rounded-xl border border-[#ecd9a8] bg-warn-bg px-3.5 py-3 text-[13px] font-semibold text-warn">
+          <AlertTriangle size={16} /> {lowStock} item{lowStock > 1 ? "s" : ""} running low on stock!
         </div>
       )}
 
@@ -168,7 +169,7 @@ export function Dashboard() {
         <div className="rounded-[18px] border border-[#ecd9a8] bg-warn-bg p-[18px_20px]">
           <div className="flex items-center justify-between">
             <span className="text-[12.5px] font-semibold text-warn">Low Stock</span>
-            <span>⚠</span>
+            <AlertTriangle size={16} />
           </div>
           <div className="num mt-2 text-[28px] font-extrabold tracking-tight text-warn">
             {lowStock}
@@ -241,7 +242,9 @@ export function Dashboard() {
 
               <div className="card">
                 <div className="card-header">
-                  <h3>💡 Business Boosters</h3>
+                  <h3 className="flex items-center gap-1.5">
+                    <Lightbulb size={16} /> Business Boosters
+                  </h3>
                 </div>
                 {recs.map((r, idx) => (
                   <div
@@ -259,8 +262,8 @@ export function Dashboard() {
                 ))}
               </div>
 
-              <button className="btn-success w-full p-3 text-sm" onClick={doExport}>
-                📊 Download Excel Report
+              <button className="btn-success flex w-full items-center justify-center gap-2 p-3 text-sm" onClick={doExport}>
+                <Download size={16} /> Download Excel Report
               </button>
             </>
           )}
@@ -318,21 +321,27 @@ export function Dashboard() {
             </div>
             <div className="flex flex-col gap-2.5">
               {hasPermission(user, "sales") && (
-                <button className="btn-primary p-3.5 text-sm" onClick={() => router.push("/bill")}>
-                  🧾 Create new bill
+                <button
+                  className="btn-primary flex items-center justify-center gap-2 p-3.5 text-sm"
+                  onClick={() => router.push("/bill")}
+                >
+                  <Receipt size={16} /> Create new bill
                 </button>
               )}
               {hasPermission(user, "inventory") && (
                 <button
-                  className="btn-secondary p-3.5 text-sm"
+                  className="btn-secondary flex items-center justify-center gap-2 p-3.5 text-sm"
                   onClick={() => setStockInOpen(true)}
                 >
-                  ➕ Add stock
+                  <Plus size={16} /> Add stock
                 </button>
               )}
               {hasPermission(user, "inventory") && (
-                <button className="btn-secondary p-3.5 text-sm" onClick={() => setAddOpen(true)}>
-                  📦 Add Item
+                <button
+                  className="btn-secondary flex items-center justify-center gap-2 p-3.5 text-sm"
+                  onClick={() => setAddOpen(true)}
+                >
+                  <Plus size={16} /> Add Item
                 </button>
               )}
             </div>
@@ -341,7 +350,9 @@ export function Dashboard() {
           {hasPermission(user, "inventory") && (
             <div className="card">
               <div className="card-header flex items-center justify-between">
-                <h3>📦 Stock Health</h3>
+                <h3 className="flex items-center gap-1.5">
+                  <Package size={16} /> Stock Health
+                </h3>
                 {attention.length > 0 && (
                   <span className="rounded-full bg-warn-bg px-2.5 py-0.5 text-[11px] font-bold text-warn">
                     {attention.length}
@@ -350,7 +361,7 @@ export function Dashboard() {
               </div>
               {attention.length === 0 ? (
                 <div className="p-3 text-center text-[12.5px] text-ink-muted">
-                  All items are healthy 🎉
+                  All items are healthy
                 </div>
               ) : (
                 attention.map((s) => {

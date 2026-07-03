@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Check, Printer, Receipt as ReceiptIcon, ShoppingBasket } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { computeTotals } from "@/lib/bill";
@@ -177,7 +178,9 @@ export function Bill() {
 
           {lines.length === 0 ? (
             <div className="p-11 text-center text-ink-light">
-              <div className="mb-2 text-[34px]">🧺</div>
+              <div className="mb-2 flex justify-center">
+                <ShoppingBasket size={34} />
+              </div>
               <div className="text-[13.5px] font-semibold">Tap products to add them here</div>
             </div>
           ) : (
@@ -244,7 +247,8 @@ export function Bill() {
                   onClick={generate}
                   className="mt-3.5 flex w-full items-center justify-center gap-2 rounded-[13px] border-none bg-brown p-3.5 text-[15px] font-extrabold text-warm-white shadow-[0_4px_14px_rgba(124,74,30,.3)]"
                 >
-                  🧾 Generate bill · {currency}
+                  <ReceiptIcon size={16} />
+                  Generate bill · {currency}
                   {total.toFixed(2)}
                 </button>
               </div>
@@ -257,8 +261,15 @@ export function Bill() {
         <Modal title={`Bill #${receipt.billNo}`} onClose={done}>
           <Receipt bill={receipt} />
           <div className="mt-4 flex gap-2.5">
-            <button className="btn-primary flex-1" onClick={() => requestPrint(receipt)}>🖨 Print</button>
-            <button className="btn-secondary flex-1" onClick={done}>✅ Done</button>
+            <button
+              className="btn-primary flex flex-1 items-center justify-center gap-2"
+              onClick={() => requestPrint(receipt)}
+            >
+              <Printer size={16} /> Print
+            </button>
+            <button className="btn-secondary flex flex-1 items-center justify-center gap-2" onClick={done}>
+              <Check size={16} /> Done
+            </button>
           </div>
           <div className="mt-2.5 text-center text-xs text-ink-muted">
             Print to a 3&quot; (76mm) thermal printer

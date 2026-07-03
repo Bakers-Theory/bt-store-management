@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Lock, Save, Check, Info } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
@@ -57,8 +58,8 @@ export function ItemModal({
       itemId ?? undefined,
     );
     if (r.kind === "merged")
-      toast(`ℹ️ "${r.name}" already exists — added ${r.qty} ${r.unit} to its stock`);
-    else toast(r.kind === "updated" ? "✅ Item updated" : "✅ Item added");
+      toast(`"${r.name}" already exists — added ${r.qty} ${r.unit} to its stock`);
+    else toast(r.kind === "updated" ? "Item updated" : "Item added");
     onClose();
   };
 
@@ -103,9 +104,12 @@ export function ItemModal({
         )}
         {nameErr && <div className="mt-1.5 text-[13px] font-semibold text-danger">{nameErr}</div>}
         {dup && (
-          <div className="mt-1.5 text-xs text-warn">
-            ℹ️ &quot;{dup.name}&quot; already exists ({dup.qty} {dup.unit} in stock) — saving
-            will add to its stock instead of creating a new item.
+          <div className="mt-1.5 flex items-start gap-1.5 text-xs text-warn">
+            <Info size={14} className="mt-0.5 flex-shrink-0" />
+            <span>
+              &quot;{dup.name}&quot; already exists ({dup.qty} {dup.unit} in stock) — saving
+              will add to its stock instead of creating a new item.
+            </span>
           </div>
         )}
       </div>
@@ -168,11 +172,19 @@ export function ItemModal({
         />
       </div>
 
-      <div className="mb-3 text-[11px] text-ink-light">
-        🔒 Bought price is for your records only — it never appears on printed bills.
+      <div className="mb-3 flex items-center gap-1.5 text-[11px] text-ink-light">
+        <Lock size={14} /> Bought price is for your records only — it never appears on printed bills.
       </div>
-      <button className="btn-primary w-full" onClick={save}>
-        {itemId ? "💾 Save Changes" : "✅ Add Item"}
+      <button className="btn-primary flex w-full items-center justify-center gap-2" onClick={save}>
+        {itemId ? (
+          <>
+            <Save size={16} /> Save Changes
+          </>
+        ) : (
+          <>
+            <Check size={16} /> Add Item
+          </>
+        )}
       </button>
     </Modal>
   );

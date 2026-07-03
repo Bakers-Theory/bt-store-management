@@ -132,7 +132,7 @@ export const useBakeryStore = create<StoreState>()(
         const user = get().users.find(
           (u) => u.userId === userId && u.password === password,
         );
-        if (!user) return { ok: false, error: "❌ Invalid User ID or Password" };
+        if (!user) return { ok: false, error: "Invalid User ID or Password" };
         set({ sessionUserId: user.id });
         return { ok: true, user };
       },

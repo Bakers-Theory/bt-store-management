@@ -43,7 +43,7 @@ export function UserModal({
       setErr(r.error ?? "");
       return;
     }
-    toast(userId ? "✅ User updated" : "✅ User created");
+    toast(userId ? "User updated" : "User created");
     onClose();
   };
 

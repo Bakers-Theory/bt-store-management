@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { LogOut } from "lucide-react";
 import { useBakeryStore, useCurrentUser } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 
@@ -30,7 +31,7 @@ export function MyAccount() {
       setErr(r.error ?? "");
       return;
     }
-    toast("✅ Password updated");
+    toast("Password updated");
     setPassword("");
     setErr("");
   };
@@ -95,10 +96,10 @@ export function MyAccount() {
       </div>
 
       <button
-        className="w-full rounded-xl border-none bg-danger p-3 text-sm font-bold text-warm-white"
+        className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border-none bg-danger p-3 text-sm font-bold text-warm-white"
         onClick={doLogout}
       >
-        🚪 Logout
+        <LogOut size={16} /> Logout
       </button>
     </>
   );

@@ -1,5 +1,6 @@
 "use client";
 
+import { Printer } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useUIStore } from "@/lib/ui-store";
 import { Receipt } from "./Receipt";
@@ -11,10 +12,10 @@ export function ViewBillModal({ bill, onClose }: { bill: Bill; onClose: () => vo
     <Modal title={`Bill #${bill.billNo}`} onClose={onClose}>
       <Receipt bill={bill} />
       <button
-        className="btn-primary mt-4 w-full"
+        className="btn-primary mt-4 flex w-full items-center justify-center gap-2"
         onClick={() => requestPrint(bill)}
       >
-        🖨 Print (3&quot; Thermal)
+        <Printer size={16} /> Print (3&quot; Thermal)
       </button>
     </Modal>
   );

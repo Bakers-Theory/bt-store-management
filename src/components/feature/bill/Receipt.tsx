@@ -1,5 +1,6 @@
 "use client";
 
+import { Croissant, Phone } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import type { Bill } from "@/lib/types";
 
@@ -21,12 +22,18 @@ export function Receipt({ bill }: { bill: Bill }) {
           // eslint-disable-next-line @next/next/no-img-element
           <img src={b.logo} className="receipt-logo" alt="logo" />
         ) : (
-          <div className="receipt-logo-placeholder">🧁</div>
+          <div className="receipt-logo-placeholder flex items-center justify-center">
+            <Croissant size={20} />
+          </div>
         )}
         <div className="text-[15px] font-bold">{b.name}</div>
         {b.tagline && <div className="text-[11px]">{b.tagline}</div>}
         {b.address && <div className="text-[10px]">{b.address}</div>}
-        {b.phone && <div className="text-[10px]">📞 {b.phone}</div>}
+        {b.phone && (
+          <div className="flex items-center justify-center gap-1 text-[10px]">
+            <Phone size={10} /> {b.phone}
+          </div>
+        )}
         {b.gst && <div className="text-[10px]">GST: {b.gst}</div>}
       </div>
       <div className="receipt-divider" />
@@ -73,7 +80,7 @@ export function Receipt({ bill }: { bill: Bill }) {
       <div className="receipt-center mt-1.5 text-[11px]">
         Thank you for your visit!
         <br />
-        Please come again 🙏
+        Please come again
       </div>
     </div>
   );
