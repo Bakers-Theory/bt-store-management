@@ -10,6 +10,7 @@ import { CURRENCIES } from "@/lib/constants";
 import { exportExcelReport } from "@/lib/excel";
 import { MyAccount } from "./MyAccount";
 import { UserManagement } from "./UserManagement";
+import { ChangePasswordCard } from "./ChangePasswordCard";
 
 const inputCls =
   "w-full rounded-[11px] border border-line bg-cream px-[13px] py-[11px] text-sm outline-none focus:border-brown";
@@ -163,36 +164,47 @@ export function Settings() {
         <UserManagement />
       </div>
 
-      <div className="mt-4 grid items-start gap-4 lg:grid-cols-2">
-        <div className="rounded-[18px] border border-line bg-warm-white p-[22px] shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
-          <h3 className="mb-1.5 text-[15.5px] font-extrabold">Reports</h3>
-          <p className="mb-3 text-xs text-ink-muted">
-            Download a full Excel workbook with your inventory, sales, stock log and business growth analysis.
-          </p>
-          <button
-            className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border-none bg-success p-3 text-sm font-bold text-warm-white"
-            onClick={doExport}
-          >
-            <Download size={16} /> Download Excel report
-          </button>
-        </div>
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <ChangePasswordCard />
+        <div className="hidden lg:block" />
+      </div>
 
-        <div className="rounded-[18px] border border-line bg-warm-white p-[22px] shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
-          <h3 className="mb-1.5 text-[15.5px] font-extrabold text-danger">Danger zone</h3>
-          <p className="mb-3 text-xs text-ink-muted">
-            Permanently delete all items, bills and stock history. This cannot be undone.
-          </p>
-          <button
-            className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border-none bg-danger p-3 text-sm font-bold text-warm-white"
-            onClick={clearData}
-          >
-            <Trash2 size={16} /> Clear all data
-          </button>
+      {/* Data & reports — separate, outlined section */}
+      <div className="mt-4 rounded-[20px] border border-line-strong p-4 lg:p-5">
+        <div className="mb-3 px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-light">
+          Data &amp; reports
+        </div>
+        <div className="grid items-start gap-4 lg:grid-cols-2">
+          <div className="rounded-[18px] border border-line bg-warm-white p-[22px] shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
+            <h3 className="mb-1.5 text-[15.5px] font-extrabold">Reports</h3>
+            <p className="mb-3 text-xs text-ink-muted">
+              Download a full Excel workbook with your inventory, sales, stock log and business growth analysis.
+            </p>
+            <button
+              className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border-none bg-success p-3 text-sm font-bold text-warm-white"
+              onClick={doExport}
+            >
+              <Download size={16} /> Download Excel report
+            </button>
+          </div>
+
+          <div className="rounded-[18px] border border-line bg-warm-white p-[22px] shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
+            <h3 className="mb-1.5 text-[15.5px] font-extrabold text-danger">Danger zone</h3>
+            <p className="mb-3 text-xs text-ink-muted">
+              Permanently delete all items, bills and stock history. This cannot be undone.
+            </p>
+            <button
+              className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border-none bg-danger p-3 text-sm font-bold text-warm-white"
+              onClick={clearData}
+            >
+              <Trash2 size={16} /> Clear all data
+            </button>
+          </div>
         </div>
       </div>
 
       <div className="p-5 text-center text-xs text-ink-light">
-        Bakers Theory v0.1
+        Bakers Theory v0.1.0
       </div>
     </>
   );

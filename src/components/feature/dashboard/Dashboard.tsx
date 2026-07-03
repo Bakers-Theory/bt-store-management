@@ -179,22 +179,64 @@ export function Dashboard() {
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_372px]">
-        {/* LEFT COLUMN */}
-        <div className="flex min-w-0 flex-col gap-4">
-          {hasPermission(user, "analytics") && (
-            <>
-              <div className="card">
-                <div className="card-header">
-                  <h3>Sales this week</h3>
-                </div>
-                <SalesChart data={chartData} currency={currency} />
+      <div className="flex flex-col gap-4">
+        {/* Hero row — primary chart + quick actions kept equal height so the
+            cards beneath them line up across the two columns. */}
+        <div className="grid gap-4 lg:grid-cols-[1fr_372px] lg:items-stretch">
+          {hasPermission(user, "analytics") ? (
+            <div className="card">
+              <div className="card-header">
+                <h3>Sales this week</h3>
               </div>
+              <SalesChart data={chartData} currency={currency} />
+            </div>
+          ) : (
+            <div className="hidden lg:block" />
+          )}
 
-              <div className="card">
-                <div className="card-header">
-                  <h3>Top items</h3>
-                </div>
+          <div className="card">
+            <div className="card-header">
+              <h3>Quick Actions</h3>
+            </div>
+            <div className="flex flex-col gap-2.5">
+              {hasPermission(user, "sales") && (
+                <button
+                  className="btn-primary flex items-center justify-center gap-2 p-3.5 text-sm"
+                  onClick={() => router.push("/bill")}
+                >
+                  <Receipt size={16} /> Create new bill
+                </button>
+              )}
+              {hasPermission(user, "inventory") && (
+                <button
+                  className="btn-secondary flex items-center justify-center gap-2 p-3.5 text-sm"
+                  onClick={() => setStockInOpen(true)}
+                >
+                  <Plus size={16} /> Add stock
+                </button>
+              )}
+              {hasPermission(user, "inventory") && (
+                <button
+                  className="btn-secondary flex items-center justify-center gap-2 p-3.5 text-sm"
+                  onClick={() => setAddOpen(true)}
+                >
+                  <Plus size={16} /> Add Item
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Remaining content in two columns */}
+        <div className="grid gap-4 lg:grid-cols-[1fr_372px] lg:items-start">
+          {/* LEFT COLUMN */}
+          <div className="flex min-w-0 flex-col gap-4">
+            {hasPermission(user, "analytics") && (
+              <>
+                <div className="card">
+                  <div className="card-header">
+                    <h3>Top items</h3>
+                  </div>
                 <TopItemsChart data={topItemsData} />
               </div>
 
@@ -314,41 +356,9 @@ export function Dashboard() {
           </div>
         </div>
 
-        {/* RIGHT COLUMN */}
-        <div className="flex min-w-0 flex-col gap-4">
-          <div className="card">
-            <div className="card-header">
-              <h3>Quick Actions</h3>
-            </div>
-            <div className="flex flex-col gap-2.5">
-              {hasPermission(user, "sales") && (
-                <button
-                  className="btn-primary flex items-center justify-center gap-2 p-3.5 text-sm"
-                  onClick={() => router.push("/bill")}
-                >
-                  <Receipt size={16} /> Create new bill
-                </button>
-              )}
-              {hasPermission(user, "inventory") && (
-                <button
-                  className="btn-secondary flex items-center justify-center gap-2 p-3.5 text-sm"
-                  onClick={() => setStockInOpen(true)}
-                >
-                  <Plus size={16} /> Add stock
-                </button>
-              )}
-              {hasPermission(user, "inventory") && (
-                <button
-                  className="btn-secondary flex items-center justify-center gap-2 p-3.5 text-sm"
-                  onClick={() => setAddOpen(true)}
-                >
-                  <Plus size={16} /> Add Item
-                </button>
-              )}
-            </div>
-          </div>
-
-          {hasPermission(user, "inventory") && (
+          {/* RIGHT COLUMN */}
+          <div className="flex min-w-0 flex-col gap-4">
+            {hasPermission(user, "inventory") && (
             <div className="card">
               <div className="card-header flex items-center justify-between">
                 <h3 className="flex items-center gap-1.5">
@@ -400,6 +410,7 @@ export function Dashboard() {
               )}
             </div>
           )}
+          </div>
         </div>
       </div>
 
