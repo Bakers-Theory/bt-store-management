@@ -6,7 +6,6 @@ import { Download, Trash2 } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { useUIStore } from "@/lib/ui-store";
-import { CURRENCIES } from "@/lib/constants";
 import { exportExcelReport } from "@/lib/excel";
 import { MyAccount } from "./MyAccount";
 import { UserManagement } from "./UserManagement";
@@ -29,7 +28,6 @@ export function Settings() {
   const [address, setAddress] = useState(bakery.address);
   const [phone, setPhone] = useState(bakery.phone);
   const [gst, setGst] = useState(bakery.gst);
-  const [currency, setCurrency] = useState(bakery.currency);
   const [taxRate, setTaxRate] = useState(String(bakery.taxRate));
   const [lowStockAlert, setLowStockAlert] = useState(String(bakery.lowStockAlert));
 
@@ -43,7 +41,7 @@ export function Settings() {
       address: address.trim(),
       phone: phone.trim(),
       gst: gst.trim(),
-      currency,
+      currency: "₹",
       taxRate: parseFloat(taxRate) || 0,
       lowStockAlert: parseInt(lowStockAlert) || 5,
     });
@@ -121,14 +119,6 @@ export function Settings() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className={labelCls}>Currency</label>
-                <select className={inputCls} value={currency} onChange={(e) => setCurrency(e.target.value)}>
-                  {CURRENCIES.map((c) => (
-                    <option key={c}>{c}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
                 <label className={labelCls}>Tax rate (%)</label>
                 <input
                   type="number"
@@ -140,16 +130,16 @@ export function Settings() {
                   onChange={(e) => setTaxRate(e.target.value)}
                 />
               </div>
-            </div>
-            <div>
-              <label className={labelCls}>Low-stock alert threshold</label>
-              <input
-                type="number"
-                min="0"
-                className={inputCls}
-                value={lowStockAlert}
-                onChange={(e) => setLowStockAlert(e.target.value)}
-              />
+              <div>
+                <label className={labelCls}>Low-stock alert threshold</label>
+                <input
+                  type="number"
+                  min="0"
+                  className={inputCls}
+                  value={lowStockAlert}
+                  onChange={(e) => setLowStockAlert(e.target.value)}
+                />
+              </div>
             </div>
             <button
               onClick={save}

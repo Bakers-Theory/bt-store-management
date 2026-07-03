@@ -88,6 +88,35 @@
  * plus the thermal receipt, which the @media print block below targets by class.
  * Everything else is styled with Tailwind utilities directly in the JSX.
  */
+@layer base {
+  /* Every button gets a pointer cursor + consistent hover/press/focus feedback,
+     so icon buttons and one-off styled buttons behave like the primary ones. */
+  button:not(:disabled) {
+    cursor: pointer;
+    transition:
+      filter 0.15s ease,
+      background 0.15s ease,
+      opacity 0.15s ease,
+      box-shadow 0.15s ease,
+      transform 0.06s ease;
+  }
+  button:not(:disabled):hover {
+    filter: brightness(0.94);
+  }
+  button:not(:disabled):active {
+    transform: translateY(1px);
+    filter: brightness(0.88);
+  }
+  button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+  button:focus-visible {
+    outline: 2px solid var(--color-brown);
+    outline-offset: 2px;
+  }
+}
+
 @layer components {
   .btn-primary,
   .btn-secondary,

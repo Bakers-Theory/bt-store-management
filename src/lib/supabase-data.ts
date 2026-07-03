@@ -155,13 +155,12 @@ export async function fetchStoreData(): Promise<StoreData> {
     linesByBill.set(row.bill_id, arr);
   }
 
+  if (!settingsRes.data) {
+    throw new Error("Store settings not found in Supabase");
+  }
+
   return {
-    bakery: settingsRes.data
-      ? mapBakery(settingsRes.data as SettingsRow)
-      : mapBakery({
-          name: "My Bakery", tagline: "", address: "", phone: "", gst: "",
-          currency: "₹", tax_rate: 0, low_stock_alert: 5,
-        }),
+    bakery: mapBakery(settingsRes.data as SettingsRow),
     items: ((itemsRes.data ?? []) as ItemRow[]).map(mapItem),
     bills: ((billsRes.data ?? []) as BillRow[]).map((b) =>
       mapBill(b, linesByBill.get(b.id) ?? []),

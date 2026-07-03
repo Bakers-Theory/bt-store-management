@@ -110,7 +110,7 @@ export function Bill() {
               <button
                 key={c}
                 onClick={() => setCategory(c)}
-                className={`shrink-0 whitespace-nowrap rounded-full px-[15px] py-[7px] text-[13px] font-bold ${
+                className={`shrink-0 whitespace-nowrap rounded-full px-[15px] py-[7px] text-[13px] font-bold cursor-pointer ${
                   category === c
                     ? "border border-brown bg-brown text-warm-white"
                     : "border border-line bg-warm-white text-ink-muted"

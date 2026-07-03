@@ -1,7 +1,17 @@
 import { describe, it, expect } from "vitest";
 import { buildReportSheets } from "./excel";
-import type { Bill, Item } from "./types";
-import { DEFAULT_BAKERY } from "./constants";
+import type { Bakery, Bill, Item } from "./types";
+
+const DEFAULT_BAKERY: Bakery = {
+  name: "My Bakery",
+  tagline: "Fresh & Delicious",
+  address: "123 Baker Street",
+  phone: "9876543210",
+  gst: "",
+  currency: "₹",
+  taxRate: 0,
+  lowStockAlert: 5,
+};
 
 const item: Item = {
   id: "i1", name: "Bread", emoji: "🍞", category: "Breads", unit: "pcs",

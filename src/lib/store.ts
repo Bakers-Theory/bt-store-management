@@ -2,7 +2,6 @@
 
 import { create } from "zustand";
 import type { Bakery, Bill, BillLine, Item, Log, Permissions } from "./types";
-import { DEFAULT_BAKERY } from "./constants";
 import {
   fetchStoreData,
   rpcCancelBill,
@@ -86,8 +85,22 @@ interface StoreState {
 const errMsg = (e: unknown): string =>
   e instanceof Error ? e.message : "Something went wrong";
 
+// Neutral placeholder for the store's initial state only. The real profile is
+// loaded from Supabase (`store_settings`); the app is gated on `_hasHydrated`
+// so this is never rendered.
+const PLACEHOLDER_BAKERY: Bakery = {
+  name: "",
+  tagline: "",
+  address: "",
+  phone: "",
+  gst: "",
+  currency: "₹",
+  taxRate: 0,
+  lowStockAlert: 5,
+};
+
 export const useBakeryStore = create<StoreState>()((set, get) => ({
-  bakery: { ...DEFAULT_BAKERY },
+  bakery: PLACEHOLDER_BAKERY,
   items: [],
   bills: [],
   logs: [],

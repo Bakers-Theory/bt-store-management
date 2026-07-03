@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthReady, useCurrentUser } from "@/components/system/AuthProvider";
+import { useBakeryStore } from "@/lib/store";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { BottomNav } from "@/components/layout/BottomNav";
@@ -11,12 +12,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const ready = useAuthReady();
   const user = useCurrentUser();
+  const hydrated = useBakeryStore((s) => s._hasHydrated);
 
   useEffect(() => {
     if (ready && !user) router.replace("/login");
   }, [ready, user, router]);
 
   if (!ready || !user) return null;
+  // Wait for the Supabase-backed store to load before rendering, so views never
+  // flash the placeholder profile and initialise from real data.
+  if (!hydrated) return null;
 
   return (
     <div className="flex min-h-screen bg-cream">
