@@ -25,31 +25,41 @@ const AuthContext = createContext<AuthContextValue>({
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const supabase = useMemo(() => createClient(), []);
+  const [uid, setUid] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [ready, setReady] = useState(false);
 
-  const loadProfile = async (userId: string | undefined) => {
-    if (!userId) {
-      setUser(null);
-      return;
-    }
-    const { data } = await supabase
-      .from("profiles")
-      .select(PROFILE_COLUMNS)
-      .eq("id", userId)
-      .single();
-    setUser(data ? profileToUser(data as ProfileRow) : null);
-  };
-
+  // Track the auth session. IMPORTANT: keep this callback SYNCHRONOUS — awaiting
+  // a Supabase DB call inside onAuthStateChange can deadlock on the auth lock
+  // (notably on a hard reload), leaving `ready` stuck false and the page blank.
   useEffect(() => {
-    // onAuthStateChange fires immediately with the current session (INITIAL_SESSION).
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      await loadProfile(session?.user?.id);
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUid(session?.user?.id ?? null);
       setReady(true);
     });
     return () => sub.subscription.unsubscribe();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supabase]);
+
+  // Fetch the profile whenever the signed-in user changes — OUTSIDE the auth
+  // callback, so it doesn't contend with the auth lock.
+  useEffect(() => {
+    if (!uid) {
+      setUser(null);
+      return;
+    }
+    let active = true;
+    supabase
+      .from("profiles")
+      .select(PROFILE_COLUMNS)
+      .eq("id", uid)
+      .single()
+      .then(({ data }) => {
+        if (active) setUser(data ? profileToUser(data as ProfileRow) : null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [uid, supabase]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -57,10 +67,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       ready,
       refresh: async () => {
         const { data } = await supabase.auth.getUser();
-        await loadProfile(data.user?.id);
+        const id = data.user?.id;
+        if (!id) {
+          setUser(null);
+          return;
+        }
+        const { data: prof } = await supabase
+          .from("profiles")
+          .select(PROFILE_COLUMNS)
+          .eq("id", id)
+          .single();
+        setUser(prof ? profileToUser(prof as ProfileRow) : null);
       },
       signOut: async () => {
         await supabase.auth.signOut();
+        setUid(null);
         setUser(null);
       },
     }),
