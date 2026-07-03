@@ -27,18 +27,6 @@ npm run typecheck
 npm run lint
 ```
 
-## Demo data (test mode)
-
-Set `NEXT_PUBLIC_APP_ENV=test` to auto-load a demo dataset (10 items across
-categories, ~20 bills spanning ~2.5 months, matching logs, a demo staff user,
-and a demo bakery identity) so the dashboard, analytics and Excel report have
-realistic data to show:
-
-Demo data is seeded **only when the store is empty**, so it never overwrites
-real data. To reset, clear site data (or use Settings → Clear All Data) and
-reload with the flag set. The demo staff login is `staff01` / `staff123`
-(Sales + Inventory, no Analytics — to demo role-based access).
-
 ## Default login
 
 A fixed **Owner** account is always seeded:

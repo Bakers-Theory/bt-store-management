@@ -13,7 +13,6 @@ import type {
 } from "./types";
 import { DEFAULT_BAKERY, makeOwner } from "./constants";
 import { computeTotals } from "./bill";
-import { buildDemoData, DEMO_BAKERY, DEMO_STAFF } from "./demo";
 import { round3, uid } from "./format";
 
 // ─── Action result types ──────────────────────────────────────────────
@@ -66,8 +65,6 @@ export interface SettingsInput {
 interface Actions {
   setHasHydrated: () => void;
   seedOwner: () => void;
-  seedDemo: () => void;
-  clearDemo: () => void;
   login: (userId: string, password: string) => Result & { user?: User };
   logout: () => void;
 
@@ -126,58 +123,6 @@ export const useBakeryStore = create<StoreState>()(
         if (!users.some((u) => u.role === "Owner")) {
           set({ users: [makeOwner(), ...users] });
         }
-      },
-
-      // Populate demo data (test/demo builds only). No-op if any real data
-      // already exists, so it never clobbers a user's store.
-      seedDemo: () => {
-        const state = get();
-        if (state.items.length > 0 || state.bills.length > 0) return;
-        const { items, bills, logs, nextBillNo } = buildDemoData(new Date());
-        const isDefaultBakery = state.bakery.name === DEFAULT_BAKERY.name;
-        set({
-          items,
-          bills,
-          logs,
-          nextBillNo,
-          bakery: isDefaultBakery ? { ...state.bakery, ...DEMO_BAKERY } : state.bakery,
-          users: state.users.some((u) => u.userId === DEMO_STAFF.userId)
-            ? state.users
-            : [...state.users, DEMO_STAFF],
-        });
-      },
-
-      // Strip previously-seeded demo data (all `demo-` ids, the demo staff user,
-      // and the demo bakery), leaving any real data intact. Runs when the app is
-      // not in test mode, so switching to production removes leftover demo data.
-      clearDemo: () => {
-        const state = get();
-        const isDemo = (id: string) => id.startsWith("demo-");
-        const hadDemoBills = state.bills.some((b) => isDemo(b.id));
-        const hadDemoData =
-          hadDemoBills ||
-          state.items.some((i) => isDemo(i.id)) ||
-          state.logs.some((l) => isDemo(l.id)) ||
-          state.users.some((u) => u.id === DEMO_STAFF.id) ||
-          state.bakery.name === DEMO_BAKERY.name;
-        if (!hadDemoData) return;
-
-        const bills = state.bills.filter((b) => !isDemo(b.id));
-        set({
-          items: state.items.filter((i) => !isDemo(i.id)),
-          bills,
-          logs: state.logs.filter((l) => !isDemo(l.id)),
-          users: state.users.filter((u) => u.id !== DEMO_STAFF.id),
-          nextBillNo: hadDemoBills
-            ? bills.length
-              ? Math.max(...bills.map((b) => b.billNo)) + 1
-              : 1001
-            : state.nextBillNo,
-          sessionUserId:
-            state.sessionUserId === DEMO_STAFF.id ? null : state.sessionUserId,
-          bakery:
-            state.bakery.name === DEMO_BAKERY.name ? { ...DEFAULT_BAKERY } : state.bakery,
-        });
       },
 
       login: (userId, password) => {
