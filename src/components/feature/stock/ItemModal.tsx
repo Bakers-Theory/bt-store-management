@@ -64,16 +64,16 @@ export function ItemModal({
 
   return (
     <Modal title={itemId ? "Edit Item" : "Add New Item"} onClose={onClose}>
-      <div className="form-group">
-        <label className="form-label">Icon</label>
+      <div className="mb-3.5">
+        <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Icon</label>
         <div className="flex flex-wrap gap-1.5">
           {EMOJIS.map((e) => (
             <button
               key={e}
               type="button"
               onClick={() => setEmoji(e)}
-              className={`cursor-pointer rounded-lg border-2 bg-transparent p-1 text-[22px] ${
-                e === emoji ? "border-brown" : "border-transparent"
+              className={`flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg border-2 bg-warm-white text-[20px] ${
+                e === emoji ? "border-brown" : "border-line"
               }`}
             >
               {e}
@@ -82,8 +82,8 @@ export function ItemModal({
         </div>
       </div>
 
-      <div className="form-group">
-        <label className="form-label">Item Name *</label>
+      <div className="mb-3.5">
+        <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Item Name *</label>
         <input
           type="text"
           placeholder="e.g. Chocolate Croissant"
@@ -101,26 +101,26 @@ export function ItemModal({
             ))}
           </datalist>
         )}
-        {nameErr && <div className="mb-2.5 text-[13px] font-semibold text-danger">{nameErr}</div>}
+        {nameErr && <div className="mt-1.5 text-[13px] font-semibold text-danger">{nameErr}</div>}
         {dup && (
-          <div className="mt-1 text-xs text-warn">
+          <div className="mt-1.5 text-xs text-warn">
             ℹ️ &quot;{dup.name}&quot; already exists ({dup.qty} {dup.unit} in stock) — saving
             will add to its stock instead of creating a new item.
           </div>
         )}
       </div>
 
-      <div className="form-row">
-        <div className="form-group">
-          <label className="form-label">Category</label>
+      <div className="mb-3.5 grid grid-cols-2 gap-2.5">
+        <div>
+          <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Category</label>
           <select value={category} onChange={(e) => setCategory(e.target.value)}>
             {CATS.map((c) => (
               <option key={c}>{c}</option>
             ))}
           </select>
         </div>
-        <div className="form-group">
-          <label className="form-label">Unit</label>
+        <div>
+          <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Unit</label>
           <select value={unit} onChange={(e) => setUnit(e.target.value)}>
             {UNITS.map((u) => (
               <option key={u}>{u}</option>
@@ -129,9 +129,9 @@ export function ItemModal({
         </div>
       </div>
 
-      <div className="form-row">
-        <div className="form-group">
-          <label className="form-label">Bought Price ({currency})</label>
+      <div className="mb-3.5 grid grid-cols-2 gap-2.5">
+        <div>
+          <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Bought Price ({currency})</label>
           <input
             type="number"
             placeholder="0.00"
@@ -141,8 +141,8 @@ export function ItemModal({
             onChange={(e) => setCostPrice(e.target.value)}
           />
         </div>
-        <div className="form-group">
-          <label className="form-label">Selling Price ({currency})</label>
+        <div>
+          <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Selling Price ({currency})</label>
           <input
             type="number"
             placeholder="0.00"
@@ -154,8 +154,10 @@ export function ItemModal({
         </div>
       </div>
 
-      <div className="form-group">
-        <label className="form-label">{itemId ? "Current Stock" : "Initial Stock"}</label>
+      <div className="mb-3.5">
+        <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">
+          {itemId ? "Current Stock" : "Initial Stock"}
+        </label>
         <input
           type="number"
           placeholder="0"
@@ -166,7 +168,7 @@ export function ItemModal({
         />
       </div>
 
-      <div className="mb-2.5 text-[11px] text-ink-light">
+      <div className="mb-3 text-[11px] text-ink-light">
         🔒 Bought price is for your records only — it never appears on printed bills.
       </div>
       <button className="btn-primary w-full" onClick={save}>

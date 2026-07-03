@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 
-export function StockInForm() {
+export function StockInForm({ onSuccess }: { onSuccess?: () => void } = {}) {
   const items = useBakeryStore((s) => s.items);
   const stockIn = useBakeryStore((s) => s.stockIn);
   const toast = useUIStore((s) => s.toast);
@@ -27,13 +27,13 @@ export function StockInForm() {
     setSupplier("");
     setNotes("");
     setErr("");
+    onSuccess?.();
   };
 
   return (
-    <div className="card">
-      <h3 className="mb-3.5">📥 Stock In</h3>
-      <div className="form-group">
-        <label className="form-label">Select Item</label>
+    <div>
+      <div className="mb-3.5">
+        <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Select Item</label>
         <select value={itemId} onChange={(e) => setItemId(e.target.value)}>
           <option value="">Choose item...</option>
           {items.map((i) => (
@@ -43,18 +43,18 @@ export function StockInForm() {
           ))}
         </select>
       </div>
-      <div className="form-row">
-        <div className="form-group">
-          <label className="form-label">Quantity</label>
+      <div className="mb-3.5 grid grid-cols-2 gap-2.5">
+        <div>
+          <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Quantity</label>
           <input type="number" placeholder="0" min="0" step="0.01" value={qty} onChange={(e) => setQty(e.target.value)} />
         </div>
-        <div className="form-group">
-          <label className="form-label">Supplier (optional)</label>
+        <div>
+          <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Supplier (optional)</label>
           <input type="text" placeholder="Supplier name" value={supplier} onChange={(e) => setSupplier(e.target.value)} />
         </div>
       </div>
-      <div className="form-group">
-        <label className="form-label">Notes (optional)</label>
+      <div className="mb-3.5">
+        <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Notes (optional)</label>
         <input type="text" placeholder="e.g. Morning delivery" value={notes} onChange={(e) => setNotes(e.target.value)} />
       </div>
       {err && <div className="mb-2.5 text-[13px] font-semibold text-danger">{err}</div>}

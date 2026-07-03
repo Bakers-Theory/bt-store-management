@@ -3,12 +3,20 @@
 import { useState } from "react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
-import { tabCls } from "@/components/ui/tabClass";
+import { CATS } from "@/lib/constants";
+import { Modal } from "@/components/ui/Modal";
 import { ItemModal } from "./ItemModal";
 import { StockInForm } from "./StockInForm";
 import { StockOutForm } from "./StockOutForm";
 
 type Tab = "all" | "in" | "out";
+type ModalState = { type: "add" | "edit" | "stockin" | "stockout"; id?: string } | null;
+
+function statusOf(qty: number, lowStockAlert: number) {
+  if (qty === 0) return { label: "Out", cls: "bg-danger-bg text-danger" };
+  if (qty <= lowStockAlert) return { label: "Low", cls: "bg-warn-bg text-warn" };
+  return { label: "In stock", cls: "bg-success-bg text-success" };
+}
 
 export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
   const items = useBakeryStore((s) => s.items);
@@ -18,14 +26,22 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
   const toast = useUIStore((s) => s.toast);
   const requireOwnerAuth = useUIStore((s) => s.requireOwnerAuth);
 
-  const [tab, setTab] = useState<Tab>(initialTab);
-  const [search, setSearch] = useState("");
-  // null = closed; { id } where id null = add, string = edit
-  const [modal, setModal] = useState<{ id: string | null } | null>(null);
-
-  const filtered = items.filter((i) =>
-    i.name.toLowerCase().includes(search.toLowerCase()),
+  const [modal, setModal] = useState<ModalState>(
+    initialTab === "in" ? { type: "stockin" } : initialTab === "out" ? { type: "stockout" } : null,
   );
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState("All");
+
+  const filtered = items.filter(
+    (i) =>
+      (category === "All" || i.category === category) &&
+      i.name.toLowerCase().includes(search.toLowerCase()),
+  );
+
+  const totalItems = items.length;
+  const totalUnits = items.reduce((s, i) => s + i.qty, 0);
+  const stockValue = items.reduce((s, i) => s + i.price * i.qty, 0);
+  const lowOrOut = items.filter((i) => i.qty <= lowStockAlert).length;
 
   const remove = (id: string, name: string) => {
     requireOwnerAuth(`delete item "${name}"`, () => {
@@ -34,79 +50,204 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
     });
   };
 
+  const closeModal = () => setModal(null);
+
   return (
     <>
-      <div className="mb-4 flex rounded-xl bg-cream-dark p-[3px]">
-        <button className={tabCls(tab === "all")} onClick={() => setTab("all")}>All Items</button>
-        <button className={tabCls(tab === "in")} onClick={() => setTab("in")}>Stock In</button>
-        <button className={tabCls(tab === "out")} onClick={() => setTab("out")}>Stock Out</button>
+      {/* Stat tiles */}
+      <div className="mb-[18px] grid grid-cols-2 gap-3.5 lg:grid-cols-4">
+        <div className="rounded-2xl border border-line bg-warm-white px-[18px] py-[15px]">
+          <div className="text-xs font-semibold text-ink-muted">Total items</div>
+          <div className="num mt-1 text-2xl font-extrabold">{totalItems}</div>
+        </div>
+        <div className="rounded-2xl border border-line bg-warm-white px-[18px] py-[15px]">
+          <div className="text-xs font-semibold text-ink-muted">Units in stock</div>
+          <div className="num mt-1 text-2xl font-extrabold">{totalUnits}</div>
+        </div>
+        <div className="rounded-2xl border border-line bg-warm-white px-[18px] py-[15px]">
+          <div className="text-xs font-semibold text-ink-muted">Stock value</div>
+          <div className="num mt-1 text-2xl font-extrabold">
+            {currency}
+            {stockValue.toFixed(2)}
+          </div>
+        </div>
+        <div className="rounded-2xl border border-[#ecd9a8] bg-warn-bg px-[18px] py-[15px]">
+          <div className="text-xs font-semibold text-warn">Low / out</div>
+          <div className="num mt-1 text-2xl font-extrabold text-warn">{lowOrOut}</div>
+        </div>
       </div>
 
-      {tab === "all" && (
-        <>
-          <div className="relative mb-3">
-            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-base text-ink-light">🔍</span>
-            <input
-              type="text"
-              placeholder="Search items..."
-              className="pl-9"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-          <button
-            className="btn-primary mb-3 w-full"
-            onClick={() => setModal({ id: null })}
-          >
-            ➕ Add New Item
-          </button>
+      {/* Toolbar */}
+      <div className="mb-3.5 flex flex-wrap items-center gap-3">
+        <div className="relative min-w-[200px] flex-1">
+          <span className="pointer-events-none absolute left-[13px] top-1/2 -translate-y-1/2 text-ink-light">
+            🔍
+          </span>
+          <input
+            type="text"
+            placeholder="Search items…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full rounded-xl border border-line bg-warm-white py-[11px] pl-[38px] pr-[13px] text-sm outline-none"
+          />
+        </div>
+        <button
+          className="btn-primary flex items-center gap-1.5 whitespace-nowrap text-[13.5px]"
+          onClick={() => setModal({ type: "add" })}
+        >
+          ➕ Add item
+        </button>
+        <button
+          className="btn-secondary flex items-center gap-1.5 whitespace-nowrap text-[13.5px]"
+          onClick={() => setModal({ type: "stockin" })}
+        >
+          📥 Add stock
+        </button>
+        <button
+          className="btn-secondary flex items-center gap-1.5 whitespace-nowrap text-[13.5px]"
+          onClick={() => setModal({ type: "stockout" })}
+        >
+          📤 Stock out
+        </button>
+      </div>
 
-          {filtered.length === 0 ? (
-            <div className="px-5 py-10 text-center text-ink-muted">
-              <div className="mb-3 text-5xl">📦</div>
-              <p className="text-sm">No items found. Add your first item!</p>
+      {/* Category chips */}
+      <div className="mb-4 flex gap-2 overflow-x-auto pb-0.5">
+        {["All", ...CATS].map((c) => (
+          <button
+            key={c}
+            onClick={() => setCategory(c)}
+            className={`shrink-0 whitespace-nowrap rounded-full px-[15px] py-[7px] text-[13px] font-bold ${
+              category === c
+                ? "border border-brown bg-brown text-warm-white"
+                : "border border-line bg-warm-white text-ink-muted"
+            }`}
+          >
+            {c}
+          </button>
+        ))}
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="px-5 py-14 text-center text-ink-muted">
+          <div className="mb-3 text-5xl">📦</div>
+          <p className="text-sm">No items found.</p>
+        </div>
+      ) : (
+        <>
+          {/* Desktop table */}
+          <div className="hidden overflow-hidden rounded-[18px] border border-line bg-warm-white shadow-[0_2px_12px_rgba(100,60,20,0.05)] lg:block">
+            <div className="grid grid-cols-[2.2fr_1fr_1fr_1fr_1fr_0.9fr] gap-3 bg-[#f8ecd8] px-5 py-[13px] text-[11.5px] font-bold uppercase tracking-[0.04em] text-[#8a6a3c]">
+              <div>Item</div>
+              <div>Category</div>
+              <div className="text-right">Price</div>
+              <div className="text-right">In stock</div>
+              <div className="text-right">Status</div>
+              <div />
             </div>
-          ) : (
-            filtered.map((item) => (
-              <div
-                key={item.id}
-                className="mb-2 flex items-center gap-3 rounded-xl border border-line bg-white p-3"
-              >
-                <div className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-[10px] bg-cream-dark text-xl">
-                  {item.emoji || "📦"}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-semibold text-ink">{item.name}</div>
-                  <div className="mt-0.5 text-xs text-ink-muted">
+            {filtered.map((item) => {
+              const st = statusOf(item.qty, lowStockAlert);
+              return (
+                <div
+                  key={item.id}
+                  className="grid grid-cols-[2.2fr_1fr_1fr_1fr_1fr_0.9fr] items-center gap-3 border-t border-line-soft px-5 py-[13px]"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="text-[22px]">{item.emoji || "📦"}</span>
+                    <span className="truncate text-sm font-bold">{item.name}</span>
+                  </div>
+                  <div className="text-[13px] font-semibold text-ink-muted">
+                    {item.category || "General"}
+                  </div>
+                  <div className="num text-right text-[13.5px] font-bold">
                     {currency}
-                    {item.price.toFixed(2)} · {item.category || "General"}
+                    {item.price.toFixed(2)}
+                  </div>
+                  <div className="num text-right text-[13.5px] font-bold">
+                    {item.qty} {item.unit}
+                  </div>
+                  <div className="text-right">
+                    <span className={`inline-block rounded-full px-[11px] py-1 text-[11.5px] font-bold ${st.cls}`}>
+                      {st.label}
+                    </span>
+                  </div>
+                  <div className="flex justify-end gap-1.5">
+                    <button
+                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-line bg-warm-white text-sm"
+                      onClick={() => setModal({ type: "edit", id: item.id })}
+                      aria-label={`Edit ${item.name}`}
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      className="flex h-7 w-7 items-center justify-center rounded-lg border-none bg-danger-bg text-sm text-danger"
+                      onClick={() => remove(item.id, item.name)}
+                      aria-label={`Delete ${item.name}`}
+                    >
+                      🗑
+                    </button>
                   </div>
                 </div>
-                <div className="shrink-0 text-right">
-                  <div className={`text-lg font-bold ${item.qty <= lowStockAlert ? "text-danger" : "text-success"}`}>
-                    {item.qty}
+              );
+            })}
+          </div>
+
+          {/* Phone cards */}
+          <div className="flex flex-col gap-2.5 lg:hidden">
+            {filtered.map((item) => {
+              const st = statusOf(item.qty, lowStockAlert);
+              return (
+                <div
+                  key={item.id}
+                  className="flex items-center gap-3 rounded-[15px] border border-line bg-warm-white px-[15px] py-[13px]"
+                >
+                  <span className="text-[26px]">{item.emoji || "📦"}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-bold">{item.name}</div>
+                    <div className="num text-xs font-semibold text-ink-muted">
+                      {currency}
+                      {item.price.toFixed(2)} · {item.qty} {item.unit}
+                    </div>
                   </div>
-                  <div className="text-[11px] text-ink-muted">{item.unit}</div>
+                  <span className={`shrink-0 rounded-full px-[11px] py-1 text-[11.5px] font-bold ${st.cls}`}>
+                    {st.label}
+                  </span>
+                  <div className="flex shrink-0 gap-1.5">
+                    <button
+                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-line bg-warm-white text-sm"
+                      onClick={() => setModal({ type: "edit", id: item.id })}
+                      aria-label={`Edit ${item.name}`}
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      className="flex h-7 w-7 items-center justify-center rounded-lg border-none bg-danger-bg text-sm text-danger"
+                      onClick={() => remove(item.id, item.name)}
+                      aria-label={`Delete ${item.name}`}
+                    >
+                      🗑
+                    </button>
+                  </div>
                 </div>
-                <div className="flex flex-col gap-1">
-                  <button className="btn-sm btn-secondary" onClick={() => setModal({ id: item.id })}>✏</button>
-                  <button
-                    className="cursor-pointer rounded-lg border-none bg-danger px-2.5 py-1.5 text-xs text-white"
-                    onClick={() => remove(item.id, item.name)}
-                  >
-                    🗑
-                  </button>
-                </div>
-              </div>
-            ))
-          )}
+              );
+            })}
+          </div>
         </>
       )}
 
-      {tab === "in" && <StockInForm />}
-      {tab === "out" && <StockOutForm />}
-
-      {modal && <ItemModal itemId={modal.id} onClose={() => setModal(null)} />}
+      {modal && (modal.type === "add" || modal.type === "edit") && (
+        <ItemModal itemId={modal.id ?? null} onClose={closeModal} />
+      )}
+      {modal && modal.type === "stockin" && (
+        <Modal title="📥 Add Stock" onClose={closeModal}>
+          <StockInForm onSuccess={closeModal} />
+        </Modal>
+      )}
+      {modal && modal.type === "stockout" && (
+        <Modal title="📤 Stock Out" onClose={closeModal}>
+          <StockOutForm onSuccess={closeModal} />
+        </Modal>
+      )}
     </>
   );
 }

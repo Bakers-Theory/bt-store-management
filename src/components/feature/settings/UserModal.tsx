@@ -6,6 +6,10 @@ import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import type { Permissions } from "@/lib/types";
 
+const inputCls =
+  "w-full rounded-[11px] border border-line bg-cream px-[13px] py-[11px] text-sm outline-none focus:border-brown";
+const labelCls = "mb-[5px] block text-xs font-bold text-[#8a6a3c]";
+
 export function UserModal({
   userId,
   onClose,
@@ -47,36 +51,75 @@ export function UserModal({
     setPerm((p) => ({ ...p, [key]: !p[key] }));
 
   return (
-    <Modal title={userId ? "Edit User" : "Add New User"} onClose={onClose}>
-      <div className="form-group">
-        <label className="form-label">Full Name *</label>
-        <input type="text" placeholder="e.g. Ramesh Sharma" value={name} onChange={(e) => setName(e.target.value)} />
+    <Modal title={userId ? "Edit staff" : "Add staff"} onClose={onClose}>
+      <div className="mb-3.5">
+        <label className={labelCls}>Full name *</label>
+        <input
+          type="text"
+          className={inputCls}
+          placeholder="e.g. Ramesh Sharma"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
       </div>
-      <div className="form-group">
-        <label className="form-label">User ID *</label>
-        <input type="text" placeholder="e.g. phone number or username" value={uidField} onChange={(e) => setUidField(e.target.value)} />
+      <div className="mb-3.5">
+        <label className={labelCls}>User ID *</label>
+        <input
+          type="text"
+          className={inputCls}
+          placeholder="e.g. phone number or username"
+          value={uidField}
+          onChange={(e) => setUidField(e.target.value)}
+        />
       </div>
-      <div className="form-group">
-        <label className="form-label">Password *</label>
-        <input type="text" placeholder="Set a password" value={password} onChange={(e) => setPassword(e.target.value)} />
+      <div className="mb-3.5">
+        <label className={labelCls}>Password *</label>
+        <input
+          type="text"
+          className={inputCls}
+          placeholder="Set a password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
       </div>
-      <div className="form-group">
-        <label className="form-label">Grant Access</label>
-        <div className="mt-1.5">
-          <label className="mb-2 flex items-center gap-2.5 rounded-[10px] bg-cream px-2.5 py-[9px] text-sm font-medium">
-            <input type="checkbox" checked={perm.sales} onChange={() => toggle("sales")} className="h-[18px] w-auto shrink-0 accent-brown" /> 🧾 Sales — Billing &amp; Bills History
+      <div className="mb-3.5">
+        <label className={labelCls}>Grant access</label>
+        <div className="mt-1.5 flex flex-col gap-2">
+          <label className="flex items-center gap-2.5 rounded-[10px] bg-cream px-2.5 py-[9px] text-sm font-medium">
+            <input
+              type="checkbox"
+              checked={perm.sales}
+              onChange={() => toggle("sales")}
+              className="h-[18px] w-auto shrink-0 accent-brown"
+            />
+            Sales — Billing &amp; bills history
           </label>
-          <label className="mb-2 flex items-center gap-2.5 rounded-[10px] bg-cream px-2.5 py-[9px] text-sm font-medium">
-            <input type="checkbox" checked={perm.inventory} onChange={() => toggle("inventory")} className="h-[18px] w-auto shrink-0 accent-brown" /> 📦 Inventory — Stock Management
+          <label className="flex items-center gap-2.5 rounded-[10px] bg-cream px-2.5 py-[9px] text-sm font-medium">
+            <input
+              type="checkbox"
+              checked={perm.inventory}
+              onChange={() => toggle("inventory")}
+              className="h-[18px] w-auto shrink-0 accent-brown"
+            />
+            Inventory — Stock management
           </label>
-          <label className="mb-2 flex items-center gap-2.5 rounded-[10px] bg-cream px-2.5 py-[9px] text-sm font-medium">
-            <input type="checkbox" checked={perm.analytics} onChange={() => toggle("analytics")} className="h-[18px] w-auto shrink-0 accent-brown" /> 📊 Analytics — Dashboard &amp; Reports
+          <label className="flex items-center gap-2.5 rounded-[10px] bg-cream px-2.5 py-[9px] text-sm font-medium">
+            <input
+              type="checkbox"
+              checked={perm.analytics}
+              onChange={() => toggle("analytics")}
+              className="h-[18px] w-auto shrink-0 accent-brown"
+            />
+            Analytics — Dashboard &amp; reports
           </label>
         </div>
       </div>
-      {err && <div className="mb-2.5 text-[13px] font-semibold text-danger">{err}</div>}
-      <button className="btn-primary w-full" onClick={save}>
-        {userId ? "💾 Save Changes" : "✅ Create User"}
+      {err && <div className="mb-2.5 text-[13px] font-bold text-danger">{err}</div>}
+      <button
+        className="w-full rounded-xl border-none bg-brown p-3 text-sm font-bold text-warm-white"
+        onClick={save}
+      >
+        {userId ? "Save changes" : "Create staff"}
       </button>
     </Modal>
   );

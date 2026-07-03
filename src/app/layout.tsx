@@ -1,9 +1,24 @@
 import type { Metadata, Viewport } from "next";
+import { Figtree, Newsreader } from "next/font/google";
 import "./globals.css";
 import { StoreHydrator } from "@/components/system/StoreHydrator";
 import { ToastHost } from "@/components/system/ToastHost";
 import { OwnerAuthHost } from "@/components/system/OwnerAuthHost";
 import { PrintHost } from "@/components/system/PrintHost";
+
+const figtree = Figtree({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+  variable: "--font-figtree",
+  display: "swap",
+});
+const newsreader = Newsreader({
+  subsets: ["latin"],
+  style: ["italic", "normal"],
+  weight: ["400", "500"],
+  variable: "--font-newsreader",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Bakers Theory",
@@ -23,7 +38,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${figtree.variable} ${newsreader.variable}`}>
       <body>
         {children}
         <StoreHydrator />

@@ -1,44 +1,80 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useBakeryStore } from "@/lib/store";
+import { useRouter, usePathname } from "next/navigation";
+import { useBakeryStore, useCurrentUser } from "@/lib/store";
+import { hasPermission } from "@/lib/permissions";
+
+const TITLES: Record<string, [string, string]> = {
+  "/bill": ["New Bill", "Tap products to build the order"],
+  "/stock": ["Inventory", "Manage items, stock levels & pricing"],
+  "/history": ["History", "Past bills and stock movements"],
+  "/settings": ["Settings", "Store profile, staff & permissions"],
+};
+
+function greeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+function dashboardSubtitle(firstName: string): string {
+  const date = new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  return `${date} · ${greeting()}, ${firstName}`;
+}
 
 export function Topbar() {
   const router = useRouter();
-  const bakery = useBakeryStore((s) => s.bakery);
+  const pathname = usePathname();
+  const user = useCurrentUser();
   const logout = useBakeryStore((s) => s.logout);
+
+  const [title, subtitle] = TITLES[pathname] ?? [
+    "Dashboard",
+    dashboardSubtitle(user?.name.split(" ")[0] ?? ""),
+  ];
 
   const doLogout = () => {
     logout();
-    router.replace("/login");
+    router.push("/login");
   };
 
   return (
-    <div className="sticky top-0 z-[100] flex items-center gap-2.5 bg-brown px-4 py-3 text-white shadow-[0_2px_8px_rgba(0,0,0,0.2)]">
-      <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-white/20 text-[18px]">
-        {bakery.logo ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={bakery.logo} alt="logo" className="h-full w-full object-cover" />
-        ) : (
-          "🧁"
-        )}
+    <header className="sticky top-0 z-40 flex flex-shrink-0 items-center gap-3.5 border-b border-line bg-warm-white/90 px-4 py-3.5 backdrop-blur lg:px-[22px]">
+      <div className="min-w-0 flex-1">
+        <div className="text-xl font-extrabold leading-[1.1] text-ink">{title}</div>
+        <div className="truncate text-[12.5px] font-semibold text-ink-light">{subtitle}</div>
       </div>
-      <div className="flex-1 text-base font-bold">{bakery.name}</div>
+
+      {hasPermission(user, "sales") && (
+        <button
+          onClick={() => router.push("/bill")}
+          className="hidden flex-shrink-0 items-center gap-[7px] rounded-[11px] bg-brown px-4 py-2.5 text-[13.5px] font-bold text-warm-white lg:flex"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+          New Bill
+        </button>
+      )}
+
       <button
-        className="flex h-[34px] w-[34px] cursor-pointer items-center justify-center rounded-full border-none bg-white/15 text-[18px] text-white"
-        onClick={() => router.push("/settings")}
-        aria-label="Settings"
-      >
-        ⚙
-      </button>
-      <button
-        className="flex h-[34px] w-[34px] cursor-pointer items-center justify-center rounded-full border-none bg-white/15 text-[15px] text-white"
         onClick={doLogout}
         title="Logout"
         aria-label="Logout"
+        className="flex h-10 w-10 flex-shrink-0 cursor-pointer items-center justify-center rounded-[11px] border border-line bg-warm-white text-ink-muted lg:hidden"
       >
-        🚪
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+          <path d="M16 17l5-5-5-5" />
+          <path d="M21 12H9" />
+        </svg>
       </button>
-    </div>
+    </header>
   );
 }

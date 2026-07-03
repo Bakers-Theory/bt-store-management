@@ -1,8 +1,8 @@
 /** Tailwind classes for a segmented-control tab button, per active state. */
 export function tabCls(active: boolean): string {
-  return `flex-1 cursor-pointer rounded-[10px] border-none p-2 text-[13px] font-semibold transition-all ${
+  return `cursor-pointer rounded-[9px] border-none px-[18px] py-2 text-[13.5px] font-bold transition-all ${
     active
-      ? "bg-white text-brown shadow-[0_1px_4px_rgba(0,0,0,0.1)]"
-      : "bg-transparent text-ink-muted"
+      ? "bg-warm-white text-brown shadow-[0_1px_4px_rgba(100,60,20,.12)]"
+      : "text-[#8a6a3c]"
   }`;
 }

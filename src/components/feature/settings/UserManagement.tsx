@@ -5,7 +5,19 @@ import { useRouter } from "next/navigation";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { UserModal } from "./UserModal";
-import type { Permissions } from "@/lib/types";
+import type { Permissions, User } from "@/lib/types";
+
+const permOnCls = "rounded-lg border border-[#cfe6d3] bg-success-bg px-3 py-[5px] text-xs font-bold text-success";
+const permOffCls = "rounded-lg border border-[#ece0cd] bg-[#f4ece0] px-3 py-[5px] text-xs font-bold text-[#b3987a]";
+
+function initials(name: string): string {
+  return name
+    .split(" ")
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+}
 
 export function UserManagement() {
   const router = useRouter();
@@ -33,58 +45,92 @@ export function UserManagement() {
     if (r.ok) toast("🗑 User deleted");
   };
 
-  const permBadge = (label: string, on: boolean) => (
-    <span className={`badge ${on ? "badge-success" : "badge-danger"}`}>
-      {label} {on ? "✓" : "✕"}
-    </span>
+  const permPill = (label: string, on: boolean) => (
+    <span className={on ? permOnCls : permOffCls}>{label}</span>
   );
 
-  return (
-    <div className="card mt-4">
-      <div className="card-header">
-        <h3>👥 Manage Users</h3>
-        <button className="btn-sm btn-primary" onClick={() => setModal({ id: null })}>➕ New User</button>
-      </div>
-      {users.map((u) => {
-        const p: Permissions = u.permissions;
-        return (
-          <div key={u.id} className="mb-2 flex items-start gap-3 rounded-xl border border-line bg-white p-3">
-            <div className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-[10px] bg-cream-dark text-xl">
-              {u.role === "Owner" ? "👑" : "👤"}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-semibold text-ink">
-                {u.name} {u.role === "Owner" && <span className="badge badge-brown">Owner</span>}
-              </div>
-              <div className="mt-0.5 text-xs text-ink-muted">User ID: {u.userId}</div>
-              <div className="mt-0.5 flex items-center gap-1.5 text-xs text-ink-muted">
-                Password:{" "}
-                <span className="font-mono">
-                  {revealed.has(u.id) ? u.password : "••••••••"}
-                </span>
-                <button className="btn-sm btn-secondary px-2 py-0.5 text-[11px]" onClick={() => toggleReveal(u.id)}>👁</button>
-              </div>
-              <div className="mt-1.5 flex flex-wrap gap-[5px]">
-                {u.role === "Owner" ? (
-                  <span className="badge badge-brown">All Access</span>
-                ) : (
-                  <>
-                    {permBadge("Sales", p.sales)}
-                    {permBadge("Inventory", p.inventory)}
-                    {permBadge("Analytics", p.analytics)}
-                  </>
-                )}
-              </div>
-            </div>
-            {u.role !== "Owner" && (
-              <div className="flex flex-col gap-1">
-                <button className="btn-sm btn-secondary" onClick={() => setModal({ id: u.id })}>✏</button>
-                <button className="cursor-pointer rounded-lg border-none bg-danger px-2.5 py-1.5 text-xs text-white" onClick={() => remove(u.id, u.name)}>🗑</button>
-              </div>
-            )}
+  const staffCard = (u: User) => {
+    const p: Permissions = u.permissions;
+    const isOwner = u.role === "Owner";
+    return (
+      <div key={u.id} className="rounded-[14px] border border-[#f0e2cc] p-3.5">
+        <div className="mb-[11px] flex items-center gap-[11px]">
+          <div
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] text-sm font-bold ${
+              isOwner ? "bg-brown text-warm-white" : "bg-[#efdcc1] text-brown"
+            }`}
+          >
+            {initials(u.name)}
           </div>
-        );
-      })}
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-bold">{u.name}</div>
+            <div className="text-[11.5px] text-ink-light">ID · {u.userId}</div>
+          </div>
+          <span
+            className={`rounded-full px-[11px] py-[3px] text-[11px] font-bold ${
+              isOwner ? "bg-brown text-warm-white" : "bg-[#f4e7d2] text-[#8a6a3c]"
+            }`}
+          >
+            {u.role}
+          </span>
+        </div>
+
+        <div className="flex flex-wrap gap-[7px]">
+          {isOwner ? (
+            permPill("All access", true)
+          ) : (
+            <>
+              {permPill("Sales", p.sales)}
+              {permPill("Inventory", p.inventory)}
+              {permPill("Analytics", p.analytics)}
+            </>
+          )}
+        </div>
+
+        {!isOwner && (
+          <div className="mt-[11px] flex items-center justify-between border-t border-line-soft pt-[11px]">
+            <div className="flex items-center gap-1.5 text-xs text-ink-muted">
+              <span className="font-mono">{revealed.has(u.id) ? u.password : "••••••••"}</span>
+              <button
+                className="cursor-pointer rounded-md border-none bg-cream px-1.5 py-0.5 text-[11px]"
+                onClick={() => toggleReveal(u.id)}
+              >
+                👁
+              </button>
+            </div>
+            <div className="flex gap-1.5">
+              <button
+                className="cursor-pointer rounded-lg border border-line bg-warm-white px-2.5 py-1.5 text-xs font-bold text-ink-muted"
+                onClick={() => setModal({ id: u.id })}
+              >
+                ✏
+              </button>
+              <button
+                className="cursor-pointer rounded-lg border-none bg-danger px-2.5 py-1.5 text-xs text-white"
+                onClick={() => remove(u.id, u.name)}
+              >
+                🗑
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="rounded-[18px] border border-line bg-warm-white p-[22px] shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-[15.5px] font-extrabold">Staff &amp; permissions</h3>
+        <button
+          className="cursor-pointer rounded-[9px] border-none bg-[#f4e7d2] px-3 py-[7px] text-[12.5px] font-bold text-brown"
+          onClick={() => setModal({ id: null })}
+        >
+          + Add staff
+        </button>
+      </div>
+
+      <div className="flex flex-col gap-3">{users.map(staffCard)}</div>
 
       {modal && <UserModal userId={modal.id} onClose={() => setModal(null)} />}
     </div>

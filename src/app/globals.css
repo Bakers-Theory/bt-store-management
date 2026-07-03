@@ -5,19 +5,24 @@
   --color-brown-dark: #5a3414;
   --color-brown-light: #a0622a;
   --color-cream: #fdf6ee;
-  --color-cream-dark: #f5e8d3;
+  --color-cream-dark: #e9ddc9;
   --color-warm-white: #fffcf8;
   --color-ink: #2c1a0e;
   --color-ink-muted: #7a5c3e;
   --color-ink-light: #b08060;
   --color-success: #2d7a3a;
+  --color-success-bg: #e8f2e9;
   --color-danger: #c0392b;
+  --color-danger-bg: #fbeae7;
   --color-warn: #b8860b;
+  --color-warn-bg: #fbf3df;
   --color-line: #e8d5bb;
+  --color-line-soft: #f2e6d2;
   --color-line-strong: #c9a97a;
 
   --shadow-card: 0 2px 12px rgba(100, 60, 20, 0.12);
-  --font-sans: "Segoe UI", system-ui, sans-serif;
+  --font-sans: var(--font-figtree), system-ui, sans-serif;
+  --font-serif: var(--font-newsreader), Georgia, serif;
 
   --animate-fade-in: fade-in 0.2s ease;
   @keyframes fade-in {
@@ -125,8 +130,8 @@
   }
 
   .card {
-    background: #fff;
-    border-radius: 12px;
+    background: var(--color-warm-white);
+    border-radius: 18px;
     border: 1px solid var(--color-line);
     padding: 16px;
     margin-bottom: 12px;
@@ -146,20 +151,29 @@
     border-radius: 9999px;
   }
   .badge-success {
-    background: #d4edda;
+    background: var(--color-success-bg);
     color: var(--color-success);
   }
   .badge-danger {
-    background: #fde8e7;
+    background: var(--color-danger-bg);
     color: var(--color-danger);
   }
   .badge-warn {
-    background: #fff3cd;
+    background: var(--color-warn-bg);
     color: var(--color-warn);
   }
   .badge-brown {
     background: var(--color-cream-dark);
     color: var(--color-brown-dark);
+  }
+
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+  .wordmark {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-weight: 500;
   }
 
   .form-group {
@@ -248,9 +262,12 @@
     visibility: visible;
   }
   .print-area {
-    position: fixed;
-    left: 0;
-    top: 0;
+    /* !important is required: PrintHost sets an inline `left:-9999px` to hide
+       the receipt off-screen on-screen, and inline styles beat media-query
+       rules. Without !important the receipt stays off-page and prints blank. */
+    position: fixed !important;
+    left: 0 !important;
+    top: 0 !important;
     width: 76mm;
     background: #fff;
     font-family: "Courier New", monospace;

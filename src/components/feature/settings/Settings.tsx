@@ -9,6 +9,10 @@ import { exportExcelReport } from "@/lib/excel";
 import { MyAccount } from "./MyAccount";
 import { UserManagement } from "./UserManagement";
 
+const inputCls =
+  "w-full rounded-[11px] border border-line bg-cream px-[13px] py-[11px] text-sm outline-none focus:border-brown";
+const labelCls = "mb-[5px] block text-xs font-bold text-[#8a6a3c]";
+
 export function Settings() {
   const router = useRouter();
   const user = useCurrentUser();
@@ -71,94 +75,146 @@ export function Settings() {
 
   return (
     <>
-      <div className="card">
-        <h3 className="mb-3.5">🏪 Bakery Profile</h3>
-        <div className="form-group text-center">
-          <label className="form-label">Bakery Logo</label>
-          <div
-            className="cursor-pointer rounded-xl border-2 border-dashed border-line-strong bg-cream p-5 text-center transition-colors hover:border-brown"
-            onClick={() => fileRef.current?.click()}
-          >
-            {bakery.logo ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={bakery.logo} className="mx-auto mb-2 block h-20 w-20 rounded-xl object-cover" alt="logo" />
-            ) : (
-              <div className="mb-2 text-5xl">🧁</div>
+      <div className="grid items-start gap-4 lg:grid-cols-2">
+        {/* Bakery profile */}
+        <div className="rounded-[18px] border border-line bg-warm-white p-[22px] shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
+          <h3 className="mb-4 text-[15.5px] font-extrabold">Bakery profile</h3>
+
+          <div className="mb-3.5 text-center">
+            <div
+              className="cursor-pointer rounded-xl border-2 border-dashed border-line-strong bg-cream p-5 text-center transition-colors hover:border-brown"
+              onClick={() => fileRef.current?.click()}
+            >
+              {bakery.logo ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={bakery.logo} className="mx-auto mb-2 block h-20 w-20 rounded-xl object-cover" alt="logo" />
+              ) : (
+                <div className="mb-2 text-5xl">🧁</div>
+              )}
+              <div className="text-[13px] text-ink-muted">Tap to upload logo</div>
+              <div className="mt-1 text-[11px] text-ink-light">Appears on bills &amp; receipt</div>
+            </div>
+            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onLogoFile} />
+            {bakery.logo && (
+              <button className="mt-2 text-xs font-bold text-danger" onClick={() => removeLogo()}>
+                ✕ Remove logo
+              </button>
             )}
-            <div className="text-[13px] text-ink-muted">Tap to upload logo</div>
-            <div className="mt-1 text-[11px] text-ink-light">Appears on bills &amp; receipt</div>
           </div>
-          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onLogoFile} />
-          {bakery.logo && (
-            <button className="btn-sm btn-secondary mt-2" onClick={() => removeLogo()}>✕ Remove Logo</button>
-          )}
+
+          <div className="flex flex-col gap-[13px]">
+            <div>
+              <label className={labelCls}>Bakery name</label>
+              <input
+                type="text"
+                className={inputCls}
+                value={name}
+                placeholder="Your Bakery Name"
+                onChange={(e) => setName(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>Tagline</label>
+              <input
+                type="text"
+                className={inputCls}
+                value={tagline}
+                placeholder="Fresh & Delicious"
+                onChange={(e) => setTagline(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>Address</label>
+              <textarea rows={2} className={inputCls} value={address} onChange={(e) => setAddress(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={labelCls}>Phone</label>
+                <input
+                  type="tel"
+                  className={inputCls}
+                  value={phone}
+                  placeholder="9876543210"
+                  onChange={(e) => setPhone(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>GST number</label>
+                <input
+                  type="text"
+                  className={inputCls}
+                  value={gst}
+                  placeholder="Optional"
+                  onChange={(e) => setGst(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={labelCls}>Currency</label>
+                <select className={inputCls} value={currency} onChange={(e) => setCurrency(e.target.value)}>
+                  {CURRENCIES.map((c) => (
+                    <option key={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className={labelCls}>Tax rate (%)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                  className={inputCls}
+                  value={taxRate}
+                  onChange={(e) => setTaxRate(e.target.value)}
+                />
+              </div>
+            </div>
+            <div>
+              <label className={labelCls}>Low-stock alert threshold</label>
+              <input
+                type="number"
+                min="0"
+                className={inputCls}
+                value={lowStockAlert}
+                onChange={(e) => setLowStockAlert(e.target.value)}
+              />
+            </div>
+            <button
+              onClick={save}
+              className="mt-1.5 w-full rounded-xl border-none bg-brown p-3 text-sm font-bold text-warm-white"
+            >
+              Save changes
+            </button>
+          </div>
         </div>
 
-        <div className="form-group">
-          <label className="form-label">Bakery Name *</label>
-          <input type="text" value={name} placeholder="Your Bakery Name" onChange={(e) => setName(e.target.value)} />
-        </div>
-        <div className="form-group">
-          <label className="form-label">Tagline</label>
-          <input type="text" value={tagline} placeholder="Fresh & Delicious" onChange={(e) => setTagline(e.target.value)} />
-        </div>
-        <div className="form-group">
-          <label className="form-label">Address</label>
-          <textarea rows={2} value={address} onChange={(e) => setAddress(e.target.value)} />
-        </div>
-        <div className="form-row">
-          <div className="form-group">
-            <label className="form-label">Phone</label>
-            <input type="tel" value={phone} placeholder="9876543210" onChange={(e) => setPhone(e.target.value)} />
-          </div>
-          <div className="form-group">
-            <label className="form-label">GST Number</label>
-            <input type="text" value={gst} placeholder="Optional" onChange={(e) => setGst(e.target.value)} />
-          </div>
-        </div>
+        {/* Staff & permissions */}
+        <UserManagement />
       </div>
 
-      <div className="card">
-        <h3 className="mb-3.5">⚙ App Settings</h3>
-        <div className="form-row">
-          <div className="form-group">
-            <label className="form-label">Currency Symbol</label>
-            <select value={currency} onChange={(e) => setCurrency(e.target.value)}>
-              {CURRENCIES.map((c) => (
-                <option key={c}>{c}</option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group">
-            <label className="form-label">Tax Rate (%)</label>
-            <input type="number" min="0" max="100" step="0.1" value={taxRate} onChange={(e) => setTaxRate(e.target.value)} />
-          </div>
-        </div>
-        <div className="form-group">
-          <label className="form-label">Low Stock Alert (qty below)</label>
-          <input type="number" min="0" value={lowStockAlert} onChange={(e) => setLowStockAlert(e.target.value)} />
-        </div>
-      </div>
-
-      <button className="btn-primary w-full p-3.5 text-base" onClick={save}>
-        💾 Save Settings
-      </button>
-
-      <div className="card mt-4">
-        <h3 className="mb-1.5">📊 Reports</h3>
+      <div className="mt-4 rounded-[18px] border border-line bg-warm-white p-[22px] shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
+        <h3 className="mb-1.5 text-[15.5px] font-extrabold">Reports</h3>
         <p className="mb-3 text-xs text-ink-muted">
           Download a full Excel workbook with your inventory, sales, stock log and business growth analysis.
         </p>
-        <button className="btn-success w-full p-3 text-sm" onClick={doExport}>
-          ⬇ Download Excel Report
+        <button
+          className="w-full rounded-xl border-none bg-success p-3 text-sm font-bold text-warm-white"
+          onClick={doExport}
+        >
+          ⬇ Download Excel report
         </button>
       </div>
 
-      <UserManagement />
-
-      <div className="card mt-4">
-        <h3 className="mb-2.5 text-danger">⚠ Danger Zone</h3>
-        <button className="btn-danger btn-sm w-full" onClick={clearData}>🗑 Clear All Data</button>
+      <div className="mt-4 rounded-[18px] border border-line bg-warm-white p-[22px] shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
+        <h3 className="mb-2.5 text-[15.5px] font-extrabold text-danger">Danger zone</h3>
+        <button
+          className="w-full rounded-xl border-none bg-danger p-2.5 text-sm font-bold text-warm-white"
+          onClick={clearData}
+        >
+          🗑 Clear all data
+        </button>
       </div>
 
       <div className="p-5 text-center text-xs text-ink-light">
