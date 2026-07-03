@@ -1,7 +1,9 @@
 "use client";
 
 import { useRouter, usePathname } from "next/navigation";
+import { Croissant } from "lucide-react";
 import { useAuth, useCurrentUser } from "@/components/system/AuthProvider";
+import { useBakeryStore } from "@/lib/store";
 import { hasPermission } from "@/lib/permissions";
 
 const TITLES: Record<string, [string, string]> = {
@@ -32,6 +34,7 @@ export function Topbar() {
   const router = useRouter();
   const pathname = usePathname();
   const user = useCurrentUser();
+  const logo = useBakeryStore((s) => s.bakery.logo);
   const { signOut } = useAuth();
 
   const [title, subtitle] = TITLES[pathname] ?? [
@@ -75,6 +78,15 @@ export function Topbar() {
           <path d="M21 12H9" />
         </svg>
       </button>
+
+      {logo ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={logo} alt="logo" className="h-10 w-10 flex-shrink-0 rounded-[11px] object-cover" />
+      ) : (
+        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[11px] bg-gradient-to-br from-brown to-brown-dark text-warm-white shadow-[0_3px_10px_rgba(90,52,20,.3)]">
+          <Croissant size={20} />
+        </div>
+      )}
     </header>
   );
 }

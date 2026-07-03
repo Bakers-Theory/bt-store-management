@@ -14,6 +14,7 @@ import {
   rpcStockIn,
   rpcStockOut,
   rpcUpdateItem,
+  rpcUpdateLogo,
 } from "./supabase-data";
 
 // ─── Action result types (unchanged contract) ─────────────────────────────
@@ -79,6 +80,8 @@ interface StoreState {
   deleteBill: (id: string, byName: string) => Promise<Result & { billNo?: number }>;
 
   saveSettings: (input: SettingsInput) => Promise<void>;
+  uploadLogo: (dataUrl: string) => Promise<void>;
+  removeLogo: () => Promise<void>;
   clearAllData: () => Promise<void>;
 }
 
@@ -94,6 +97,7 @@ const PLACEHOLDER_BAKERY: Bakery = {
   address: "",
   phone: "",
   gst: "",
+  logo: null,
   currency: "₹",
   taxRate: 0,
   lowStockAlert: 5,
@@ -209,6 +213,16 @@ export const useBakeryStore = create<StoreState>()((set, get) => ({
   // ─── Settings ──────────────────────────────────────────────────────────────
   saveSettings: async (input) => {
     await rpcSaveSettings(input);
+    await get().load();
+  },
+
+  uploadLogo: async (dataUrl) => {
+    await rpcUpdateLogo(dataUrl);
+    await get().load();
+  },
+
+  removeLogo: async () => {
+    await rpcUpdateLogo(null);
     await get().load();
   },
 

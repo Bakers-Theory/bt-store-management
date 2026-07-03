@@ -12,6 +12,7 @@ export interface Bakery {
   address: string;
   phone: string;
   gst: string;
+  logo: string | null; // base64 data URL
   currency: string;
   taxRate: number;
   lowStockAlert: number;

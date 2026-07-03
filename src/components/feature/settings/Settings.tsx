@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Download, Trash2 } from "lucide-react";
+import { Croissant, Download, Trash2, X } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { useUIStore } from "@/lib/ui-store";
@@ -20,8 +20,11 @@ export function Settings() {
   const user = useCurrentUser();
   const bakery = useBakeryStore((s) => s.bakery);
   const saveSettings = useBakeryStore((s) => s.saveSettings);
+  const uploadLogo = useBakeryStore((s) => s.uploadLogo);
+  const removeLogo = useBakeryStore((s) => s.removeLogo);
   const clearAllData = useBakeryStore((s) => s.clearAllData);
   const toast = useUIStore((s) => s.toast);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const [name, setName] = useState(bakery.name);
   const [tagline, setTagline] = useState(bakery.tagline);
@@ -33,6 +36,14 @@ export function Settings() {
 
   // Non-owners get the account view.
   if (user && user.role !== "Owner") return <MyAccount />;
+
+  const onLogoFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => void uploadLogo(ev.target?.result as string);
+    reader.readAsDataURL(file);
+  };
 
   const save = async () => {
     await saveSettings({
@@ -69,6 +80,33 @@ export function Settings() {
         {/* Bakery profile */}
         <div className="rounded-[18px] border border-line bg-warm-white p-[22px] shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
           <h3 className="mb-4 text-[15.5px] font-extrabold">Bakery profile</h3>
+
+          <div className="mb-3.5 text-center">
+            <div
+              className="cursor-pointer rounded-xl border-2 border-dashed border-line-strong bg-cream p-5 text-center transition-colors hover:border-brown"
+              onClick={() => fileRef.current?.click()}
+            >
+              {bakery.logo ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={bakery.logo} className="mx-auto mb-2 block h-20 w-20 rounded-xl object-cover" alt="logo" />
+              ) : (
+                <div className="mb-2 flex justify-center">
+                  <Croissant size={48} />
+                </div>
+              )}
+              <div className="text-[13px] text-ink-muted">Tap to upload logo</div>
+              <div className="mt-1 text-[11px] text-ink-light">Appears on bills &amp; receipt</div>
+            </div>
+            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onLogoFile} />
+            {bakery.logo && (
+              <button
+                className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-danger"
+                onClick={() => removeLogo()}
+              >
+                <X size={16} /> Remove logo
+              </button>
+            )}
+          </div>
 
           <div className="flex flex-col gap-[13px]">
             <div>

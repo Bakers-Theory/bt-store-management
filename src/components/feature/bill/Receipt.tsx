@@ -18,9 +18,14 @@ export function Receipt({ bill }: { bill: Bill }) {
         </div>
       )}
       <div className="receipt-center">
-        <div className="receipt-logo-placeholder flex items-center justify-center">
-          <Croissant size={20} />
-        </div>
+        {b.logo ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={b.logo} className="receipt-logo" alt="logo" />
+        ) : (
+          <div className="receipt-logo-placeholder flex items-center justify-center">
+            <Croissant size={20} />
+          </div>
+        )}
         <div className="text-[15px] font-bold">{b.name}</div>
         {b.tagline && <div className="text-[11px]">{b.tagline}</div>}
         {b.address && <div className="text-[10px]">{b.address}</div>}

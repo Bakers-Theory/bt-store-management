@@ -11,7 +11,6 @@ import {
 } from "@/lib/auth";
 import { defaultRoute } from "@/lib/permissions";
 import { useAuthReady, useCurrentUser } from "@/components/system/AuthProvider";
-import { Croissant } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -64,9 +63,12 @@ export default function LoginPage() {
     <div className="fixed inset-0 z-[300] flex items-center justify-center bg-[radial-gradient(circle_at_30%_12%,#fff7ec,#efdfc4)] p-6">
       <div className="w-full max-w-[384px] rounded-[24px] border border-line bg-warm-white px-8 py-9 shadow-[0_22px_64px_rgba(90,52,20,0.16)]">
         <div className="mb-[26px] flex flex-col items-center text-center">
-          <div className="flex h-[62px] w-[62px] items-center justify-center rounded-[19px] bg-[linear-gradient(150deg,#7c4a1e,#5a3414)] text-warm-white shadow-[0_7px_20px_rgba(90,52,20,0.32)]">
-            <Croissant size={31} />
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/android-chrome-512x512.png"
+            alt="Bakers Theory"
+            className="h-[62px] w-[62px] rounded-[19px] object-cover shadow-[0_7px_20px_rgba(90,52,20,0.32)]"
+          />
           <div className="wordmark mt-3.5 text-[28px] leading-[1.1]">Bakers Theory</div>
           <div className="mt-1 text-[11.5px] font-bold tracking-[0.08em] text-ink-light">
             STORE MANAGEMENT

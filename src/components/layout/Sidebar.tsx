@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { navItems } from "@/lib/permissions";
 import { useAuth, useCurrentUser } from "@/components/system/AuthProvider";
+import { useBakeryStore } from "@/lib/store";
 import { Croissant } from "lucide-react";
 
 const ICONS: Record<string, React.ReactNode> = {
@@ -54,6 +55,7 @@ export function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const user = useCurrentUser();
+  const logo = useBakeryStore((s) => s.bakery.logo);
   const { signOut } = useAuth();
 
   const items = [...navItems(user), { key: "settings", href: "/settings", icon: "⚙", label: "Settings" }];
@@ -66,9 +68,14 @@ export function Sidebar() {
   return (
     <aside className="sticky top-0 hidden h-screen w-[244px] flex-shrink-0 flex-col gap-[5px] border-r border-line bg-warm-white p-4 lg:flex">
       <div className="flex items-center gap-[11px] px-2 pb-5 pt-1.5">
-        <div className="flex h-[42px] w-[42px] items-center justify-center rounded-[13px] bg-gradient-to-br from-brown to-brown-dark text-warm-white shadow-[0_3px_10px_rgba(90,52,20,.3)]">
-          <Croissant size={22} />
-        </div>
+        {logo ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={logo} alt="logo" className="h-[42px] w-[42px] flex-shrink-0 rounded-[13px] object-cover" />
+        ) : (
+          <div className="flex h-[42px] w-[42px] items-center justify-center rounded-[13px] bg-gradient-to-br from-brown to-brown-dark text-warm-white shadow-[0_3px_10px_rgba(90,52,20,.3)]">
+            <Croissant size={22} />
+          </div>
+        )}
         <div className="leading-[1.15]">
           <div className="wordmark text-xl text-ink">Bakers Theory</div>
           <div className="text-[11px] font-semibold tracking-[.03em] text-ink-light">STORE MANAGEMENT</div>
