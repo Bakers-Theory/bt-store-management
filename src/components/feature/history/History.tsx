@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Ban,
   ClipboardList,
@@ -209,7 +209,10 @@ export function History() {
     }
   };
 
-  const itemEmoji = (itemId?: string) => items.find((i) => i.id === itemId)?.emoji || "📦";
+  // Lookup map built once per items change, so the logs list is O(logs) to
+  // render instead of O(logs × items) from a find() per row.
+  const emojiById = useMemo(() => new Map(items.map((i) => [i.id, i.emoji])), [items]);
+  const itemEmoji = (itemId?: string) => (itemId && emojiById.get(itemId)) || "📦";
 
   const doCancel = async (b: Bill) => {
     if (b.status === "cancelled") {
@@ -234,13 +237,17 @@ export function History() {
     });
   };
 
-  const q = search.trim().toLowerCase();
-  const filteredBills = bills.filter((b) => {
-    if (statusFilter !== "All" && b.status !== statusFilter.toLowerCase()) return false;
-    if (!q) return true;
-    const name = (b.customerName || "Walk-in").toLowerCase();
-    return name.includes(q) || String(b.billNo).includes(q);
-  });
+  // Recomputed only when the list or the filter/search inputs change, not on
+  // every unrelated re-render.
+  const filteredBills = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return bills.filter((b) => {
+      if (statusFilter !== "All" && b.status !== statusFilter.toLowerCase()) return false;
+      if (!q) return true;
+      const name = (b.customerName || "Walk-in").toLowerCase();
+      return name.includes(q) || String(b.billNo).includes(q);
+    });
+  }, [bills, statusFilter, search]);
 
   return (
     <>
@@ -343,7 +350,7 @@ export function History() {
                 <button className="btn-secondary text-[13px]" onClick={loadMoreBills}>
                   Load more
                 </button>
-                {(q || statusFilter !== "All") && (
+                {(search.trim() || statusFilter !== "All") && (
                   <p className="mt-1.5 text-[11px] text-ink-light">
                     Search &amp; filter apply to loaded bills — load more to include older ones.
                   </p>

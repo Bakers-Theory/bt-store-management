@@ -1,10 +1,11 @@
 "use client";
 
+import { memo } from "react";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 const BROWN = "#7c4a1e";
 
-export function TopItemsChart({ data }: { data: { name: string; qty: number }[] }) {
+export const TopItemsChart = memo(function TopItemsChart({ data }: { data: { name: string; qty: number }[] }) {
   if (data.length === 0) {
     return <div className="py-6 text-center text-sm text-ink-muted">No sales yet</div>;
   }
@@ -36,4 +37,4 @@ export function TopItemsChart({ data }: { data: { name: string; qty: number }[] 
       </ResponsiveContainer>
     </div>
   );
-}
+});

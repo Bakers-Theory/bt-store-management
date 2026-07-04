@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Lightbulb, Package, Download, Receipt, Plus } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
@@ -149,35 +149,63 @@ export function Dashboard() {
         : 0;
   const avgBill = billsToday > 0 ? todaySales / billsToday : 0;
 
-  const now = new Date();
   const recent = stats?.recentBills ?? [];
-
-  const chartData = stats ? weeklyBuckets(stats.weekly, now) : [];
   const topItemsData = stats?.topItems ?? [];
-  const categoryData =
-    stats?.categories.map((c) => ({ category: c.category, revenue: c.revenue })) ?? [];
-  const categoryPLData = stats
-    ? categoryPLFrom(
-        stats.categories.map((c) => ({ category: c.category, revenue: c.revenue, cogs: c.cogs ?? 0 })),
-      )
-    : [];
 
-  const soldById = new Map((stats?.soldByItem ?? []).map((s) => [s.itemId, s.qty]));
-  const health = stats ? stockHealthFrom(soldById, stats.daySpan, items, lowStockAlert) : [];
-  const recs = stats
-    ? recommendationsFrom(
-        {
-          health,
-          dowRevenue: stats.dowRevenue,
-          hourCounts: stats.hourCounts,
-          topEarner: stats.topEarner,
-        },
-        currency,
-      )
-    : [];
-  const attention = health
-    .filter((s) => s.verdict !== "Healthy")
-    .sort((a, b) => verdictRank[a.verdict] - verdictRank[b.verdict]);
+  // Derivations are memoized on their real inputs so unrelated re-renders (modal
+  // open/close, viewing a bill) don't recompute them or rebuild the array props
+  // handed to the chart components.
+  const chartData = useMemo(
+    () => (stats ? weeklyBuckets(stats.weekly, new Date()) : []),
+    [stats],
+  );
+  const categoryData = useMemo(
+    () => stats?.categories.map((c) => ({ category: c.category, revenue: c.revenue })) ?? [],
+    [stats],
+  );
+  const categoryPLData = useMemo(
+    () =>
+      stats
+        ? categoryPLFrom(
+            stats.categories.map((c) => ({ category: c.category, revenue: c.revenue, cogs: c.cogs ?? 0 })),
+          )
+        : [],
+    [stats],
+  );
+  const health = useMemo(
+    () =>
+      stats
+        ? stockHealthFrom(
+            new Map(stats.soldByItem.map((s) => [s.itemId, s.qty])),
+            stats.daySpan,
+            items,
+            lowStockAlert,
+          )
+        : [],
+    [stats, items, lowStockAlert],
+  );
+  const recs = useMemo(
+    () =>
+      stats
+        ? recommendationsFrom(
+            {
+              health,
+              dowRevenue: stats.dowRevenue,
+              hourCounts: stats.hourCounts,
+              topEarner: stats.topEarner,
+            },
+            currency,
+          )
+        : [],
+    [stats, health, currency],
+  );
+  const attention = useMemo(
+    () =>
+      health
+        .filter((s) => s.verdict !== "Healthy")
+        .sort((a, b) => verdictRank[a.verdict] - verdictRank[b.verdict]),
+    [health],
+  );
 
   return (
     <>

@@ -185,14 +185,28 @@ export interface FullStoreData extends BaseData {
 export async function fetchReportData(): Promise<FullStoreData> {
   const supabase = createClient();
   const base = await fetchBaseData();
-  const [billsRes, billItemsRes, logsRes] = await Promise.all([
+  const [billsRes, billItemsRes, logsRes, costRes] = await Promise.all([
     supabase.from("bills").select("*").order("created_at"),
     // Explicit columns — cost_price is revoked from the client role (see 0002).
     supabase.from("bill_items").select("id,bill_id,item_id,name,emoji,unit,qty,price"),
     supabase.from("activity_log_v").select("*").order("created_at", { ascending: false }),
+    // Historical per-line cost (analytics-gated SECURITY DEFINER; see 0005), so
+    // the report's COGS/profit match the dashboard. Empty for non-analytics users.
+    supabase.rpc("bill_lines_with_cost"),
   ]);
 
-  const linesByBill = linesByBillId((billItemsRes.data ?? []) as BillItemRow[]);
+  const costById = new Map<string, number>();
+  for (const r of (costRes.data ?? []) as { id: string; cost_price: number }[]) {
+    costById.set(r.id, r.cost_price);
+  }
+
+  const linesByBill = new Map<string, BillLine[]>();
+  for (const row of (billItemsRes.data ?? []) as BillItemRow[]) {
+    const arr = linesByBill.get(row.bill_id) ?? [];
+    arr.push({ ...mapLine(row), costPrice: costById.get(row.id) ?? 0 });
+    linesByBill.set(row.bill_id, arr);
+  }
+
   return {
     ...base,
     bills: ((billsRes.data ?? []) as BillRow[]).map((b) =>

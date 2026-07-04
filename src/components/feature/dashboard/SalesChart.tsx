@@ -1,11 +1,12 @@
 "use client";
 
+import { memo } from "react";
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis } from "recharts";
 
 const BROWN = "#7c4a1e";
 const GRAY = "#c9a97a";
 
-export function SalesChart({
+export const SalesChart = memo(function SalesChart({
   data,
   currency,
 }: {
@@ -41,4 +42,4 @@ export function SalesChart({
       </ResponsiveContainer>
     </div>
   );
-}
+});

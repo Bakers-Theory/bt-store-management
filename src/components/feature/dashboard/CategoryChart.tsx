@@ -1,10 +1,11 @@
 "use client";
 
+import { memo } from "react";
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 const BROWN = "#7c4a1e";
 
-export function CategoryChart({
+export const CategoryChart = memo(function CategoryChart({
   data,
   currency,
 }: {
@@ -42,4 +43,4 @@ export function CategoryChart({
       </ResponsiveContainer>
     </div>
   );
-}
+});
