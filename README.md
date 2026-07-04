@@ -31,7 +31,7 @@ npm run lint
 
 A fixed **Owner** account is always seeded:
 
-- **User ID:** `7873557430`
+- **User ID:** `admin`
 - **Password:** `Dominar@400`
 
 The Owner can create staff users with per-area permissions (Sales, Inventory,
