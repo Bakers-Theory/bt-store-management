@@ -6,6 +6,7 @@ import { StoreHydrator } from "@/components/system/StoreHydrator";
 import { ToastHost } from "@/components/system/ToastHost";
 import { OwnerAuthHost } from "@/components/system/OwnerAuthHost";
 import { PrintHost } from "@/components/system/PrintHost";
+import { SpeedInsights } from "@vercel/speed-insights/next"
 
 const figtree = Figtree({
   subsets: ["latin"],
@@ -60,6 +61,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <OwnerAuthHost />
           <PrintHost />
         </AuthProvider>
+        <SpeedInsights />
       </body>
     </html>
   );
