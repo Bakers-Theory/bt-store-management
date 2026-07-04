@@ -11,6 +11,7 @@ import {
 } from "@/lib/auth";
 import { defaultRoute } from "@/lib/permissions";
 import { useAuthReady, useCurrentUser } from "@/components/system/AuthProvider";
+import { LoadingScreen } from "@/components/system/LoadingScreen";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -57,7 +58,9 @@ export default function LoginPage() {
     );
   };
 
-  if (!ready || user) return null;
+  // Show the branded splash (not a blank screen) while auth resolves, and keep
+  // it up for already-signed-in users while they redirect — avoids a form flash.
+  if (!ready || user) return <LoadingScreen />;
 
   return (
     <div className="fixed inset-0 z-[300] flex items-center justify-center bg-[radial-gradient(circle_at_30%_12%,#fff7ec,#efdfc4)] p-6">
@@ -65,7 +68,8 @@ export default function LoginPage() {
         <div className="mb-[26px] flex flex-col items-center text-center">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/android-chrome-512x512.png"
+            fetchPriority="high"
+            src="/apple-touch-icon.png"
             alt="Bakers Theory"
             className="h-[62px] w-[62px] rounded-[19px] object-cover shadow-[0_7px_20px_rgba(90,52,20,0.32)]"
           />

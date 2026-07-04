@@ -7,6 +7,7 @@ import { useBakeryStore } from "@/lib/store";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { BottomNav } from "@/components/layout/BottomNav";
+import { AppSkeleton } from "@/components/system/AppSkeleton";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -18,10 +19,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     if (ready && !user) router.replace("/login");
   }, [ready, user, router]);
 
-  if (!ready || !user) return null;
-  // Wait for the Supabase-backed store to load before rendering, so views never
-  // flash the placeholder profile and initialise from real data.
-  if (!hydrated) return null;
+  // Show the shell skeleton (not a blank screen) while auth resolves and the
+  // Supabase-backed store loads, so the chrome paints early (FCP) and views
+  // never flash the placeholder profile before real data arrives.
+  if (!ready || !user || !hydrated) return <AppSkeleton />;
 
   return (
     <div className="flex min-h-screen bg-cream">
