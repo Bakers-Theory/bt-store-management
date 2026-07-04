@@ -7,6 +7,7 @@ import { useBakeryStore } from "@/lib/store";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { useUIStore } from "@/lib/ui-store";
 import { exportExcelReport } from "@/lib/excel";
+import { fetchReportData } from "@/lib/supabase-data";
 import { MyAccount } from "./MyAccount";
 import { UserManagement } from "./UserManagement";
 import { ChangePasswordCard } from "./ChangePasswordCard";
@@ -61,8 +62,7 @@ export function Settings() {
   };
 
   const doExport = async () => {
-    const { bakery, items, bills, logs } = useBakeryStore.getState();
-    const r = await exportExcelReport({ bakery, items, bills, logs });
+    const r = await exportExcelReport(await fetchReportData());
     toast(r.ok ? "Excel report downloaded" : r.error ?? "Export failed");
   };
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { weeklySales, topItems, categoryRevenue, categoryPL, stockHealth, recommendations } from "./analytics";
+import { weeklyBuckets, categoryPL, stockHealth, recommendations } from "./analytics";
 import type { Bill, Item } from "./types";
 
 function bill(partial: Partial<Bill>): Bill {
@@ -18,44 +18,17 @@ function bill(partial: Partial<Bill>): Bill {
   } as Bill;
 }
 
-describe("weeklySales", () => {
-  it("returns 7 buckets oldest to newest ending today", () => {
+describe("weeklyBuckets", () => {
+  it("returns 7 buckets oldest to newest ending today, filling from daily totals", () => {
     const now = new Date("2026-07-03T12:00:00.000Z");
-    const res = weeklySales([bill({ total: 100, date: "2026-07-03T09:00:00.000Z" })], now);
+    const res = weeklyBuckets([{ date: "2026-07-03", total: 100 }], now);
     expect(res).toHaveLength(7);
     expect(res[6].total).toBe(100); // today is last bucket
   });
-  it("excludes cancelled bills", () => {
+  it("leaves days with no sales at zero", () => {
     const now = new Date("2026-07-03T12:00:00.000Z");
-    const res = weeklySales([bill({ total: 100, status: "cancelled", date: "2026-07-03T09:00:00.000Z" })], now);
-    expect(res[6].total).toBe(0);
-  });
-});
-
-describe("topItems", () => {
-  it("ranks items by quantity sold, descending, capped", () => {
-    const b = bill({
-      items: [
-        { itemId: "i1", name: "Croissant", emoji: "🥐", unit: "pcs", qty: 2, price: 45, costPrice: 20 },
-        { itemId: "i2", name: "Donut", emoji: "🍩", unit: "pcs", qty: 5, price: 40, costPrice: 15 },
-      ],
-    });
-    const res = topItems([b], 5);
-    expect(res[0]).toEqual({ name: "Donut", qty: 5 });
-    expect(res[1]).toEqual({ name: "Croissant", qty: 2 });
-  });
-});
-
-describe("categoryRevenue", () => {
-  it("sums revenue per category", () => {
-    const items: Item[] = [
-      { id: "i1", name: "Croissant", emoji: "🥐", category: "Pastries", unit: "pcs", price: 45, costPrice: 20, qty: 10 },
-    ];
-    const b = bill({
-      items: [{ itemId: "i1", name: "Croissant", emoji: "🥐", unit: "pcs", qty: 2, price: 45, costPrice: 20 }],
-    });
-    const res = categoryRevenue([b], items);
-    expect(res).toEqual([{ category: "Pastries", revenue: 90 }]);
+    const res = weeklyBuckets([], now);
+    expect(res.every((b) => b.total === 0)).toBe(true);
   });
 });
 

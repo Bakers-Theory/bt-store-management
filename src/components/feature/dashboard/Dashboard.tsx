@@ -1,31 +1,54 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Lightbulb, Package, Download, Receipt, Plus } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { useUIStore } from "@/lib/ui-store";
 import { hasPermission } from "@/lib/permissions";
-import { isActiveBill, formatDate } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 import { exportExcelReport } from "@/lib/excel";
 import {
-  weeklySales,
-  topItems,
-  categoryRevenue,
-  categoryPL,
-  stockHealth,
-  recommendations,
+  fetchDashboardStats,
+  fetchReportData,
+  fetchBill,
+  type DashboardStats,
+} from "@/lib/supabase-data";
+import {
+  weeklyBuckets,
+  categoryPLFrom,
+  stockHealthFrom,
+  recommendationsFrom,
   type StockVerdict,
 } from "@/lib/analytics";
 import { ItemModal } from "@/components/feature/stock/ItemModal";
 import { ViewBillModal } from "@/components/feature/bill/ViewBillModal";
 import { StockInForm } from "@/components/feature/stock/StockInForm";
 import { Modal } from "@/components/ui/Modal";
-import { SalesChart } from "./SalesChart";
-import { TopItemsChart } from "./TopItemsChart";
-import { CategoryChart } from "./CategoryChart";
+import { Skeleton } from "@/components/ui/Skeleton";
+import dynamic from "next/dynamic";
 import type { Bill } from "@/lib/types";
+
+// Charts pull in recharts (~110 kB), which no other route needs. Load them on
+// demand so it stays out of the initial dashboard bundle. Client-only (ssr:
+// false) — the whole dashboard renders client-side behind the auth gate anyway.
+// Doubles as the data-loading skeleton for each chart.
+const ChartFallback = ({ h }: { h: number }) => (
+  <div className="w-full animate-pulse rounded-xl bg-line-soft" style={{ height: h }} />
+);
+const SalesChart = dynamic(() => import("./SalesChart").then((m) => m.SalesChart), {
+  ssr: false,
+  loading: () => <ChartFallback h={160} />,
+});
+const TopItemsChart = dynamic(() => import("./TopItemsChart").then((m) => m.TopItemsChart), {
+  ssr: false,
+  loading: () => <ChartFallback h={140} />,
+});
+const CategoryChart = dynamic(() => import("./CategoryChart").then((m) => m.CategoryChart), {
+  ssr: false,
+  loading: () => <ChartFallback h={140} />,
+});
 
 const priorityBadge: Record<string, string> = {
   High: "badge-danger",
@@ -60,66 +83,101 @@ function initials(name: string): string {
     .join("");
 }
 
+// Cache the last-fetched stats (keyed by user, so a user switch on the same tab
+// never shows the previous user's data) so navigating back to the dashboard
+// renders instantly while it revalidates in the background.
+let statsCache: { uid: string; data: DashboardStats } | null = null;
+
 export function Dashboard() {
   const router = useRouter();
   const user = useCurrentUser();
   const items = useBakeryStore((s) => s.items);
-  const bills = useBakeryStore((s) => s.bills);
   const currency = useBakeryStore((s) => s.bakery.currency);
   const lowStockAlert = useBakeryStore((s) => s.bakery.lowStockAlert);
   const toast = useUIStore((s) => s.toast);
 
+  const [stats, setStats] = useState<DashboardStats | null>(
+    statsCache && statsCache.uid === user?.id ? statsCache.data : null,
+  );
   const [addOpen, setAddOpen] = useState(false);
   const [stockInOpen, setStockInOpen] = useState(false);
   const [viewBill, setViewBill] = useState<Bill | null>(null);
 
-  const lowStockItems = items.filter((i) => i.qty <= lowStockAlert);
-  const lowStock = lowStockItems.length;
+  // Sales analytics are aggregated server-side (bounded payload) rather than by
+  // downloading every bill. Served from cache instantly on revisit, then
+  // revalidated; item-derived views below stay reactive to the store.
+  useEffect(() => {
+    let alive = true;
+    fetchDashboardStats()
+      .then((s) => {
+        if (!alive) return;
+        if (user?.id) statsCache = { uid: user.id, data: s };
+        setStats(s);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [user?.id]);
 
-  const activeBills = bills.filter(isActiveBill);
-  const now = new Date();
-  const yesterday = new Date(now);
-  yesterday.setDate(yesterday.getDate() - 1);
+  const doExport = async () => {
+    const r = await exportExcelReport(await fetchReportData());
+    toast(r.ok ? "Excel report downloaded" : r.error ?? "Export failed");
+  };
 
-  const todayBills = activeBills.filter(
-    (b) => new Date(b.date).toDateString() === now.toDateString(),
-  );
-  const yesterdayBills = activeBills.filter(
-    (b) => new Date(b.date).toDateString() === yesterday.toDateString(),
-  );
+  const openBill = async (id: string) => {
+    const b = await fetchBill(id);
+    if (b) setViewBill(b);
+  };
 
-  const todaySales = todayBills.reduce((s, b) => s + b.total, 0);
-  const yesterdaySales = yesterdayBills.reduce((s, b) => s + b.total, 0);
+  // The page shell renders immediately. `loading` is true only on a cold load
+  // (no cached stats); on revisit `stats` is served from cache so the real data
+  // shows instantly while it revalidates silently in the background.
+  const loading = !stats;
+
+  const lowStock = items.filter((i) => i.qty <= lowStockAlert).length;
+
+  const todaySales = stats?.kpis.todaySales ?? 0;
+  const yesterdaySales = stats?.kpis.yesterdaySales ?? 0;
+  const billsToday = stats?.kpis.billsToday ?? 0;
+  const itemsSold = stats?.kpis.itemsSoldToday ?? 0;
   const salesDelta =
     yesterdaySales > 0
       ? Math.round(((todaySales - yesterdaySales) / yesterdaySales) * 100)
       : todaySales > 0
         ? 100
         : 0;
-
-  const billsToday = todayBills.length;
   const avgBill = billsToday > 0 ? todaySales / billsToday : 0;
-  const itemsSold = todayBills.reduce(
-    (s, b) => s + b.items.reduce((is, line) => is + line.qty, 0),
-    0,
-  );
 
-  const recent = bills.slice(-5).reverse();
+  const now = new Date();
+  const recent = stats?.recentBills ?? [];
 
-  const chartData = weeklySales(bills, now);
-  const topItemsData = topItems(bills);
-  const categoryData = categoryRevenue(bills, items);
-  const categoryPLData = categoryPL(bills, items);
-  const recs = recommendations(bills, items, lowStockAlert, currency);
-  const attention = stockHealth(bills, items, lowStockAlert)
+  const chartData = stats ? weeklyBuckets(stats.weekly, now) : [];
+  const topItemsData = stats?.topItems ?? [];
+  const categoryData =
+    stats?.categories.map((c) => ({ category: c.category, revenue: c.revenue })) ?? [];
+  const categoryPLData = stats
+    ? categoryPLFrom(
+        stats.categories.map((c) => ({ category: c.category, revenue: c.revenue, cogs: c.cogs ?? 0 })),
+      )
+    : [];
+
+  const soldById = new Map((stats?.soldByItem ?? []).map((s) => [s.itemId, s.qty]));
+  const health = stats ? stockHealthFrom(soldById, stats.daySpan, items, lowStockAlert) : [];
+  const recs = stats
+    ? recommendationsFrom(
+        {
+          health,
+          dowRevenue: stats.dowRevenue,
+          hourCounts: stats.hourCounts,
+          topEarner: stats.topEarner,
+        },
+        currency,
+      )
+    : [];
+  const attention = health
     .filter((s) => s.verdict !== "Healthy")
     .sort((a, b) => verdictRank[a.verdict] - verdictRank[b.verdict]);
-
-  const doExport = async () => {
-    const { bakery, items, bills, logs } = useBakeryStore.getState();
-    const r = await exportExcelReport({ bakery, items, bills, logs });
-    toast(r.ok ? "Excel report downloaded" : r.error ?? "Export failed");
-  };
 
   return (
     <>
@@ -133,37 +191,63 @@ export function Dashboard() {
         <div className="rounded-[18px] bg-gradient-to-br from-brown to-brown-dark p-[18px_20px] text-warm-white shadow-card">
           <div className="flex items-center justify-between">
             <span className="text-[12.5px] font-semibold opacity-80">Today&apos;s Sales</span>
-            <span className="rounded-full bg-white/20 px-2 py-0.5 text-[11px] font-bold">
-              {salesDelta >= 0 ? "+" : ""}
-              {salesDelta}%
-            </span>
+            {!loading && (
+              <span className="rounded-full bg-white/20 px-2 py-0.5 text-[11px] font-bold">
+                {salesDelta >= 0 ? "+" : ""}
+                {salesDelta}%
+              </span>
+            )}
           </div>
-          <div className="num mt-2 text-[28px] font-extrabold tracking-tight">
-            {currency}
-            {todaySales.toFixed(0)}
-          </div>
+          {loading ? (
+            <div aria-hidden className="mt-2 h-8 w-24 animate-pulse rounded-md bg-white/25" />
+          ) : (
+            <div className="num mt-2 text-[28px] font-extrabold tracking-tight">
+              {currency}
+              {todaySales.toFixed(0)}
+            </div>
+          )}
           <div className="mt-0.5 text-[11.5px] opacity-70">
-            vs {currency}
-            {yesterdaySales.toFixed(0)} yesterday
+            {loading ? (
+              <div aria-hidden className="mt-1 h-3 w-24 animate-pulse rounded bg-white/20" />
+            ) : (
+              <>
+                vs {currency}
+                {yesterdaySales.toFixed(0)} yesterday
+              </>
+            )}
           </div>
         </div>
 
         <div className="rounded-[18px] border border-line bg-warm-white p-[18px_20px]">
           <div className="text-[12.5px] font-semibold text-ink-muted">Bills Today</div>
-          <div className="num mt-2 text-[28px] font-extrabold tracking-tight text-ink">
-            {billsToday}
-          </div>
+          {loading ? (
+            <Skeleton className="mt-2 h-8 w-16" />
+          ) : (
+            <div className="num mt-2 text-[28px] font-extrabold tracking-tight text-ink">
+              {billsToday}
+            </div>
+          )}
           <div className="mt-0.5 text-[11.5px] text-ink-light">
-            avg {currency}
-            {avgBill.toFixed(0)} / bill
+            {loading ? (
+              <Skeleton className="mt-1 h-3 w-20" />
+            ) : (
+              <>
+                avg {currency}
+                {avgBill.toFixed(0)} / bill
+              </>
+            )}
           </div>
         </div>
 
         <div className="rounded-[18px] border border-line bg-warm-white p-[18px_20px]">
           <div className="text-[12.5px] font-semibold text-ink-muted">Items Sold</div>
-          <div className="num mt-2 text-[28px] font-extrabold tracking-tight text-ink">
-            {itemsSold}
-          </div>
+          {loading ? (
+            <Skeleton className="mt-2 h-8 w-16" />
+          ) : (
+            <div className="num mt-2 text-[28px] font-extrabold tracking-tight text-ink">
+              {itemsSold}
+            </div>
+          )}
           <div className="mt-0.5 text-[11.5px] text-ink-light">across all categories</div>
         </div>
 
@@ -188,7 +272,7 @@ export function Dashboard() {
               <div className="card-header">
                 <h3>Sales this week</h3>
               </div>
-              <SalesChart data={chartData} currency={currency} />
+              {loading ? <ChartFallback h={160} /> : <SalesChart data={chartData} currency={currency} />}
             </div>
           ) : (
             <div className="hidden lg:block" />
@@ -237,14 +321,18 @@ export function Dashboard() {
                   <div className="card-header">
                     <h3>Top items</h3>
                   </div>
-                <TopItemsChart data={topItemsData} />
+                {loading ? <ChartFallback h={140} /> : <TopItemsChart data={topItemsData} />}
               </div>
 
               <div className="card">
                 <div className="card-header">
                   <h3>Sales &amp; profit by category</h3>
                 </div>
-                <CategoryChart data={categoryData} currency={currency} />
+                {loading ? (
+                  <ChartFallback h={140} />
+                ) : (
+                  <CategoryChart data={categoryData} currency={currency} />
+                )}
                 {categoryPLData.length > 0 && (
                   <div className="mt-3 overflow-x-auto">
                     <table className="w-full text-[12px]">
@@ -289,20 +377,33 @@ export function Dashboard() {
                     <Lightbulb size={16} /> Business Boosters
                   </h3>
                 </div>
-                {recs.map((r, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-start gap-2.5 border-t border-line-soft py-2.5 first:border-t-0"
-                  >
-                    <span className={`badge ${priorityBadge[r.priority]} flex-shrink-0`}>
-                      {r.priority}
-                    </span>
-                    <div className="min-w-0">
-                      <div className="text-[13px] font-bold text-ink">{r.insight}</div>
-                      <div className="text-[11.5px] text-ink-light">{r.detail}</div>
-                    </div>
-                  </div>
-                ))}
+                {loading
+                  ? [0, 1, 2].map((i) => (
+                      <div
+                        key={i}
+                        className="flex items-start gap-2.5 border-t border-line-soft py-2.5 first:border-t-0"
+                      >
+                        <Skeleton className="h-5 w-14 flex-shrink-0 rounded-full" />
+                        <div className="min-w-0 flex-1 space-y-1.5">
+                          <Skeleton className="h-3.5 w-2/3" />
+                          <Skeleton className="h-3 w-full" />
+                        </div>
+                      </div>
+                    ))
+                  : recs.map((r, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-start gap-2.5 border-t border-line-soft py-2.5 first:border-t-0"
+                      >
+                        <span className={`badge ${priorityBadge[r.priority]} flex-shrink-0`}>
+                          {r.priority}
+                        </span>
+                        <div className="min-w-0">
+                          <div className="text-[13px] font-bold text-ink">{r.insight}</div>
+                          <div className="text-[11.5px] text-ink-light">{r.detail}</div>
+                        </div>
+                      </div>
+                    ))}
               </div>
 
               <button className="btn-success flex w-full items-center justify-center gap-2 p-3 text-sm" onClick={doExport}>
@@ -315,7 +416,18 @@ export function Dashboard() {
             <div className="card-header">
               <h3>Recent Bills</h3>
             </div>
-            {bills.length === 0 ? (
+            {loading ? (
+              [0, 1, 2].map((i) => (
+                <div key={i} className="flex items-center gap-3 border-b border-line-soft py-2.5 last:border-b-0">
+                  <Skeleton className="h-9 w-9 rounded-[10px]" />
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <Skeleton className="h-3.5 w-28" />
+                    <Skeleton className="h-3 w-16" />
+                  </div>
+                  <Skeleton className="h-8 w-14" />
+                </div>
+              ))
+            ) : recent.length === 0 ? (
               <div className="p-5 text-center text-sm text-ink-muted">No bills yet</div>
             ) : (
               recent.map((b) => (
@@ -346,7 +458,7 @@ export function Dashboard() {
                       {currency}
                       {b.total.toFixed(2)}
                     </div>
-                    <button className="btn-sm btn-secondary mt-1" onClick={() => setViewBill(b)}>
+                    <button className="btn-sm btn-secondary mt-1" onClick={() => openBill(b.id)}>
                       View
                     </button>
                   </div>
@@ -370,7 +482,17 @@ export function Dashboard() {
                   </span>
                 )}
               </div>
-              {attention.length === 0 ? (
+              {loading ? (
+                [0, 1, 2].map((i) => (
+                  <div key={i} className="flex items-center gap-2.5 border-t border-line-soft py-2.5 first:border-t-0">
+                    <Skeleton className="h-8 w-8 rounded-lg" />
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <Skeleton className="h-3.5 w-1/2" />
+                      <Skeleton className="h-3 w-2/3" />
+                    </div>
+                  </div>
+                ))
+              ) : attention.length === 0 ? (
                 <div className="p-3 text-center text-[12.5px] text-ink-muted">
                   All items are healthy
                 </div>

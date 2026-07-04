@@ -1,9 +1,9 @@
 "use client";
 
 import { create } from "zustand";
-import type { Bakery, Bill, BillLine, Item, Log, Permissions } from "./types";
+import type { Bakery, Bill, BillLine, Item, Permissions } from "./types";
 import {
-  fetchStoreData,
+  fetchBaseData,
   rpcCancelBill,
   rpcClearAllData,
   rpcCreateItem,
@@ -60,11 +60,14 @@ export interface SettingsInput {
 interface StoreState {
   bakery: Bakery;
   items: Item[];
-  bills: Bill[];
-  logs: Log[];
   _hasHydrated: boolean;
 
-  /** Load all data from Supabase into the client cache. */
+  /**
+   * Load the bounded base data (store settings + item catalogue) into the
+   * client cache. Bills / logs are intentionally not cached here — the
+   * dashboard reads server-side aggregates and History paginates — so this
+   * stays cheap enough to re-run after every mutation.
+   */
   load: () => Promise<void>;
 
   saveItem: (input: ItemInput, id?: string) => Promise<SaveItemResult>;
@@ -76,8 +79,8 @@ interface StoreState {
     customer: { name: string; phone: string },
     lines: BillLine[],
   ) => Promise<Bill>;
-  cancelBill: (id: string, byName: string) => Promise<Result & { billNo?: number }>;
-  deleteBill: (id: string, byName: string) => Promise<Result & { billNo?: number }>;
+  cancelBill: (id: string, byName: string) => Promise<Result>;
+  deleteBill: (id: string, byName: string) => Promise<Result>;
 
   saveSettings: (input: SettingsInput) => Promise<void>;
   uploadLogo: (dataUrl: string) => Promise<void>;
@@ -106,13 +109,11 @@ const PLACEHOLDER_BAKERY: Bakery = {
 export const useBakeryStore = create<StoreState>()((set, get) => ({
   bakery: PLACEHOLDER_BAKERY,
   items: [],
-  bills: [],
-  logs: [],
   _hasHydrated: false,
 
   load: async () => {
     try {
-      const data = await fetchStoreData();
+      const data = await fetchBaseData();
       set({ ...data, _hasHydrated: true });
     } catch {
       set({ _hasHydrated: true });
@@ -189,22 +190,20 @@ export const useBakeryStore = create<StoreState>()((set, get) => ({
   },
 
   cancelBill: async (id, byName) => {
-    const bill = get().bills.find((b) => b.id === id);
     try {
       await rpcCancelBill(id, byName);
       await get().load();
-      return { ok: true, billNo: bill?.billNo };
+      return { ok: true };
     } catch (e) {
       return { ok: false, error: errMsg(e) };
     }
   },
 
   deleteBill: async (id, byName) => {
-    const bill = get().bills.find((b) => b.id === id);
     try {
       await rpcDeleteBill(id, byName);
       await get().load();
-      return { ok: true, billNo: bill?.billNo };
+      return { ok: true };
     } catch (e) {
       return { ok: false, error: errMsg(e) };
     }

@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@/utils/supabase/client";
-import type { Bakery, Bill, BillLine, Item, Log, User } from "./types";
+import type { Bakery, Bill, BillLine, BillStatus, Item, Log, User } from "./types";
 import type { ProfileRow } from "./auth";
 import { profileToUser } from "./auth";
 
@@ -133,44 +133,157 @@ const mapBakery = (r: SettingsRow): Bakery => ({
   lowStockAlert: r.low_stock_alert,
 });
 
+// ─── Row → app helpers ───────────────────────────────────────────────────────
+const linesByBillId = (rows: BillItemRow[]): Map<string, BillLine[]> => {
+  const m = new Map<string, BillLine[]>();
+  for (const row of rows) {
+    const arr = m.get(row.bill_id) ?? [];
+    arr.push(mapLine(row));
+    m.set(row.bill_id, arr);
+  }
+  return m;
+};
+
 // ─── Fetchers ───────────────────────────────────────────────────────────────
-export interface StoreData {
+export interface BaseData {
   bakery: Bakery;
   items: Item[];
+}
+
+/**
+ * Data the whole app is hydrated with: store profile + the item catalogue.
+ * Bounded (one settings row + a bakery's items), so it is safe to load eagerly
+ * and refresh after mutations. Bills / logs are NOT loaded here — the dashboard
+ * reads server-side aggregates and History paginates. See `fetchDashboardStats`
+ * / `fetchBillsPage` / `fetchLogsPage`.
+ */
+export async function fetchBaseData(): Promise<BaseData> {
+  const supabase = createClient();
+  const [settingsRes, itemsRes] = await Promise.all([
+    supabase.from("store_settings").select("*").eq("id", 1).single(),
+    supabase.from("items_v").select("*").order("created_at"),
+  ]);
+  if (!settingsRes.data) {
+    throw new Error("Store settings not found in Supabase");
+  }
+  return {
+    bakery: mapBakery(settingsRes.data as SettingsRow),
+    items: ((itemsRes.data ?? []) as ItemRow[]).map(mapItem),
+  };
+}
+
+export interface FullStoreData extends BaseData {
   bills: Bill[];
   logs: Log[];
 }
 
-export async function fetchStoreData(): Promise<StoreData> {
+/**
+ * Full history fetch — every bill, line and log. Unbounded, so it is used ONLY
+ * by the on-demand Excel export (an explicit, infrequent user action), never on
+ * hydration or after mutations.
+ */
+export async function fetchReportData(): Promise<FullStoreData> {
   const supabase = createClient();
-  const [settingsRes, itemsRes, billsRes, billItemsRes, logsRes] = await Promise.all([
-    supabase.from("store_settings").select("*").eq("id", 1).single(),
-    supabase.from("items_v").select("*").order("created_at"),
+  const base = await fetchBaseData();
+  const [billsRes, billItemsRes, logsRes] = await Promise.all([
     supabase.from("bills").select("*").order("created_at"),
     // Explicit columns — cost_price is revoked from the client role (see 0002).
     supabase.from("bill_items").select("id,bill_id,item_id,name,emoji,unit,qty,price"),
     supabase.from("activity_log_v").select("*").order("created_at", { ascending: false }),
   ]);
 
-  const linesByBill = new Map<string, BillLine[]>();
-  for (const row of (billItemsRes.data ?? []) as BillItemRow[]) {
-    const arr = linesByBill.get(row.bill_id) ?? [];
-    arr.push(mapLine(row));
-    linesByBill.set(row.bill_id, arr);
-  }
-
-  if (!settingsRes.data) {
-    throw new Error("Store settings not found in Supabase");
-  }
-
+  const linesByBill = linesByBillId((billItemsRes.data ?? []) as BillItemRow[]);
   return {
-    bakery: mapBakery(settingsRes.data as SettingsRow),
-    items: ((itemsRes.data ?? []) as ItemRow[]).map(mapItem),
+    ...base,
     bills: ((billsRes.data ?? []) as BillRow[]).map((b) =>
       mapBill(b, linesByBill.get(b.id) ?? []),
     ),
     logs: ((logsRes.data ?? []) as LogRow[]).map(mapLog),
   };
+}
+
+// ─── Dashboard aggregates (server-computed, bounded) ─────────────────────────
+export interface DashboardStats {
+  today: string;
+  kpis: { todaySales: number; yesterdaySales: number; billsToday: number; itemsSoldToday: number };
+  /** Per-day active-sales totals for (up to) the last 7 local days. */
+  weekly: { date: string; total: number }[];
+  topItems: { name: string; qty: number }[];
+  /** cogs is null for users without the analytics permission. */
+  categories: { category: string; revenue: number; cogs: number | null }[];
+  soldByItem: { itemId: string; qty: number }[];
+  daySpan: number;
+  dowRevenue: { dow: number; total: number }[];
+  hourCounts: { hour: number; count: number }[];
+  topEarner: { name: string; revenue: number } | null;
+  recentBills: {
+    id: string; billNo: number; customerName: string;
+    total: number; status: BillStatus; date: string;
+  }[];
+}
+
+/** Fetch the pre-aggregated dashboard payload for the client's local timezone. */
+export async function fetchDashboardStats(): Promise<DashboardStats> {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  return rpc<DashboardStats>("dashboard_stats", { p_tz: tz });
+}
+
+// ─── Paginated history ───────────────────────────────────────────────────────
+export interface BillsPage {
+  bills: Bill[];
+  hasMore: boolean;
+}
+
+/** One page of bills (newest first) with their line items. */
+export async function fetchBillsPage(offset: number, limit: number): Promise<BillsPage> {
+  const supabase = createClient();
+  const { data: billRows } = await supabase
+    .from("bills")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .range(offset, offset + limit - 1);
+  const rows = (billRows ?? []) as BillRow[];
+  if (rows.length === 0) return { bills: [], hasMore: false };
+
+  const { data: lineRows } = await supabase
+    .from("bill_items")
+    .select("id,bill_id,item_id,name,emoji,unit,qty,price")
+    .in("bill_id", rows.map((r) => r.id));
+  const linesByBill = linesByBillId((lineRows ?? []) as BillItemRow[]);
+
+  return {
+    bills: rows.map((b) => mapBill(b, linesByBill.get(b.id) ?? [])),
+    hasMore: rows.length === limit,
+  };
+}
+
+/** A single bill with its line items — for on-demand viewing (e.g. dashboard). */
+export async function fetchBill(id: string): Promise<Bill | null> {
+  const supabase = createClient();
+  const { data: billRow } = await supabase.from("bills").select("*").eq("id", id).single();
+  if (!billRow) return null;
+  const { data: lineRows } = await supabase
+    .from("bill_items")
+    .select("id,bill_id,item_id,name,emoji,unit,qty,price")
+    .eq("bill_id", id);
+  return mapBill(billRow as BillRow, ((lineRows ?? []) as BillItemRow[]).map(mapLine));
+}
+
+export interface LogsPage {
+  logs: Log[];
+  hasMore: boolean;
+}
+
+/** One page of activity-log entries (newest first). */
+export async function fetchLogsPage(offset: number, limit: number): Promise<LogsPage> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("activity_log_v")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .range(offset, offset + limit - 1);
+  const rows = (data ?? []) as LogRow[];
+  return { logs: rows.map(mapLog), hasMore: rows.length === limit };
 }
 
 export async function fetchStaff(): Promise<User[]> {

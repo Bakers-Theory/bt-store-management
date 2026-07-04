@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Ban,
   ClipboardList,
@@ -16,11 +16,60 @@ import { useCurrentUser } from "@/components/system/AuthProvider";
 import { useUIStore } from "@/lib/ui-store";
 import { hasPermission } from "@/lib/permissions";
 import { formatDateFull } from "@/lib/format";
+import { fetchBillsPage, fetchLogsPage } from "@/lib/supabase-data";
 import { tabCls } from "@/components/ui/tabClass";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { ViewBillModal } from "@/components/feature/bill/ViewBillModal";
 import type { Bill, Log } from "@/lib/types";
 
 type StatusFilter = "All" | "Active" | "Cancelled";
+
+const PAGE_SIZE = 30;
+
+const rowsSkeleton = (rows: React.ReactNode) => (
+  <div className="overflow-hidden rounded-[18px] border border-line bg-warm-white shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
+    {rows}
+  </div>
+);
+
+const BillsSkeleton = () =>
+  rowsSkeleton(
+    [0, 1, 2, 3, 4].map((i) => (
+      <div key={i} className="flex items-center gap-3.5 border-t border-line-soft px-5 py-3.5 first:border-t-0">
+        <Skeleton className="h-[42px] w-[42px] rounded-[11px]" />
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <Skeleton className="h-3.5 w-32" />
+          <Skeleton className="h-3 w-44" />
+        </div>
+        <Skeleton className="h-6 w-16 rounded-full" />
+        <Skeleton className="h-4 w-16" />
+      </div>
+    )),
+  );
+
+const LogsSkeleton = () =>
+  rowsSkeleton(
+    [0, 1, 2, 3, 4].map((i) => (
+      <div key={i} className="flex items-center gap-3.5 border-t border-line-soft px-5 py-3.5 first:border-t-0">
+        <Skeleton className="h-10 w-10 rounded-[11px]" />
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <Skeleton className="h-3.5 w-40" />
+          <Skeleton className="h-3 w-56" />
+        </div>
+        <Skeleton className="h-4 w-14" />
+      </div>
+    )),
+  );
+
+// Cache the loaded pages (keyed by user) so navigating back to History renders
+// instantly while the loaded window revalidates in the background.
+let histCache: {
+  uid: string;
+  bills: Bill[];
+  billsMore: boolean;
+  logs: Log[];
+  logsMore: boolean;
+} | null = null;
 
 const initials = (name: string) => {
   const n = (name || "Walk-in").trim();
@@ -73,8 +122,6 @@ const logMeta = (l: Log) => {
 
 export function History() {
   const user = useCurrentUser();
-  const bills = useBakeryStore((s) => s.bills);
-  const logs = useBakeryStore((s) => s.logs);
   const items = useBakeryStore((s) => s.items);
   const currency = useBakeryStore((s) => s.bakery.currency);
   const cancelBill = useBakeryStore((s) => s.cancelBill);
@@ -89,6 +136,79 @@ export function History() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
 
+  // Bills and logs are paginated (newest first) rather than loaded in full.
+  const cached = histCache && histCache.uid === user?.id ? histCache : null;
+  const [bills, setBills] = useState<Bill[]>(cached?.bills ?? []);
+  const [billsMore, setBillsMore] = useState(cached?.billsMore ?? false);
+  const [logs, setLogs] = useState<Log[]>(cached?.logs ?? []);
+  const [logsMore, setLogsMore] = useState(cached?.logsMore ?? false);
+  const [loaded, setLoaded] = useState(cached != null);
+
+  // Persist the loaded window so a later visit renders it immediately.
+  useEffect(() => {
+    if (user?.id) histCache = { uid: user.id, bills, billsMore, logs, logsMore };
+  }, [user?.id, bills, billsMore, logs, logsMore]);
+
+  // Revalidate the loaded window on mount (keeps any "load more" expansion).
+  useEffect(() => {
+    let alive = true;
+    const billWindow = Math.max(histCache?.bills.length ?? 0, PAGE_SIZE);
+    const logWindow = Math.max(histCache?.logs.length ?? 0, PAGE_SIZE);
+    (async () => {
+      const jobs: Promise<void>[] = [];
+      if (canSales)
+        jobs.push(
+          fetchBillsPage(0, billWindow).then((p) => {
+            if (alive) {
+              setBills(p.bills);
+              setBillsMore(p.hasMore);
+            }
+          }),
+        );
+      if (canInv)
+        jobs.push(
+          fetchLogsPage(0, logWindow).then((p) => {
+            if (alive) {
+              setLogs(p.logs);
+              setLogsMore(p.hasMore);
+            }
+          }),
+        );
+      await Promise.all(jobs);
+      if (alive) setLoaded(true);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [canSales, canInv]);
+
+  const loadMoreBills = async () => {
+    const p = await fetchBillsPage(bills.length, PAGE_SIZE);
+    setBills((prev) => [...prev, ...p.bills]);
+    setBillsMore(p.hasMore);
+  };
+
+  const loadMoreLogs = async () => {
+    const p = await fetchLogsPage(logs.length, PAGE_SIZE);
+    setLogs((prev) => [...prev, ...p.logs]);
+    setLogsMore(p.hasMore);
+  };
+
+  // After a cancel/delete, re-fetch the already-loaded window so the change
+  // (status flip or removal) and the new activity-log entry are reflected.
+  const refreshLoaded = async () => {
+    const [bp, lp] = await Promise.all([
+      fetchBillsPage(0, Math.max(bills.length, PAGE_SIZE)),
+      canInv ? fetchLogsPage(0, Math.max(logs.length, PAGE_SIZE)) : Promise.resolve(null),
+    ]);
+    setBills(bp.bills);
+    setBillsMore(bp.hasMore);
+    if (lp) {
+      setLogs(lp.logs);
+      setLogsMore(lp.hasMore);
+    }
+  };
+
   const itemEmoji = (itemId?: string) => items.find((i) => i.id === itemId)?.emoji || "📦";
 
   const doCancel = async (b: Bill) => {
@@ -98,27 +218,29 @@ export function History() {
     }
     if (!confirm(`Cancel Bill #${b.billNo}? Stock quantities will be restored.`)) return;
     const r = await cancelBill(b.id, user?.name ?? "Unknown");
-    if (r.ok) toast(`Bill #${r.billNo} cancelled`);
-    else if (r.error) toast(r.error);
+    if (r.ok) {
+      toast(`Bill #${b.billNo} cancelled`);
+      await refreshLoaded();
+    } else if (r.error) toast(r.error);
   };
 
   const doDelete = (b: Bill) => {
     requireOwnerAuth(`permanently delete Bill #${b.billNo}`, async () => {
       const r = await deleteBill(b.id, user?.name ?? "Unknown");
-      if (r.ok) toast(`Bill #${r.billNo} deleted`);
-      else if (r.error) toast(r.error);
+      if (r.ok) {
+        toast(`Bill #${b.billNo} deleted`);
+        await refreshLoaded();
+      } else if (r.error) toast(r.error);
     });
   };
 
   const q = search.trim().toLowerCase();
-  const filteredBills = [...bills]
-    .filter((b) => {
-      if (statusFilter !== "All" && b.status !== statusFilter.toLowerCase()) return false;
-      if (!q) return true;
-      const name = (b.customerName || "Walk-in").toLowerCase();
-      return name.includes(q) || String(b.billNo).includes(q);
-    })
-    .reverse();
+  const filteredBills = bills.filter((b) => {
+    if (statusFilter !== "All" && b.status !== statusFilter.toLowerCase()) return false;
+    if (!q) return true;
+    const name = (b.customerName || "Walk-in").toLowerCase();
+    return name.includes(q) || String(b.billNo).includes(q);
+  });
 
   return (
     <>
@@ -153,7 +275,9 @@ export function History() {
             </div>
           </div>
 
-          {filteredBills.length === 0 ? (
+          {!loaded ? (
+            <BillsSkeleton />
+          ) : filteredBills.length === 0 ? (
             <div className="px-5 py-10 text-center text-ink-muted">
               <div className="mb-3 flex justify-center">
                 <ReceiptText size={48} />
@@ -161,6 +285,7 @@ export function History() {
               <p className="text-sm">{bills.length === 0 ? "No bills generated yet" : "No bills match your search"}</p>
             </div>
           ) : (
+            <>
             <div className="overflow-hidden rounded-[18px] border border-line bg-warm-white shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
               {filteredBills.map((b) => {
                 const cancelled = b.status === "cancelled";
@@ -213,12 +338,27 @@ export function History() {
                 );
               })}
             </div>
+            {billsMore && (
+              <div className="mt-3 text-center">
+                <button className="btn-secondary text-[13px]" onClick={loadMoreBills}>
+                  Load more
+                </button>
+                {(q || statusFilter !== "All") && (
+                  <p className="mt-1.5 text-[11px] text-ink-light">
+                    Search &amp; filter apply to loaded bills — load more to include older ones.
+                  </p>
+                )}
+              </div>
+            )}
+            </>
           )}
         </>
       )}
 
       {tab === "logs" && (
-        logs.length === 0 ? (
+        !loaded ? (
+          <LogsSkeleton />
+        ) : logs.length === 0 ? (
           <div className="px-5 py-10 text-center text-ink-muted">
             <div className="mb-3 flex justify-center">
               <ClipboardList size={48} />
@@ -226,8 +366,9 @@ export function History() {
             <p className="text-sm">No activity yet</p>
           </div>
         ) : (
+          <>
           <div className="overflow-hidden rounded-[18px] border border-line bg-warm-white shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
-            {[...logs].reverse().map((l) => {
+            {logs.map((l) => {
               const tone = toneClasses[logTone(l.type)];
               const isStock = l.type === "in" || l.type === "out";
               const sign = l.type === "in" ? "+" : "−";
@@ -259,6 +400,14 @@ export function History() {
               );
             })}
           </div>
+          {logsMore && (
+            <div className="mt-3 text-center">
+              <button className="btn-secondary text-[13px]" onClick={loadMoreLogs}>
+                Load more
+              </button>
+            </div>
+          )}
+          </>
         )
       )}
 
