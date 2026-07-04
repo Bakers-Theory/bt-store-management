@@ -53,6 +53,7 @@ interface LogRow {
   bill_no: number | null;
   items: string | null;
   total: number | null;
+  actor_name: string | null;
 }
 interface SettingsRow {
   name: string;
@@ -117,6 +118,7 @@ const mapLog = (r: LogRow): Log => ({
   billNo: r.bill_no ?? undefined,
   items: r.items ?? undefined,
   total: r.total ?? undefined,
+  user: r.actor_name ?? undefined,
 });
 
 const mapBakery = (r: SettingsRow): Bakery => ({
@@ -147,7 +149,7 @@ export async function fetchStoreData(): Promise<StoreData> {
     supabase.from("bills").select("*").order("created_at"),
     // Explicit columns — cost_price is revoked from the client role (see 0002).
     supabase.from("bill_items").select("id,bill_id,item_id,name,emoji,unit,qty,price"),
-    supabase.from("activity_log").select("*").order("created_at", { ascending: false }),
+    supabase.from("activity_log_v").select("*").order("created_at", { ascending: false }),
   ]);
 
   const linesByBill = new Map<string, BillLine[]>();

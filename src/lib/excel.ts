@@ -175,6 +175,7 @@ export function buildReportSheets(data: ReportData, now: Date) {
     .map((l) => ({
       Date: new Date(l.date).toLocaleString("en-IN"),
       Type: l.type === "in" ? "Stock In" : l.type === "out" ? "Stock Out" : "Bill / Sale",
+      User: l.user ?? "",
       "Item / Bill": l.type === "bill" ? `Bill #${l.billNo}` : l.itemName ?? "",
       Qty: l.qty || "",
       Details:
@@ -183,7 +184,7 @@ export function buildReportSheets(data: ReportData, now: Date) {
           : (l.supplier ? `Supplier: ${l.supplier}` : l.reason || "") + (l.notes ? ` — ${l.notes}` : ""),
       [`Amount (${cur})`]: l.total || "",
     }));
-  if (stockLog.length === 0) stockLog.push({ Date: "No activity yet", Type: "", "Item / Bill": "", Qty: "", Details: "", Amount: "" });
+  if (stockLog.length === 0) stockLog.push({ Date: "No activity yet", Type: "", User: "", "Item / Bill": "", Qty: "", Details: "", Amount: "" });
 
   // ── 7. Category P&L (per-category profit & loss, active bills only) ──
   const categoryPL: Record<string, string | number>[] = categoryPLData(bills, items).map((c) => ({

@@ -74,6 +74,8 @@ export interface Log {
   billNo?: number;
   items?: string; // comma-joined item names
   total?: number;
+  // who performed the operation
+  user?: string;
 }
 
 export type UserRole = "Owner" | "Staff";

@@ -63,6 +63,7 @@ const logTypeLabel = (t: Log["type"]) =>
 
 const logMeta = (l: Log) => {
   const parts: string[] = [];
+  if (l.user) parts.push(`By ${l.user}`);
   if (l.supplier) parts.push(`Supplier: ${l.supplier}`);
   if (l.reason) parts.push(`Reason: ${l.reason}`);
   if (l.notes) parts.push(l.notes);
