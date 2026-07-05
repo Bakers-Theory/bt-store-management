@@ -4,21 +4,21 @@ import { useState } from "react";
 import { PackageMinus } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
-import { STOCK_OUT_REASONS } from "@/lib/constants";
 
 export function StockOutForm({ onSuccess }: { onSuccess?: () => void } = {}) {
   const items = useBakeryStore((s) => s.items);
   const stockOut = useBakeryStore((s) => s.stockOut);
+  const reasons = useBakeryStore((s) => s.lists.reasons);
   const toast = useUIStore((s) => s.toast);
 
   const [itemId, setItemId] = useState("");
   const [qty, setQty] = useState("");
-  const [reason, setReason] = useState(STOCK_OUT_REASONS[0]);
+  const [reason, setReason] = useState("");
   const [notes, setNotes] = useState("");
   const [err, setErr] = useState("");
 
   const submit = async () => {
-    const r = await stockOut(itemId, parseFloat(qty), reason, notes);
+    const r = await stockOut(itemId, parseFloat(qty), reason || reasons[0] || "", notes);
     if (!r.ok) {
       setErr(r.error ?? "");
       return;
@@ -26,7 +26,7 @@ export function StockOutForm({ onSuccess }: { onSuccess?: () => void } = {}) {
     toast(`Removed ${r.qty} ${r.unit} of ${r.name}`);
     setItemId("");
     setQty("");
-    setReason(STOCK_OUT_REASONS[0]);
+    setReason("");
     setNotes("");
     setErr("");
     onSuccess?.();
@@ -52,8 +52,8 @@ export function StockOutForm({ onSuccess }: { onSuccess?: () => void } = {}) {
         </div>
         <div>
           <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Reason</label>
-          <select value={reason} onChange={(e) => setReason(e.target.value)}>
-            {STOCK_OUT_REASONS.map((r) => (
+          <select value={reason || reasons[0] || ""} onChange={(e) => setReason(e.target.value)}>
+            {reasons.map((r) => (
               <option key={r}>{r}</option>
             ))}
           </select>

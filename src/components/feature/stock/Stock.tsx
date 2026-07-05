@@ -4,7 +4,6 @@ import { useState } from "react";
 import { Search, Plus, PackagePlus, PackageMinus, Package, Pencil, Trash2 } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
-import { CATS } from "@/lib/constants";
 import { Modal } from "@/components/ui/Modal";
 import { ItemModal } from "./ItemModal";
 import { StockInForm } from "./StockInForm";
@@ -24,6 +23,7 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
   const lowStockAlert = useBakeryStore((s) => s.bakery.lowStockAlert);
   const currency = useBakeryStore((s) => s.bakery.currency);
   const deleteItem = useBakeryStore((s) => s.deleteItem);
+  const categories = useBakeryStore((s) => s.lists.categories);
   const toast = useUIStore((s) => s.toast);
   const requireOwnerAuth = useUIStore((s) => s.requireOwnerAuth);
 
@@ -114,7 +114,7 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
 
       {/* Category chips */}
       <div className="mb-4 flex gap-2 overflow-x-auto pb-0.5">
-        {["All", ...CATS].map((c) => (
+        {["All", ...categories].map((c) => (
           <button
             key={c}
             onClick={() => setCategory(c)}
