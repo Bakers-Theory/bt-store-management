@@ -41,10 +41,10 @@ export function Receipt({ bill }: { bill: Bill }) {
       <div className="receipt-row"><span>Date:</span><span>{dateStr}</span></div>
       <div className="receipt-row"><span>Time:</span><span>{timeStr}</span></div>
       {bill.customerName && (
-        <div className="receipt-row"><span>Customer:</span><span>{bill.customerName}</span></div>
+        <div className="receipt-row"><span>Customer:</span><span className="font-bold">{bill.customerName}</span></div>
       )}
       {bill.customerPhone && (
-        <div className="receipt-row"><span>Phone:</span><span>{bill.customerPhone}</span></div>
+        <div className="receipt-row"><span>Phone:</span><span className="font-bold">{bill.customerPhone}</span></div>
       )}
       <div className="receipt-divider" />
       <div className="receipt-row font-bold">
