@@ -11,6 +11,7 @@ import { fetchReportData } from "@/lib/supabase-data";
 import { MyAccount } from "./MyAccount";
 import { UserManagement } from "./UserManagement";
 import { ChangePasswordCard } from "./ChangePasswordCard";
+import { ListManager } from "./ListManager";
 
 const inputCls =
   "w-full rounded-[11px] border border-line bg-cream px-[13px] py-[11px] text-sm outline-none focus:border-brown";
@@ -192,9 +193,9 @@ export function Settings() {
         <UserManagement />
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+      <div className="mt-4 grid items-start gap-4 lg:grid-cols-2">
         <ChangePasswordCard />
-        <div className="hidden lg:block" />
+        <ListManager />
       </div>
 
       {/* Data & reports — separate, outlined section */}
