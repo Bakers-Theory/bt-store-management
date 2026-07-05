@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, X } from "lucide-react";
+import { Loader2, Plus, X } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { fetchListRows } from "@/lib/supabase-data";
@@ -26,6 +26,16 @@ export function ListManager() {
 
   const [rows, setRows] = useState<Row[]>([]);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  // Keys of in-flight operations: `add:${kind}` for adds, the row id for removes.
+  const [busy, setBusy] = useState<Set<string>>(new Set());
+
+  const setBusyKey = (key: string, on: boolean) =>
+    setBusy((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(key);
+      else next.delete(key);
+      return next;
+    });
 
   const reload = () => void fetchListRows().then(setRows);
   useEffect(reload, []);
@@ -33,22 +43,33 @@ export function ListManager() {
   const add = async (kind: string) => {
     const value = (drafts[kind] ?? "").trim();
     if (!value) return;
-    const r = await addListValue(kind, value);
-    if (!r.ok) {
-      toast(r.error ?? "Could not add");
-      return;
+    const key = `add:${kind}`;
+    setBusyKey(key, true);
+    try {
+      const r = await addListValue(kind, value);
+      if (!r.ok) {
+        toast(r.error ?? "Could not add");
+        return;
+      }
+      setDrafts((d) => ({ ...d, [kind]: "" }));
+      reload();
+    } finally {
+      setBusyKey(key, false);
     }
-    setDrafts((d) => ({ ...d, [kind]: "" }));
-    reload();
   };
 
   const remove = async (row: Row) => {
-    const r = await deleteListValue(row.id);
-    if (!r.ok) {
-      toast(r.error ? `Can't remove "${row.value}" — ${r.error}` : "Could not remove");
-      return;
+    setBusyKey(row.id, true);
+    try {
+      const r = await deleteListValue(row.id);
+      if (!r.ok) {
+        toast(r.error ? `Can't remove "${row.value}" — ${r.error}` : "Could not remove");
+        return;
+      }
+      reload();
+    } finally {
+      setBusyKey(row.id, false);
     }
-    reload();
   };
 
   return (
@@ -76,9 +97,14 @@ export function ListManager() {
                       type="button"
                       aria-label={`Remove ${r.value}`}
                       onClick={() => remove(r)}
-                      className="text-ink-light hover:text-danger"
+                      disabled={busy.has(r.id)}
+                      className="text-ink-light hover:text-danger disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      <X size={13} />
+                      {busy.has(r.id) ? (
+                        <Loader2 size={13} className="animate-spin" />
+                      ) : (
+                        <X size={13} />
+                      )}
                     </button>
                   </span>
                 ))}
@@ -88,6 +114,7 @@ export function ListManager() {
                 type="text"
                 placeholder={sec.placeholder}
                 value={drafts[sec.kind] ?? ""}
+                disabled={busy.has(`add:${sec.kind}`)}
                 onChange={(e) => setDrafts((d) => ({ ...d, [sec.kind]: e.target.value }))}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
@@ -95,14 +122,20 @@ export function ListManager() {
                     void add(sec.kind);
                   }
                 }}
-                className="w-full rounded-[11px] border border-line bg-cream px-[13px] py-[9px] text-sm outline-none focus:border-brown"
+                className="w-full rounded-[11px] border border-line bg-cream px-[13px] py-[9px] text-sm outline-none focus:border-brown disabled:opacity-60"
               />
               <button
                 type="button"
                 onClick={() => void add(sec.kind)}
-                className="inline-flex shrink-0 items-center gap-1 rounded-[11px] border-none bg-brown px-3.5 text-sm font-bold text-warm-white"
+                disabled={busy.has(`add:${sec.kind}`)}
+                className="inline-flex shrink-0 items-center gap-1 rounded-[11px] border-none bg-brown px-3.5 text-sm font-bold text-warm-white disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <Plus size={16} /> Add
+                {busy.has(`add:${sec.kind}`) ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <Plus size={16} />
+                )}{" "}
+                Add
               </button>
             </div>
           </div>

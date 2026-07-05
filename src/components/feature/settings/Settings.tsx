@@ -12,6 +12,7 @@ import { MyAccount } from "./MyAccount";
 import { UserManagement } from "./UserManagement";
 import { ChangePasswordCard } from "./ChangePasswordCard";
 import { ListManager } from "./ListManager";
+import { tabCls } from "@/components/ui/tabClass";
 
 const inputCls =
   "w-full rounded-[11px] border border-line bg-cream px-[13px] py-[11px] text-sm outline-none focus:border-brown";
@@ -35,6 +36,7 @@ export function Settings() {
   const [gst, setGst] = useState(bakery.gst);
   const [taxRate, setTaxRate] = useState(String(bakery.taxRate));
   const [lowStockAlert, setLowStockAlert] = useState(String(bakery.lowStockAlert));
+  const [tab, setTab] = useState<"store" | "staff">("store");
 
   // Non-owners get the account view.
   if (user && user.role !== "Owner") return <MyAccount />;
@@ -77,6 +79,16 @@ export function Settings() {
 
   return (
     <>
+      <div className="mb-4 flex w-fit gap-1.5 rounded-xl bg-[#f4e7d2] p-1">
+        <button className={tabCls(tab === "store")} onClick={() => setTab("store")}>
+          Store
+        </button>
+        <button className={tabCls(tab === "staff")} onClick={() => setTab("staff")}>
+          Staff &amp; data
+        </button>
+      </div>
+
+      {tab === "store" && (
       <div className="grid items-start gap-4 lg:grid-cols-2">
         {/* Bakery profile */}
         <div className="rounded-[18px] border border-line bg-warm-white p-[22px] shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
@@ -189,13 +201,17 @@ export function Settings() {
           </div>
         </div>
 
+        {/* Item options */}
+        <ListManager />
+      </div>
+      )}
+
+      {tab === "staff" && (
+        <>
+      <div className="grid items-start gap-4 lg:grid-cols-2">
         {/* Staff & permissions */}
         <UserManagement />
-      </div>
-
-      <div className="mt-4 grid items-start gap-4 lg:grid-cols-2">
         <ChangePasswordCard />
-        <ListManager />
       </div>
 
       {/* Data & reports — separate, outlined section */}
@@ -231,6 +247,8 @@ export function Settings() {
           </div>
         </div>
       </div>
+        </>
+      )}
 
       <div className="p-5 text-center text-xs text-ink-light">
         Bakers Theory v0.1.0
