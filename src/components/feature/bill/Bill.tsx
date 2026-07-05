@@ -7,7 +7,7 @@ import { useUIStore } from "@/lib/ui-store";
 import { computeTotals } from "@/lib/bill";
 import { Modal } from "@/components/ui/Modal";
 import { Receipt } from "./Receipt";
-import type { Bill as BillType, BillLine, Item } from "@/lib/types";
+import type { Bill as BillType, BillLine, Item, PaymentMethod } from "@/lib/types";
 
 export function Bill() {
   const items = useBakeryStore((s) => s.items);
@@ -21,6 +21,7 @@ export function Bill() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
   const [customer, setCustomer] = useState({ name: "", phone: "" });
+  const [payment, setPayment] = useState<PaymentMethod>("Cash");
   const [lines, setLines] = useState<BillLine[]>([]);
   const [receipt, setReceipt] = useState<BillType | null>(null);
 
@@ -82,9 +83,10 @@ export function Bill() {
       return;
     }
     try {
-      const bill = await generateBill(customer, lines);
+      const bill = await generateBill(customer, lines, payment);
       setLines([]);
       setCustomer({ name: "", phone: "" });
+      setPayment("Cash");
       setReceipt(bill);
     } catch (e) {
       toast(e instanceof Error ? e.message : "Could not generate bill");
@@ -173,9 +175,13 @@ export function Bill() {
             />
             <input
               type="tel"
+              inputMode="numeric"
+              maxLength={10}
               placeholder="Phone"
               value={customer.phone}
-              onChange={(e) => setCustomer((c) => ({ ...c, phone: e.target.value }))}
+              onChange={(e) =>
+                setCustomer((c) => ({ ...c, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }))
+              }
               className="w-[110px] rounded-[10px] border border-line bg-cream px-[11px] py-[9px] text-[13px] outline-none"
             />
           </div>
@@ -246,6 +252,25 @@ export function Bill() {
                     {currency}
                     {total.toFixed(2)}
                   </span>
+                </div>
+                <div className="mt-3 flex items-center justify-between">
+                  <span className="text-[13px] font-semibold text-ink-muted">Paid via</span>
+                  <div className="flex gap-1.5 rounded-[10px] bg-cream-dark p-[3px]">
+                    {(["Cash", "UPI"] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setPayment(m)}
+                        className={`cursor-pointer rounded-[7px] border-none px-3.5 py-1 text-[12.5px] font-bold ${
+                          payment === m
+                            ? "bg-brown text-warm-white"
+                            : "bg-transparent text-ink-muted"
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <button
                   onClick={generate}

@@ -41,6 +41,8 @@ export interface BillLine {
 
 export type BillStatus = "active" | "cancelled";
 
+export type PaymentMethod = "Cash" | "UPI";
+
 export interface Bill {
   id: string;
   billNo: number;
@@ -51,6 +53,7 @@ export interface Bill {
   tax: number;
   total: number;
   taxRate: number;
+  paymentMethod: PaymentMethod;
   date: string; // ISO
   status: BillStatus;
   cancelledAt?: string;

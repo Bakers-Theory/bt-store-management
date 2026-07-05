@@ -151,10 +151,12 @@ export function Settings() {
                 <label className={labelCls}>Phone</label>
                 <input
                   type="tel"
+                  inputMode="numeric"
+                  maxLength={10}
                   className={inputCls}
                   value={phone}
                   placeholder="9876543210"
-                  onChange={(e) => setPhone(e.target.value)}
+                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
                 />
               </div>
               <div>

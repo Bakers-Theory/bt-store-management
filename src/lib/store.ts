@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import type { Bakery, Bill, BillLine, Item, Permissions, StoreLists } from "./types";
+import type { Bakery, Bill, BillLine, Item, PaymentMethod, Permissions, StoreLists } from "./types";
 import {
   fetchBaseData,
   rpcAddListValue,
@@ -81,6 +81,7 @@ interface StoreState {
   generateBill: (
     customer: { name: string; phone: string },
     lines: BillLine[],
+    paymentMethod: PaymentMethod,
   ) => Promise<Bill>;
   cancelBill: (id: string, byName: string) => Promise<Result>;
   deleteBill: (id: string, byName: string) => Promise<Result>;
@@ -176,9 +177,9 @@ export const useBakeryStore = create<StoreState>()((set, get) => ({
   },
 
   // ─── Bills ───────────────────────────────────────────────────────────────
-  generateBill: async (customer, lines) => {
+  generateBill: async (customer, lines, paymentMethod) => {
     const row = await rpcGenerateBill(
-      customer,
+      { ...customer, payment: paymentMethod },
       lines.map((l) => ({ itemId: l.itemId, qty: l.qty })),
     );
     const bill: Bill = {
@@ -191,6 +192,7 @@ export const useBakeryStore = create<StoreState>()((set, get) => ({
       tax: row.tax,
       total: row.total,
       taxRate: row.tax_rate,
+      paymentMethod,
       date: row.created_at,
       status: "active",
     };

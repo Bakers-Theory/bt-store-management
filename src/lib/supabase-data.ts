@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@/utils/supabase/client";
-import type { Bakery, Bill, BillLine, BillStatus, Item, Log, StoreLists, User } from "./types";
+import type { Bakery, Bill, BillLine, BillStatus, Item, Log, PaymentMethod, StoreLists, User } from "./types";
 import type { ProfileRow } from "./auth";
 import { profileToUser } from "./auth";
 
@@ -25,6 +25,7 @@ interface BillRow {
   tax: number;
   total: number;
   tax_rate: number;
+  payment_method: "Cash" | "UPI";
   status: "active" | "cancelled";
   created_at: string;
   cancelled_at: string | null;
@@ -99,6 +100,7 @@ const mapBill = (r: BillRow, lines: BillLine[]): Bill => ({
   tax: r.tax,
   total: r.total,
   taxRate: r.tax_rate,
+  paymentMethod: r.payment_method,
   date: r.created_at,
   status: r.status,
   cancelledAt: r.cancelled_at ?? undefined,
@@ -374,7 +376,7 @@ interface GeneratedBillRow {
   total: number; tax_rate: number; created_at: string;
 }
 export const rpcGenerateBill = (
-  customer: { name: string; phone: string },
+  customer: { name: string; phone: string; payment: PaymentMethod },
   lines: { itemId: string; qty: number }[],
 ) => rpc<GeneratedBillRow>("generate_bill", { customer, lines });
 

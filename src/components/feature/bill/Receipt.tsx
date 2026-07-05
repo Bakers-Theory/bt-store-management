@@ -77,6 +77,8 @@ export function Receipt({ bill }: { bill: Bill }) {
         <span>TOTAL</span><span>{b.currency}{bill.total.toFixed(2)}</span>
       </div>
       <div className="receipt-divider" />
+      <div className="receipt-row"><span>Paid via:</span><span className="font-bold">{bill.paymentMethod}</span></div>
+      <div className="receipt-divider" />
       <div className="receipt-center mt-1.5 text-[11px]">
         Thank you for your visit!
         <br />
