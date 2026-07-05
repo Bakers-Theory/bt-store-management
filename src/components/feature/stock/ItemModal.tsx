@@ -5,7 +5,6 @@ import { Lock, Save, Check, Info } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
-import { CATS, EMOJIS, UNITS } from "@/lib/constants";
 
 export function ItemModal({
   itemId,
@@ -18,13 +17,16 @@ export function ItemModal({
   const currency = useBakeryStore((s) => s.bakery.currency);
   const saveItem = useBakeryStore((s) => s.saveItem);
   const toast = useUIStore((s) => s.toast);
+  const cats = useBakeryStore((s) => s.lists.categories);
+  const emojis = useBakeryStore((s) => s.lists.emojis);
+  const units = useBakeryStore((s) => s.lists.units);
 
   const editing = itemId ? items.find((i) => i.id === itemId) : undefined;
 
   const [emoji, setEmoji] = useState(editing?.emoji ?? "📦");
   const [name, setName] = useState(editing?.name ?? "");
-  const [category, setCategory] = useState(editing?.category ?? CATS[0]);
-  const [unit, setUnit] = useState(editing?.unit ?? UNITS[0]);
+  const [category, setCategory] = useState(editing?.category ?? cats[0] ?? "");
+  const [unit, setUnit] = useState(editing?.unit ?? units[0] ?? "");
   const [costPrice, setCostPrice] = useState(
     editing ? String(editing.costPrice) : "",
   );
@@ -68,7 +70,7 @@ export function ItemModal({
       <div className="mb-3.5">
         <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Icon</label>
         <div className="flex flex-wrap gap-1.5">
-          {EMOJIS.map((e) => (
+          {emojis.map((e) => (
             <button
               key={e}
               type="button"
@@ -118,7 +120,7 @@ export function ItemModal({
         <div>
           <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Category</label>
           <select value={category} onChange={(e) => setCategory(e.target.value)}>
-            {CATS.map((c) => (
+            {cats.map((c) => (
               <option key={c}>{c}</option>
             ))}
           </select>
@@ -126,7 +128,7 @@ export function ItemModal({
         <div>
           <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Unit</label>
           <select value={unit} onChange={(e) => setUnit(e.target.value)}>
-            {UNITS.map((u) => (
+            {units.map((u) => (
               <option key={u}>{u}</option>
             ))}
           </select>

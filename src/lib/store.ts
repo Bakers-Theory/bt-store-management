@@ -1,14 +1,16 @@
 "use client";
 
 import { create } from "zustand";
-import type { Bakery, Bill, BillLine, Item, Permissions } from "./types";
+import type { Bakery, Bill, BillLine, Item, Permissions, StoreLists } from "./types";
 import {
   fetchBaseData,
+  rpcAddListValue,
   rpcCancelBill,
   rpcClearAllData,
   rpcCreateItem,
   rpcDeleteBill,
   rpcDeleteItem,
+  rpcDeleteListValue,
   rpcGenerateBill,
   rpcSaveSettings,
   rpcStockIn,
@@ -60,6 +62,7 @@ export interface SettingsInput {
 interface StoreState {
   bakery: Bakery;
   items: Item[];
+  lists: StoreLists;
   _hasHydrated: boolean;
 
   /**
@@ -86,6 +89,9 @@ interface StoreState {
   uploadLogo: (dataUrl: string) => Promise<void>;
   removeLogo: () => Promise<void>;
   clearAllData: () => Promise<void>;
+
+  addListValue: (kind: string, value: string) => Promise<Result>;
+  deleteListValue: (id: string) => Promise<Result>;
 }
 
 const errMsg = (e: unknown): string =>
@@ -106,9 +112,12 @@ const PLACEHOLDER_BAKERY: Bakery = {
   lowStockAlert: 5,
 };
 
+const EMPTY_LISTS: StoreLists = { categories: [], emojis: [], units: [], reasons: [] };
+
 export const useBakeryStore = create<StoreState>()((set, get) => ({
   bakery: PLACEHOLDER_BAKERY,
   items: [],
+  lists: EMPTY_LISTS,
   _hasHydrated: false,
 
   load: async () => {
@@ -228,6 +237,26 @@ export const useBakeryStore = create<StoreState>()((set, get) => ({
   clearAllData: async () => {
     await rpcClearAllData();
     await get().load();
+  },
+
+  addListValue: async (kind, value) => {
+    try {
+      await rpcAddListValue(kind, value);
+      await get().load();
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: errMsg(e) };
+    }
+  },
+
+  deleteListValue: async (id) => {
+    try {
+      await rpcDeleteListValue(id);
+      await get().load();
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: errMsg(e) };
+    }
   },
 }));
 

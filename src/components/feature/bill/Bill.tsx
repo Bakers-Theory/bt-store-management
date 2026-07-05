@@ -5,7 +5,6 @@ import { Check, Printer, Receipt as ReceiptIcon, ShoppingBasket } from "lucide-r
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { computeTotals } from "@/lib/bill";
-import { CATS } from "@/lib/constants";
 import { Modal } from "@/components/ui/Modal";
 import { Receipt } from "./Receipt";
 import type { Bill as BillType, BillLine, Item } from "@/lib/types";
@@ -15,6 +14,7 @@ export function Bill() {
   const currency = useBakeryStore((s) => s.bakery.currency);
   const taxRate = useBakeryStore((s) => s.bakery.taxRate);
   const generateBill = useBakeryStore((s) => s.generateBill);
+  const categories = useBakeryStore((s) => s.lists.categories);
   const toast = useUIStore((s) => s.toast);
   const requestPrint = useUIStore((s) => s.requestPrint);
 
@@ -106,7 +106,7 @@ export function Bill() {
             className="mb-3 w-full rounded-xl border border-line bg-warm-white px-3.5 py-3 text-sm outline-none"
           />
           <div className="mb-3.5 flex gap-2 overflow-x-auto pb-0.5">
-            {["All", ...CATS].map((c) => (
+            {["All", ...categories].map((c) => (
               <button
                 key={c}
                 onClick={() => setCategory(c)}
