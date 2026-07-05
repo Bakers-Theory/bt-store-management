@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { fetchStaff } from "@/lib/supabase-data";
 import { useUIStore } from "@/lib/ui-store";
+import { Modal } from "@/components/ui/Modal";
 import { UserModal } from "./UserModal";
 import type { Permissions, User } from "@/lib/types";
 
@@ -23,6 +24,7 @@ export function UserManagement() {
   const toast = useUIStore((s) => s.toast);
   const [users, setUsers] = useState<User[]>([]);
   const [modal, setModal] = useState<{ user: User | null } | null>(null);
+  const [confirmUser, setConfirmUser] = useState<User | null>(null);
   const [deleting, setDeleting] = useState<Set<string>>(new Set());
 
   const setDeletingId = (id: string, on: boolean) =>
@@ -42,7 +44,7 @@ export function UserManagement() {
   }, [reload]);
 
   const remove = async (u: User) => {
-    if (!confirm(`Delete user "${u.name}"? This cannot be undone.`)) return;
+    setConfirmUser(null);
     setDeletingId(u.id, true);
     try {
       const res = await fetch("/api/staff", {
@@ -114,7 +116,7 @@ export function UserManagement() {
             </button>
             <button
               className="cursor-pointer rounded-lg border-none bg-danger px-2.5 py-1.5 text-xs text-white disabled:cursor-not-allowed disabled:opacity-60"
-              onClick={() => remove(u)}
+              onClick={() => setConfirmUser(u)}
               disabled={deleting.has(u.id)}
             >
               {deleting.has(u.id) ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
@@ -145,6 +147,29 @@ export function UserManagement() {
           onClose={() => setModal(null)}
           onSaved={reload}
         />
+      )}
+
+      {confirmUser && (
+        <Modal title="Delete user" onClose={() => setConfirmUser(null)}>
+          <p className="text-sm text-ink-muted">
+            Delete user <span className="font-bold text-ink">{confirmUser.name}</span>? This
+            cannot be undone.
+          </p>
+          <div className="mt-5 flex gap-2.5">
+            <button
+              className="btn-secondary flex-1"
+              onClick={() => setConfirmUser(null)}
+            >
+              Cancel
+            </button>
+            <button
+              className="btn-danger flex flex-1 items-center justify-center gap-2"
+              onClick={() => remove(confirmUser)}
+            >
+              <Trash2 size={16} /> Delete
+            </button>
+          </div>
+        </Modal>
       )}
     </div>
   );
