@@ -45,6 +45,15 @@ export function Settings() {
   // Non-owners get the account view.
   if (user && user.role !== "Owner") return <MyAccount />;
 
+  const dirty =
+    name !== bakery.name ||
+    tagline !== bakery.tagline ||
+    address !== bakery.address ||
+    phone !== bakery.phone ||
+    gst !== bakery.gst ||
+    taxRate !== String(bakery.taxRate) ||
+    lowStockAlert !== String(bakery.lowStockAlert);
+
   const onLogoFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -231,7 +240,7 @@ export function Settings() {
             </div>
             <button
               onClick={save}
-              disabled={savingSettings}
+              disabled={savingSettings || !dirty}
               className="mt-1.5 flex w-full items-center justify-center gap-2 rounded-xl border-none bg-brown p-3 text-sm font-bold text-warm-white disabled:cursor-not-allowed disabled:opacity-60"
             >
               {savingSettings && <Loader2 size={16} className="animate-spin" />}
@@ -302,7 +311,7 @@ export function Settings() {
       )}
 
       <div className="p-5 text-center text-xs text-ink-light">
-        Bakers Theory v0.1.0
+        Bakers Theory v0.2.0
       </div>
     </>
   );

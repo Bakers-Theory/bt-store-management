@@ -51,7 +51,7 @@ export function ChangePasswordCard() {
       <button
         className="flex w-full items-center justify-center gap-2 rounded-xl border-none bg-brown p-3 text-sm font-bold text-warm-white disabled:cursor-not-allowed disabled:opacity-60"
         onClick={change}
-        disabled={busy}
+        disabled={busy || !password}
       >
         {busy && <Loader2 size={16} className="animate-spin" />}
         {busy ? "Updating…" : "Update password"}

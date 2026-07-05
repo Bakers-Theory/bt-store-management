@@ -42,6 +42,17 @@ export function ItemModal({
         )
       : undefined;
 
+  const canSave = editing
+    ? name.trim().length > 0 &&
+      (emoji !== editing.emoji ||
+        name.trim() !== editing.name ||
+        category !== editing.category ||
+        unit !== editing.unit ||
+        costPrice !== String(editing.costPrice) ||
+        price !== String(editing.price) ||
+        qty !== String(editing.qty))
+    : name.trim().length > 0;
+
   const save = async () => {
     const trimmed = name.trim();
     if (!trimmed) {
@@ -187,7 +198,7 @@ export function ItemModal({
       <button
         className="btn-primary flex w-full items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-60"
         onClick={save}
-        disabled={saving}
+        disabled={saving || !canSave}
       >
         {saving ? (
           <>

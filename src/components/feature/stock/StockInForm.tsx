@@ -68,7 +68,7 @@ export function StockInForm({ onSuccess }: { onSuccess?: () => void } = {}) {
       <button
         className="btn-success flex w-full items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-60"
         onClick={submit}
-        disabled={busy}
+        disabled={busy || !itemId || !(parseFloat(qty) > 0)}
       >
         {busy ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
         {busy ? "Adding…" : "Confirm Stock In"}

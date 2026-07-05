@@ -127,7 +127,7 @@ export function ListManager() {
               <button
                 type="button"
                 onClick={() => void add(sec.kind)}
-                disabled={busy.has(`add:${sec.kind}`)}
+                disabled={busy.has(`add:${sec.kind}`) || !(drafts[sec.kind] ?? "").trim()}
                 className="inline-flex shrink-0 items-center gap-1 rounded-[11px] border-none bg-brown px-3.5 text-sm font-bold text-warm-white disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {busy.has(`add:${sec.kind}`) ? (

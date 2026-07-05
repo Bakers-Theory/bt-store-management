@@ -326,7 +326,7 @@ export function Bill() {
                 </div>
                 <button
                   onClick={generate}
-                  disabled={generating}
+                  disabled={generating || (customer.phone.length > 0 && customer.phone.length !== 10)}
                   className="mt-3.5 flex w-full items-center justify-center gap-2 rounded-[13px] border-none bg-brown p-3.5 text-[15px] font-extrabold text-warm-white shadow-[0_4px_14px_rgba(124,74,30,.3)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {generating ? (

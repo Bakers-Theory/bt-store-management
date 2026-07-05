@@ -433,10 +433,6 @@ export function Dashboard() {
                       </div>
                     ))}
               </div>
-
-              <button className="btn-success flex w-full items-center justify-center gap-2 p-3 text-sm" onClick={doExport}>
-                <Download size={16} /> Download Excel Report
-              </button>
             </>
           )}
 

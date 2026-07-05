@@ -73,7 +73,7 @@ export function StockOutForm({ onSuccess }: { onSuccess?: () => void } = {}) {
       <button
         className="btn-danger flex w-full items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-60"
         onClick={submit}
-        disabled={busy}
+        disabled={busy || !itemId || !(parseFloat(qty) > 0)}
       >
         {busy ? <Loader2 size={16} className="animate-spin" /> : <PackageMinus size={16} />}
         {busy ? "Removing…" : "Confirm Stock Out"}

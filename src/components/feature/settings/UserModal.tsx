@@ -75,6 +75,15 @@ export function UserModal({
     onClose();
   };
 
+  const canSave = user
+    ? name.trim().length > 0 &&
+      (name.trim() !== user.name ||
+        password.length > 0 ||
+        perm.sales !== user.permissions.sales ||
+        perm.inventory !== user.permissions.inventory ||
+        perm.analytics !== user.permissions.analytics)
+    : name.trim().length > 0 && uidField.trim().length > 0 && password.length > 0;
+
   const toggle = (key: keyof Permissions) =>
     setPerm((p) => ({ ...p, [key]: !p[key] }));
 
@@ -152,7 +161,7 @@ export function UserModal({
       <button
         className="flex w-full items-center justify-center gap-2 rounded-xl border-none bg-brown p-3 text-sm font-bold text-warm-white disabled:cursor-not-allowed disabled:opacity-60"
         onClick={save}
-        disabled={busy}
+        disabled={busy || !canSave}
       >
         {busy && <Loader2 size={16} className="animate-spin" />}
         {busy ? "Saving…" : user ? "Save changes" : "Create staff"}
