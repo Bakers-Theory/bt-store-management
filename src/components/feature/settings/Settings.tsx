@@ -71,7 +71,6 @@ export function Settings() {
         lowStockAlert: parseInt(lowStockAlert) || 5,
       });
       toast("Settings saved");
-      router.push("/dashboard");
     } finally {
       setSavingSettings(false);
     }
