@@ -22,12 +22,14 @@ export function Bill() {
   const [category, setCategory] = useState("All");
   const [customer, setCustomer] = useState({ name: "", phone: "" });
   const [payment, setPayment] = useState<PaymentMethod>("Cash");
+  const [discount, setDiscount] = useState("");
   const [phoneErr, setPhoneErr] = useState("");
   const [generating, setGenerating] = useState(false);
   const [lines, setLines] = useState<BillLine[]>([]);
   const [receipt, setReceipt] = useState<BillType | null>(null);
 
-  const { subtotal, tax, total } = computeTotals(lines, taxRate);
+  const discountPct = Math.min(100, Math.max(0, parseFloat(discount) || 0));
+  const { subtotal, discount: discountAmt, tax, total } = computeTotals(lines, taxRate, discountPct);
 
   const filteredItems = useMemo(() => {
     const q = search.toLowerCase();
@@ -90,10 +92,11 @@ export function Bill() {
     }
     setGenerating(true);
     try {
-      const bill = await generateBill(customer, lines, payment);
+      const bill = await generateBill(customer, lines, payment, discountPct);
       setLines([]);
       setCustomer({ name: "", phone: "" });
       setPayment("Cash");
+      setDiscount("");
       setPhoneErr("");
       setReceipt(bill);
     } catch (e) {
@@ -193,6 +196,13 @@ export function Bill() {
                 setCustomer((c) => ({ ...c, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }));
                 setPhoneErr("");
               }}
+              onBlur={() =>
+                setPhoneErr(
+                  customer.phone && customer.phone.length !== 10
+                    ? "Phone number must be exactly 10 digits"
+                    : "",
+                )
+              }
               className="w-[110px] rounded-[10px] border border-line bg-cream px-[11px] py-[9px] text-[13px] outline-none"
             />
           </div>
@@ -253,6 +263,32 @@ export function Bill() {
                   <span className="num">
                     {currency}
                     {subtotal.toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between py-0.5 text-[13px] font-semibold text-ink-muted">
+                  <span className="flex items-center gap-1.5">
+                    Discount
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="1"
+                      placeholder="0"
+                      value={discount}
+                      onChange={(e) => {
+                        const n = parseFloat(e.target.value);
+                        if (e.target.value !== "" && !isNaN(n) && (n < 0 || n > 100)) {
+                          setDiscount(String(Math.min(100, Math.max(0, n))));
+                        } else {
+                          setDiscount(e.target.value);
+                        }
+                      }}
+                      className="w-14 rounded-[8px] border border-line bg-warm-white px-2 py-1 text-right text-[13px] outline-none focus:border-brown"
+                    />
+                    %
+                  </span>
+                  <span className="num text-danger">
+                    {discountAmt > 0 ? `−${currency}${discountAmt.toFixed(2)}` : `${currency}0.00`}
                   </span>
                 </div>
                 <div className="flex justify-between py-0.5 text-[13px] font-semibold text-ink-muted">

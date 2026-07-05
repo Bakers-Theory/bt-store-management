@@ -182,6 +182,13 @@ export function Settings() {
                     setPhone(e.target.value.replace(/\D/g, "").slice(0, 10));
                     setPhoneErr("");
                   }}
+                  onBlur={() =>
+                    setPhoneErr(
+                      phone && phone.length !== 10
+                        ? "Phone number must be exactly 10 digits"
+                        : "",
+                    )
+                  }
                 />
                 {phoneErr && (
                   <div className="mt-1 text-[11px] font-semibold text-danger">{phoneErr}</div>

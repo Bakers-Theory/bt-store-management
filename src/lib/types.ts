@@ -54,6 +54,7 @@ export interface Bill {
   total: number;
   taxRate: number;
   paymentMethod: PaymentMethod;
+  discountPercent: number;
   date: string; // ISO
   status: BillStatus;
   cancelledAt?: string;

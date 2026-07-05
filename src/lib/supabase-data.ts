@@ -26,6 +26,7 @@ interface BillRow {
   total: number;
   tax_rate: number;
   payment_method: "Cash" | "UPI";
+  discount_percent: number;
   status: "active" | "cancelled";
   created_at: string;
   cancelled_at: string | null;
@@ -101,6 +102,7 @@ const mapBill = (r: BillRow, lines: BillLine[]): Bill => ({
   total: r.total,
   taxRate: r.tax_rate,
   paymentMethod: r.payment_method,
+  discountPercent: r.discount_percent,
   date: r.created_at,
   status: r.status,
   cancelledAt: r.cancelled_at ?? undefined,
@@ -376,7 +378,7 @@ interface GeneratedBillRow {
   total: number; tax_rate: number; created_at: string;
 }
 export const rpcGenerateBill = (
-  customer: { name: string; phone: string; payment: PaymentMethod },
+  customer: { name: string; phone: string; payment: PaymentMethod; discount: number },
   lines: { itemId: string; qty: number }[],
 ) => rpc<GeneratedBillRow>("generate_bill", { customer, lines });
 

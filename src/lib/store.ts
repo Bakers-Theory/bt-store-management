@@ -82,6 +82,7 @@ interface StoreState {
     customer: { name: string; phone: string },
     lines: BillLine[],
     paymentMethod: PaymentMethod,
+    discountPercent: number,
   ) => Promise<Bill>;
   cancelBill: (id: string, byName: string) => Promise<Result>;
   deleteBill: (id: string, byName: string) => Promise<Result>;
@@ -177,9 +178,9 @@ export const useBakeryStore = create<StoreState>()((set, get) => ({
   },
 
   // ─── Bills ───────────────────────────────────────────────────────────────
-  generateBill: async (customer, lines, paymentMethod) => {
+  generateBill: async (customer, lines, paymentMethod, discountPercent) => {
     const row = await rpcGenerateBill(
-      { ...customer, payment: paymentMethod },
+      { ...customer, payment: paymentMethod, discount: discountPercent },
       lines.map((l) => ({ itemId: l.itemId, qty: l.qty })),
     );
     const bill: Bill = {
@@ -193,6 +194,7 @@ export const useBakeryStore = create<StoreState>()((set, get) => ({
       total: row.total,
       taxRate: row.tax_rate,
       paymentMethod,
+      discountPercent,
       date: row.created_at,
       status: "active",
     };
