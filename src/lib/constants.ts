@@ -1,14 +1,4 @@
-export const EMOJIS = [
-  "🥐", "🥖", "🍞", "🧁", "🎂", "🍰", "🍩", "🍪", "🧇", "🥞", "🍫", "🥛",
-  "☕", "🧃", "🍓", "🍋", "🥚", "🧈", "🍯", "🌾", "🧂", "🫙", "🥤", "📦",
-];
-
-export const CATS = [
-  "Breads", "Cakes", "Pastries", "Beverages", "Ingredients", "Cookies", "Others",
-];
-
-export const UNITS = ["pcs", "kg", "g", "l", "ml", "dozen", "box", "pack", "bag"];
-
-export const STOCK_OUT_REASONS = [
-  "Sold", "Damaged", "Expired", "Used in production", "Other",
-];
+// Item option lists (categories, emojis, units, stock-out reasons) now live in
+// the `store_lists` table and are managed by the Owner in Settings.
+// See supabase/migrations/0006_store_lists.sql.
+export {};

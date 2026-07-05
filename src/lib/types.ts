@@ -87,3 +87,10 @@ export interface User {
   role: UserRole;
   permissions: Permissions;
 }
+
+export interface StoreLists {
+  categories: string[];
+  emojis: string[];
+  units: string[];
+  reasons: string[];
+}

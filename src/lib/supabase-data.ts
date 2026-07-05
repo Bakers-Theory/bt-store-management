@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@/utils/supabase/client";
-import type { Bakery, Bill, BillLine, BillStatus, Item, Log, User } from "./types";
+import type { Bakery, Bill, BillLine, BillStatus, Item, Log, StoreLists, User } from "./types";
 import type { ProfileRow } from "./auth";
 import { profileToUser } from "./auth";
 
@@ -133,6 +133,25 @@ const mapBakery = (r: SettingsRow): Bakery => ({
   lowStockAlert: r.low_stock_alert,
 });
 
+interface StoreListRow { kind: string; value: string }
+
+const LIST_KEYS: Record<string, keyof StoreLists> = {
+  category: "categories",
+  emoji: "emojis",
+  unit: "units",
+  reason: "reasons",
+};
+
+/** Group pre-ordered store_lists rows into the app-facing StoreLists shape. */
+export const groupLists = (rows: StoreListRow[]): StoreLists => {
+  const lists: StoreLists = { categories: [], emojis: [], units: [], reasons: [] };
+  for (const r of rows) {
+    const key = LIST_KEYS[r.kind];
+    if (key) lists[key].push(r.value);
+  }
+  return lists;
+};
+
 // ─── Row → app helpers ───────────────────────────────────────────────────────
 const linesByBillId = (rows: BillItemRow[]): Map<string, BillLine[]> => {
   const m = new Map<string, BillLine[]>();
@@ -148,6 +167,7 @@ const linesByBillId = (rows: BillItemRow[]): Map<string, BillLine[]> => {
 export interface BaseData {
   bakery: Bakery;
   items: Item[];
+  lists: StoreLists;
 }
 
 /**
@@ -159,9 +179,10 @@ export interface BaseData {
  */
 export async function fetchBaseData(): Promise<BaseData> {
   const supabase = createClient();
-  const [settingsRes, itemsRes] = await Promise.all([
+  const [settingsRes, itemsRes, listsRes] = await Promise.all([
     supabase.from("store_settings").select("*").eq("id", 1).single(),
     supabase.from("items_v").select("*").order("created_at"),
+    supabase.from("store_lists").select("kind,value").order("kind").order("sort_order"),
   ]);
   if (!settingsRes.data) {
     throw new Error("Store settings not found in Supabase");
@@ -169,6 +190,7 @@ export async function fetchBaseData(): Promise<BaseData> {
   return {
     bakery: mapBakery(settingsRes.data as SettingsRow),
     items: ((itemsRes.data ?? []) as ItemRow[]).map(mapItem),
+    lists: groupLists((listsRes.data ?? []) as StoreListRow[]),
   };
 }
 
@@ -309,6 +331,17 @@ export async function fetchStaff(): Promise<User[]> {
   return ((data ?? []) as ProfileRow[]).map(profileToUser);
 }
 
+/** Raw list rows (with ids) for the Owner's Settings editor. */
+export async function fetchListRows(): Promise<{ id: string; kind: string; value: string }[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("store_lists")
+    .select("id,kind,value")
+    .order("kind")
+    .order("sort_order");
+  return (data ?? []) as { id: string; kind: string; value: string }[];
+}
+
 // ─── RPC wrappers ───────────────────────────────────────────────────────────
 /** Throws with a clean message on RPC error. */
 async function rpc<T = unknown>(fn: string, args: Record<string, unknown>): Promise<T> {
@@ -356,3 +389,8 @@ export const rpcSaveSettings = (p: {
 }) => rpc<void>("save_settings", { p });
 export const rpcUpdateLogo = (url: string | null) => rpc<void>("update_logo", { p_url: url });
 export const rpcClearAllData = () => rpc<void>("clear_all_data", {});
+
+export const rpcAddListValue = (kind: string, value: string) =>
+  rpc<void>("add_list_value", { p_kind: kind, p_value: value });
+export const rpcDeleteListValue = (id: string) =>
+  rpc<void>("delete_list_value", { p_id: id });
