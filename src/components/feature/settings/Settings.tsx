@@ -311,7 +311,7 @@ export function Settings() {
       )}
 
       <div className="p-5 text-center text-xs text-ink-light">
-        © Baker's Theory 2026
+        © Baker&apos;s Theory 2026
       </div>
     </>
   );
