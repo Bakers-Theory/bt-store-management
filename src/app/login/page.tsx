@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import {
@@ -107,10 +108,11 @@ export default function LoginPage() {
           <div className="mb-3 text-left text-[13px] font-semibold text-danger">{error}</div>
         )}
         <button
-          className="btn-primary w-full p-3.5 text-[15px] disabled:opacity-60"
+          className="btn-primary flex w-full items-center justify-center gap-2 p-3.5 text-[15px] disabled:cursor-not-allowed disabled:opacity-60"
           onClick={submit}
           disabled={busy}
         >
+          {busy && <Loader2 size={16} className="animate-spin" />}
           {busy ? "Signing in…" : "Sign in"}
         </button>
       </div>

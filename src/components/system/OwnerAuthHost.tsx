@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { createClient } from "@supabase/supabase-js";
-import { LockOpen } from "lucide-react";
+import { Loader2, LockOpen } from "lucide-react";
 import { useUIStore } from "@/lib/ui-store";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { userIdToEmail } from "@/lib/auth";
@@ -80,7 +80,8 @@ export function OwnerAuthHost() {
         onClick={confirm}
         disabled={busy}
       >
-        <LockOpen size={16} /> Confirm &amp; Continue
+        {busy ? <Loader2 size={16} className="animate-spin" /> : <LockOpen size={16} />}
+        {busy ? "Verifying…" : "Confirm & Continue"}
       </button>
     </Modal>
   );

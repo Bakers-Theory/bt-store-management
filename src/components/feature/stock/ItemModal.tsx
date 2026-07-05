@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Lock, Save, Check, Info } from "lucide-react";
+import { Lock, Save, Check, Info, Loader2 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
@@ -33,6 +33,7 @@ export function ItemModal({
   const [price, setPrice] = useState(editing ? String(editing.price) : "");
   const [qty, setQty] = useState(editing ? String(editing.qty) : "");
   const [nameErr, setNameErr] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const dup =
     !itemId && name.trim()
@@ -47,22 +48,28 @@ export function ItemModal({
       setNameErr("Item name is required");
       return;
     }
-    const r = await saveItem(
-      {
-        name: trimmed,
-        emoji,
-        category,
-        unit,
-        price: parseFloat(price) || 0,
-        costPrice: parseFloat(costPrice) || 0,
-        qty: parseFloat(qty) || 0,
-      },
-      itemId ?? undefined,
-    );
-    if (r.kind === "merged")
-      toast(`"${r.name}" already exists — added ${r.qty} ${r.unit} to its stock`);
-    else toast(r.kind === "updated" ? "Item updated" : "Item added");
-    onClose();
+    setSaving(true);
+    try {
+      const r = await saveItem(
+        {
+          name: trimmed,
+          emoji,
+          category,
+          unit,
+          price: parseFloat(price) || 0,
+          costPrice: parseFloat(costPrice) || 0,
+          qty: parseFloat(qty) || 0,
+        },
+        itemId ?? undefined,
+      );
+      if (r.kind === "merged")
+        toast(`"${r.name}" already exists — added ${r.qty} ${r.unit} to its stock`);
+      else toast(r.kind === "updated" ? "Item updated" : "Item added");
+      onClose();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not save item");
+      setSaving(false);
+    }
   };
 
   return (
@@ -177,8 +184,16 @@ export function ItemModal({
       <div className="mb-3 flex items-center gap-1.5 text-[11px] text-ink-light">
         <Lock size={14} /> Bought price is for your records only — it never appears on printed bills.
       </div>
-      <button className="btn-primary flex w-full items-center justify-center gap-2" onClick={save}>
-        {itemId ? (
+      <button
+        className="btn-primary flex w-full items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-60"
+        onClick={save}
+        disabled={saving}
+      >
+        {saving ? (
+          <>
+            <Loader2 size={16} className="animate-spin" /> Saving…
+          </>
+        ) : itemId ? (
           <>
             <Save size={16} /> Save Changes
           </>

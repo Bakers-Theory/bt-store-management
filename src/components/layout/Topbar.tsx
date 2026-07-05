@@ -1,7 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { Croissant } from "lucide-react";
+import { Croissant, Loader2 } from "lucide-react";
 import { useAuth, useCurrentUser } from "@/components/system/AuthProvider";
 import { useBakeryStore } from "@/lib/store";
 import { hasPermission } from "@/lib/permissions";
@@ -42,9 +43,16 @@ export function Topbar() {
     dashboardSubtitle(user?.name.split(" ")[0] ?? ""),
   ];
 
+  const [loggingOut, setLoggingOut] = useState(false);
+
   const doLogout = async () => {
-    await signOut();
-    router.push("/login");
+    setLoggingOut(true);
+    try {
+      await signOut();
+      router.push("/login");
+    } catch {
+      setLoggingOut(false);
+    }
   };
 
   return (
@@ -68,15 +76,20 @@ export function Topbar() {
 
       <button
         onClick={doLogout}
+        disabled={loggingOut}
         title="Logout"
         aria-label="Logout"
-        className="flex h-10 w-10 flex-shrink-0 cursor-pointer items-center justify-center rounded-[11px] border border-line bg-warm-white text-ink-muted lg:hidden"
+        className="flex h-10 w-10 flex-shrink-0 cursor-pointer items-center justify-center rounded-[11px] border border-line bg-warm-white text-ink-muted disabled:opacity-60 lg:hidden"
       >
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-          <path d="M16 17l5-5-5-5" />
-          <path d="M21 12H9" />
-        </svg>
+        {loggingOut ? (
+          <Loader2 size={17} className="animate-spin" />
+        ) : (
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+            <path d="M16 17l5-5-5-5" />
+            <path d="M21 12H9" />
+          </svg>
+        )}
       </button>
     </header>
   );

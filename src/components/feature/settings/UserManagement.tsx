@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { fetchStaff } from "@/lib/supabase-data";
 import { useUIStore } from "@/lib/ui-store";
 import { UserModal } from "./UserModal";
@@ -23,6 +23,15 @@ export function UserManagement() {
   const toast = useUIStore((s) => s.toast);
   const [users, setUsers] = useState<User[]>([]);
   const [modal, setModal] = useState<{ user: User | null } | null>(null);
+  const [deleting, setDeleting] = useState<Set<string>>(new Set());
+
+  const setDeletingId = (id: string, on: boolean) =>
+    setDeleting((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
 
   const reload = useCallback(async () => {
     setUsers(await fetchStaff());
@@ -34,18 +43,23 @@ export function UserManagement() {
 
   const remove = async (u: User) => {
     if (!confirm(`Delete user "${u.name}"? This cannot be undone.`)) return;
-    const res = await fetch("/api/staff", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: u.id }),
-    });
-    const body = await res.json();
-    if (!res.ok) {
-      toast(body.error ?? "Could not delete user");
-      return;
+    setDeletingId(u.id, true);
+    try {
+      const res = await fetch("/api/staff", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: u.id }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        toast(body.error ?? "Could not delete user");
+        return;
+      }
+      toast("User deleted");
+      reload();
+    } finally {
+      setDeletingId(u.id, false);
     }
-    toast("User deleted");
-    reload();
   };
 
   const permPill = (label: string, on: boolean) => (
@@ -99,10 +113,11 @@ export function UserManagement() {
               <Pencil size={14} />
             </button>
             <button
-              className="cursor-pointer rounded-lg border-none bg-danger px-2.5 py-1.5 text-xs text-white"
+              className="cursor-pointer rounded-lg border-none bg-danger px-2.5 py-1.5 text-xs text-white disabled:cursor-not-allowed disabled:opacity-60"
               onClick={() => remove(u)}
+              disabled={deleting.has(u.id)}
             >
-              <Trash2 size={14} />
+              {deleting.has(u.id) ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
             </button>
           </div>
         )}

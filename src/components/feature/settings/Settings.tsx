@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Croissant, Download, Trash2, X } from "lucide-react";
+import { Croissant, Download, Loader2, Trash2, X } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { useUIStore } from "@/lib/ui-store";
@@ -37,6 +37,10 @@ export function Settings() {
   const [taxRate, setTaxRate] = useState(String(bakery.taxRate));
   const [lowStockAlert, setLowStockAlert] = useState(String(bakery.lowStockAlert));
   const [tab, setTab] = useState<"store" | "staff">("store");
+  const [phoneErr, setPhoneErr] = useState("");
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   // Non-owners get the account view.
   if (user && user.role !== "Owner") return <MyAccount />;
@@ -50,31 +54,50 @@ export function Settings() {
   };
 
   const save = async () => {
-    await saveSettings({
-      name: name.trim(),
-      tagline: tagline.trim(),
-      address: address.trim(),
-      phone: phone.trim(),
-      gst: gst.trim(),
-      currency: "₹",
-      taxRate: parseFloat(taxRate) || 0,
-      lowStockAlert: parseInt(lowStockAlert) || 5,
-    });
-    toast("Settings saved");
-    router.push("/dashboard");
+    if (phone && phone.length !== 10) {
+      setPhoneErr("Phone number must be exactly 10 digits");
+      return;
+    }
+    setSavingSettings(true);
+    try {
+      await saveSettings({
+        name: name.trim(),
+        tagline: tagline.trim(),
+        address: address.trim(),
+        phone: phone.trim(),
+        gst: gst.trim(),
+        currency: "₹",
+        taxRate: parseFloat(taxRate) || 0,
+        lowStockAlert: parseInt(lowStockAlert) || 5,
+      });
+      toast("Settings saved");
+      router.push("/dashboard");
+    } finally {
+      setSavingSettings(false);
+    }
   };
 
   const doExport = async () => {
-    const r = await exportExcelReport(await fetchReportData());
-    toast(r.ok ? "Excel report downloaded" : r.error ?? "Export failed");
+    setExporting(true);
+    try {
+      const r = await exportExcelReport(await fetchReportData());
+      toast(r.ok ? "Excel report downloaded" : r.error ?? "Export failed");
+    } finally {
+      setExporting(false);
+    }
   };
 
   const clearData = async () => {
     if (!confirm("This will delete all items, bills, and history. Are you sure?")) return;
     if (!confirm("Last chance — really delete everything?")) return;
-    await clearAllData();
-    toast("All data cleared");
-    router.push("/dashboard");
+    setClearing(true);
+    try {
+      await clearAllData();
+      toast("All data cleared");
+      router.push("/dashboard");
+    } finally {
+      setClearing(false);
+    }
   };
 
   return (
@@ -156,8 +179,14 @@ export function Settings() {
                   className={inputCls}
                   value={phone}
                   placeholder="9876543210"
-                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                  onChange={(e) => {
+                    setPhone(e.target.value.replace(/\D/g, "").slice(0, 10));
+                    setPhoneErr("");
+                  }}
                 />
+                {phoneErr && (
+                  <div className="mt-1 text-[11px] font-semibold text-danger">{phoneErr}</div>
+                )}
               </div>
               <div>
                 <label className={labelCls}>GST number</label>
@@ -196,9 +225,11 @@ export function Settings() {
             </div>
             <button
               onClick={save}
-              className="mt-1.5 w-full rounded-xl border-none bg-brown p-3 text-sm font-bold text-warm-white"
+              disabled={savingSettings}
+              className="mt-1.5 flex w-full items-center justify-center gap-2 rounded-xl border-none bg-brown p-3 text-sm font-bold text-warm-white disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Save changes
+              {savingSettings && <Loader2 size={16} className="animate-spin" />}
+              {savingSettings ? "Saving…" : "Save changes"}
             </button>
           </div>
         </div>
@@ -228,10 +259,16 @@ export function Settings() {
               Download a full Excel workbook with your inventory, sales, stock log and business growth analysis.
             </p>
             <button
-              className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border-none bg-success p-3 text-sm font-bold text-warm-white"
+              className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border-none bg-success p-3 text-sm font-bold text-warm-white disabled:cursor-not-allowed disabled:opacity-60"
               onClick={doExport}
+              disabled={exporting}
             >
-              <Download size={16} /> Download Excel report
+              {exporting ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Download size={16} />
+              )}{" "}
+              {exporting ? "Preparing…" : "Download Excel report"}
             </button>
           </div>
 
@@ -241,10 +278,16 @@ export function Settings() {
               Permanently delete all items, bills and stock history. This cannot be undone.
             </p>
             <button
-              className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border-none bg-danger p-3 text-sm font-bold text-warm-white"
+              className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border-none bg-danger p-3 text-sm font-bold text-warm-white disabled:cursor-not-allowed disabled:opacity-60"
               onClick={clearData}
+              disabled={clearing}
             >
-              <Trash2 size={16} /> Clear all data
+              {clearing ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Trash2 size={16} />
+              )}{" "}
+              {clearing ? "Clearing…" : "Clear all data"}
             </button>
           </div>
         </div>

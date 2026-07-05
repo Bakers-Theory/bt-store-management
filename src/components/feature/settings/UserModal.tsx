@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Loader2 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useUIStore } from "@/lib/ui-store";
 import type { Permissions, User } from "@/lib/types";
@@ -149,10 +150,11 @@ export function UserModal({
       </div>
       {err && <div className="mb-2.5 text-[13px] font-bold text-danger">{err}</div>}
       <button
-        className="w-full rounded-xl border-none bg-brown p-3 text-sm font-bold text-warm-white disabled:opacity-60"
+        className="flex w-full items-center justify-center gap-2 rounded-xl border-none bg-brown p-3 text-sm font-bold text-warm-white disabled:cursor-not-allowed disabled:opacity-60"
         onClick={save}
         disabled={busy}
       >
+        {busy && <Loader2 size={16} className="animate-spin" />}
         {busy ? "Saving…" : user ? "Save changes" : "Create staff"}
       </button>
     </Modal>

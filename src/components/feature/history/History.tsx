@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Ban,
   ClipboardList,
+  Loader2,
   PackageMinus,
   PackagePlus,
   Receipt as ReceiptIcon,
@@ -143,6 +144,18 @@ export function History() {
   const [logs, setLogs] = useState<Log[]>(cached?.logs ?? []);
   const [logsMore, setLogsMore] = useState(cached?.logsMore ?? false);
   const [loaded, setLoaded] = useState(cached != null);
+  // Per-bill in-flight cancel/delete, and the two "Load more" buttons.
+  const [busyBill, setBusyBill] = useState<Set<string>>(new Set());
+  const [loadingBills, setLoadingBills] = useState(false);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+
+  const setBillBusy = (id: string, on: boolean) =>
+    setBusyBill((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
 
   // Persist the loaded window so a later visit renders it immediately.
   useEffect(() => {
@@ -183,15 +196,25 @@ export function History() {
   }, [canSales, canInv]);
 
   const loadMoreBills = async () => {
-    const p = await fetchBillsPage(bills.length, PAGE_SIZE);
-    setBills((prev) => [...prev, ...p.bills]);
-    setBillsMore(p.hasMore);
+    setLoadingBills(true);
+    try {
+      const p = await fetchBillsPage(bills.length, PAGE_SIZE);
+      setBills((prev) => [...prev, ...p.bills]);
+      setBillsMore(p.hasMore);
+    } finally {
+      setLoadingBills(false);
+    }
   };
 
   const loadMoreLogs = async () => {
-    const p = await fetchLogsPage(logs.length, PAGE_SIZE);
-    setLogs((prev) => [...prev, ...p.logs]);
-    setLogsMore(p.hasMore);
+    setLoadingLogs(true);
+    try {
+      const p = await fetchLogsPage(logs.length, PAGE_SIZE);
+      setLogs((prev) => [...prev, ...p.logs]);
+      setLogsMore(p.hasMore);
+    } finally {
+      setLoadingLogs(false);
+    }
   };
 
   // After a cancel/delete, re-fetch the already-loaded window so the change
@@ -220,20 +243,30 @@ export function History() {
       return;
     }
     if (!confirm(`Cancel Bill #${b.billNo}? Stock quantities will be restored.`)) return;
-    const r = await cancelBill(b.id, user?.name ?? "Unknown");
-    if (r.ok) {
-      toast(`Bill #${b.billNo} cancelled`);
-      await refreshLoaded();
-    } else if (r.error) toast(r.error);
+    setBillBusy(b.id, true);
+    try {
+      const r = await cancelBill(b.id, user?.name ?? "Unknown");
+      if (r.ok) {
+        toast(`Bill #${b.billNo} cancelled`);
+        await refreshLoaded();
+      } else if (r.error) toast(r.error);
+    } finally {
+      setBillBusy(b.id, false);
+    }
   };
 
   const doDelete = (b: Bill) => {
     requireOwnerAuth(`permanently delete Bill #${b.billNo}`, async () => {
-      const r = await deleteBill(b.id, user?.name ?? "Unknown");
-      if (r.ok) {
-        toast(`Bill #${b.billNo} deleted`);
-        await refreshLoaded();
-      } else if (r.error) toast(r.error);
+      setBillBusy(b.id, true);
+      try {
+        const r = await deleteBill(b.id, user?.name ?? "Unknown");
+        if (r.ok) {
+          toast(`Bill #${b.billNo} deleted`);
+          await refreshLoaded();
+        } else if (r.error) toast(r.error);
+      } finally {
+        setBillBusy(b.id, false);
+      }
     });
   };
 
@@ -326,19 +359,21 @@ export function History() {
                       </button>
                       {!cancelled && (
                         <button
-                          className="inline-flex cursor-pointer items-center justify-center rounded-lg border-none bg-warn px-2.5 py-1.5 text-xs text-white"
+                          className="inline-flex cursor-pointer items-center justify-center rounded-lg border-none bg-warn px-2.5 py-1.5 text-xs text-white disabled:cursor-not-allowed disabled:opacity-60"
                           onClick={() => doCancel(b)}
+                          disabled={busyBill.has(b.id)}
                           aria-label="Cancel bill"
                         >
-                          <Ban size={16} />
+                          {busyBill.has(b.id) ? <Loader2 size={16} className="animate-spin" /> : <Ban size={16} />}
                         </button>
                       )}
                       <button
-                        className="inline-flex cursor-pointer items-center justify-center rounded-lg border-none bg-danger px-2.5 py-1.5 text-xs text-white"
+                        className="inline-flex cursor-pointer items-center justify-center rounded-lg border-none bg-danger px-2.5 py-1.5 text-xs text-white disabled:cursor-not-allowed disabled:opacity-60"
                         onClick={() => doDelete(b)}
+                        disabled={busyBill.has(b.id)}
                         aria-label="Delete bill"
                       >
-                        <Trash2 size={16} />
+                        {busyBill.has(b.id) ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
                       </button>
                     </div>
                   </div>
@@ -347,8 +382,13 @@ export function History() {
             </div>
             {billsMore && (
               <div className="mt-3 text-center">
-                <button className="btn-secondary text-[13px]" onClick={loadMoreBills}>
-                  Load more
+                <button
+                  className="btn-secondary inline-flex items-center justify-center gap-2 text-[13px] disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={loadMoreBills}
+                  disabled={loadingBills}
+                >
+                  {loadingBills && <Loader2 size={14} className="animate-spin" />}
+                  {loadingBills ? "Loading…" : "Load more"}
                 </button>
                 {(search.trim() || statusFilter !== "All") && (
                   <p className="mt-1.5 text-[11px] text-ink-light">
@@ -409,8 +449,13 @@ export function History() {
           </div>
           {logsMore && (
             <div className="mt-3 text-center">
-              <button className="btn-secondary text-[13px]" onClick={loadMoreLogs}>
-                Load more
+              <button
+                className="btn-secondary inline-flex items-center justify-center gap-2 text-[13px] disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={loadMoreLogs}
+                disabled={loadingLogs}
+              >
+                {loadingLogs && <Loader2 size={14} className="animate-spin" />}
+                {loadingLogs ? "Loading…" : "Load more"}
               </button>
             </div>
           )}

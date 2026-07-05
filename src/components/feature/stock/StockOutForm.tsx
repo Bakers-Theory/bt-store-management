@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { PackageMinus } from "lucide-react";
+import { Loader2, PackageMinus } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 
@@ -16,20 +16,26 @@ export function StockOutForm({ onSuccess }: { onSuccess?: () => void } = {}) {
   const [reason, setReason] = useState("");
   const [notes, setNotes] = useState("");
   const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
 
   const submit = async () => {
-    const r = await stockOut(itemId, parseFloat(qty), reason || reasons[0] || "", notes);
-    if (!r.ok) {
-      setErr(r.error ?? "");
-      return;
+    setBusy(true);
+    try {
+      const r = await stockOut(itemId, parseFloat(qty), reason || reasons[0] || "", notes);
+      if (!r.ok) {
+        setErr(r.error ?? "");
+        return;
+      }
+      toast(`Removed ${r.qty} ${r.unit} of ${r.name}`);
+      setItemId("");
+      setQty("");
+      setReason("");
+      setNotes("");
+      setErr("");
+      onSuccess?.();
+    } finally {
+      setBusy(false);
     }
-    toast(`Removed ${r.qty} ${r.unit} of ${r.name}`);
-    setItemId("");
-    setQty("");
-    setReason("");
-    setNotes("");
-    setErr("");
-    onSuccess?.();
   };
 
   return (
@@ -64,8 +70,13 @@ export function StockOutForm({ onSuccess }: { onSuccess?: () => void } = {}) {
         <input type="text" placeholder="Additional notes..." value={notes} onChange={(e) => setNotes(e.target.value)} />
       </div>
       {err && <div className="mb-2.5 text-[13px] font-semibold text-danger">{err}</div>}
-      <button className="btn-danger flex w-full items-center justify-center gap-2" onClick={submit}>
-        <PackageMinus size={16} /> Confirm Stock Out
+      <button
+        className="btn-danger flex w-full items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-60"
+        onClick={submit}
+        disabled={busy}
+      >
+        {busy ? <Loader2 size={16} className="animate-spin" /> : <PackageMinus size={16} />}
+        {busy ? "Removing…" : "Confirm Stock Out"}
       </button>
     </div>
   );

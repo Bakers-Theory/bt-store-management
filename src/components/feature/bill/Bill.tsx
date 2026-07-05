@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, Printer, Receipt as ReceiptIcon, ShoppingBasket } from "lucide-react";
+import { Check, Loader2, Printer, Receipt as ReceiptIcon, ShoppingBasket } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { computeTotals } from "@/lib/bill";
@@ -22,6 +22,8 @@ export function Bill() {
   const [category, setCategory] = useState("All");
   const [customer, setCustomer] = useState({ name: "", phone: "" });
   const [payment, setPayment] = useState<PaymentMethod>("Cash");
+  const [phoneErr, setPhoneErr] = useState("");
+  const [generating, setGenerating] = useState(false);
   const [lines, setLines] = useState<BillLine[]>([]);
   const [receipt, setReceipt] = useState<BillType | null>(null);
 
@@ -82,14 +84,22 @@ export function Bill() {
       toast("Add items to the order first");
       return;
     }
+    if (customer.phone && customer.phone.length !== 10) {
+      setPhoneErr("Phone number must be exactly 10 digits");
+      return;
+    }
+    setGenerating(true);
     try {
       const bill = await generateBill(customer, lines, payment);
       setLines([]);
       setCustomer({ name: "", phone: "" });
       setPayment("Cash");
+      setPhoneErr("");
       setReceipt(bill);
     } catch (e) {
       toast(e instanceof Error ? e.message : "Could not generate bill");
+    } finally {
+      setGenerating(false);
     }
   };
 
@@ -179,12 +189,18 @@ export function Bill() {
               maxLength={10}
               placeholder="Phone"
               value={customer.phone}
-              onChange={(e) =>
-                setCustomer((c) => ({ ...c, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }))
-              }
+              onChange={(e) => {
+                setCustomer((c) => ({ ...c, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }));
+                setPhoneErr("");
+              }}
               className="w-[110px] rounded-[10px] border border-line bg-cream px-[11px] py-[9px] text-[13px] outline-none"
             />
           </div>
+          {phoneErr && (
+            <div className="border-b border-line-soft px-[18px] py-2 text-[11px] font-semibold text-danger">
+              {phoneErr}
+            </div>
+          )}
 
           {lines.length === 0 ? (
             <div className="p-11 text-center text-ink-light">
@@ -274,11 +290,15 @@ export function Bill() {
                 </div>
                 <button
                   onClick={generate}
-                  className="mt-3.5 flex w-full items-center justify-center gap-2 rounded-[13px] border-none bg-brown p-3.5 text-[15px] font-extrabold text-warm-white shadow-[0_4px_14px_rgba(124,74,30,.3)]"
+                  disabled={generating}
+                  className="mt-3.5 flex w-full items-center justify-center gap-2 rounded-[13px] border-none bg-brown p-3.5 text-[15px] font-extrabold text-warm-white shadow-[0_4px_14px_rgba(124,74,30,.3)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <ReceiptIcon size={16} />
-                  Generate bill · {currency}
-                  {total.toFixed(2)}
+                  {generating ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <ReceiptIcon size={16} />
+                  )}
+                  {generating ? "Generating…" : `Generate bill · ${currency}${total.toFixed(2)}`}
                 </button>
               </div>
             </>

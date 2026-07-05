@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check } from "lucide-react";
+import { Check, Loader2 } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 
@@ -15,20 +15,26 @@ export function StockInForm({ onSuccess }: { onSuccess?: () => void } = {}) {
   const [supplier, setSupplier] = useState("");
   const [notes, setNotes] = useState("");
   const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
 
   const submit = async () => {
-    const r = await stockIn(itemId, parseFloat(qty), supplier, notes);
-    if (!r.ok) {
-      setErr(r.error ?? "");
-      return;
+    setBusy(true);
+    try {
+      const r = await stockIn(itemId, parseFloat(qty), supplier, notes);
+      if (!r.ok) {
+        setErr(r.error ?? "");
+        return;
+      }
+      toast(`Added ${r.qty} ${r.unit} of ${r.name}`);
+      setItemId("");
+      setQty("");
+      setSupplier("");
+      setNotes("");
+      setErr("");
+      onSuccess?.();
+    } finally {
+      setBusy(false);
     }
-    toast(`Added ${r.qty} ${r.unit} of ${r.name}`);
-    setItemId("");
-    setQty("");
-    setSupplier("");
-    setNotes("");
-    setErr("");
-    onSuccess?.();
   };
 
   return (
@@ -59,8 +65,13 @@ export function StockInForm({ onSuccess }: { onSuccess?: () => void } = {}) {
         <input type="text" placeholder="e.g. Morning delivery" value={notes} onChange={(e) => setNotes(e.target.value)} />
       </div>
       {err && <div className="mb-2.5 text-[13px] font-semibold text-danger">{err}</div>}
-      <button className="btn-success flex w-full items-center justify-center gap-2" onClick={submit}>
-        <Check size={16} /> Confirm Stock In
+      <button
+        className="btn-success flex w-full items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-60"
+        onClick={submit}
+        disabled={busy}
+      >
+        {busy ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+        {busy ? "Adding…" : "Confirm Stock In"}
       </button>
     </div>
   );
