@@ -195,7 +195,7 @@ export function Bill() {
         </div>
 
         {/* Order panel */}
-        <div className="sticky top-3.5 overflow-hidden rounded-[18px] border border-line bg-warm-white shadow-[0_4px_18px_rgba(100,60,20,0.08)]">
+        <div className="sticky top-3.5 self-start overflow-hidden rounded-[18px] border border-line bg-warm-white shadow-[0_4px_18px_rgba(100,60,20,0.08)]">
           <div className="flex items-center justify-between border-b border-line-soft px-[18px] py-4">
             <h3 className="text-base font-extrabold">Current order</h3>
             {lines.length > 0 && (
