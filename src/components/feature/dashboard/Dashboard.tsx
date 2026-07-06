@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Lightbulb, Package, Download, Receipt, Plus } from "lucide-react";
+import { AlertTriangle, Lightbulb, Package, Download, Receipt, Plus, Users } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { useUIStore } from "@/lib/ui-store";
@@ -13,6 +13,7 @@ import {
   fetchDashboardStats,
   fetchReportData,
   fetchBill,
+  fetchCustomers,
   type DashboardStats,
 } from "@/lib/supabase-data";
 import {
@@ -28,7 +29,7 @@ import { StockInForm } from "@/components/feature/stock/StockInForm";
 import { Modal } from "@/components/ui/Modal";
 import { Skeleton } from "@/components/ui/Skeleton";
 import dynamic from "next/dynamic";
-import type { Bill } from "@/lib/types";
+import type { Bill, Customer } from "@/lib/types";
 
 // Charts pull in recharts (~110 kB), which no other route needs. Load them on
 // demand so it stays out of the initial dashboard bundle. Client-only (ssr:
@@ -102,6 +103,8 @@ export function Dashboard() {
   const [addOpen, setAddOpen] = useState(false);
   const [stockInOpen, setStockInOpen] = useState(false);
   const [viewBill, setViewBill] = useState<Bill | null>(null);
+  const [topCustomers, setTopCustomers] = useState<Customer[]>([]);
+  const [custLoaded, setCustLoaded] = useState(false);
 
   // Sales analytics are aggregated server-side (bounded payload) rather than by
   // downloading every bill. Served from cache instantly on revisit, then
@@ -115,6 +118,25 @@ export function Dashboard() {
         setStats(s);
       })
       .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [user?.id]);
+
+  // Top customers by lifetime spend — analytics-gated, computed on read. Fetched
+  // separately from the aggregate stats payload; failures degrade silently.
+  useEffect(() => {
+    if (!hasPermission(user, "analytics")) return;
+    let alive = true;
+    fetchCustomers()
+      .then((rows) => {
+        if (!alive) return;
+        setTopCustomers([...rows].sort((a, b) => b.totalSpend - a.totalSpend).slice(0, 5));
+        setCustLoaded(true);
+      })
+      .catch(() => {
+        if (alive) setCustLoaded(true);
+      });
     return () => {
       alive = false;
     };
@@ -494,6 +516,52 @@ export function Dashboard() {
 
           {/* RIGHT COLUMN */}
           <div className="flex min-w-0 flex-col gap-4">
+            {hasPermission(user, "analytics") && (
+              <div className="card">
+                <div className="card-header">
+                  <h3 className="flex items-center gap-1.5">
+                    <Users size={16} /> Top customers
+                  </h3>
+                </div>
+                {!custLoaded ? (
+                  [0, 1, 2].map((i) => (
+                    <div key={i} className="flex items-center gap-2.5 border-t border-line-soft py-2.5 first:border-t-0">
+                      <Skeleton className="h-7 w-7 rounded-full" />
+                      <div className="min-w-0 flex-1 space-y-1.5">
+                        <Skeleton className="h-3.5 w-1/2" />
+                        <Skeleton className="h-3 w-1/3" />
+                      </div>
+                      <Skeleton className="h-4 w-12" />
+                    </div>
+                  ))
+                ) : topCustomers.length === 0 ? (
+                  <div className="p-3 text-center text-[12.5px] text-ink-muted">No customers yet</div>
+                ) : (
+                  topCustomers.map((c, i) => (
+                    <div
+                      key={c.id}
+                      className="flex items-center gap-2.5 border-t border-line-soft py-2.5 first:border-t-0"
+                    >
+                      <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-line-soft text-[12px] font-bold text-brown">
+                        {i + 1}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[13.5px] font-bold text-ink">
+                          {c.name || c.phone}
+                        </div>
+                        <div className="text-[11.5px] text-ink-light">
+                          {c.visitCount} visit{c.visitCount === 1 ? "" : "s"}
+                        </div>
+                      </div>
+                      <div className="num text-[14px] font-extrabold text-ink">
+                        {currency}
+                        {c.totalSpend.toFixed(0)}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
             {hasPermission(user, "inventory") && (
             <div className="card">
               <div className="card-header flex items-center justify-between">

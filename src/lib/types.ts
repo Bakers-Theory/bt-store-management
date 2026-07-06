@@ -43,9 +43,20 @@ export type BillStatus = "active" | "cancelled";
 
 export type PaymentMethod = "Cash" | "UPI";
 
+export interface Customer {
+  id: string;
+  phone: string;
+  name: string;
+  firstSeen: string; // ISO
+  visitCount: number;
+  totalSpend: number;
+  lastPurchase: string | null; // ISO or null if no active bills
+}
+
 export interface Bill {
   id: string;
   billNo: number;
+  customerId?: string; // FK to customers.id (null for legacy pre-feature bills)
   customerName: string;
   customerPhone: string;
   items: BillLine[];

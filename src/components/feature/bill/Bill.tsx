@@ -1,13 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Check, Loader2, Printer, Receipt as ReceiptIcon, ShoppingBasket } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Check, Loader2, Phone, Printer, Receipt as ReceiptIcon, ShoppingBasket, User, UserCheck } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { computeTotals } from "@/lib/bill";
+import { fetchCustomerByPhone } from "@/lib/supabase-data";
 import { Modal } from "@/components/ui/Modal";
 import { Receipt } from "./Receipt";
-import type { Bill as BillType, BillLine, Item, PaymentMethod } from "@/lib/types";
+import type { Bill as BillType, BillLine, Customer, Item, PaymentMethod } from "@/lib/types";
 
 export function Bill() {
   const items = useBakeryStore((s) => s.items);
@@ -24,6 +25,7 @@ export function Bill() {
   const [payment, setPayment] = useState<PaymentMethod>("Cash");
   const [discount, setDiscount] = useState("");
   const [phoneErr, setPhoneErr] = useState("");
+  const [returning, setReturning] = useState<Customer | null>(null);
   const [generating, setGenerating] = useState(false);
   const [lines, setLines] = useState<BillLine[]>([]);
   const [receipt, setReceipt] = useState<BillType | null>(null);
@@ -45,6 +47,29 @@ export function Bill() {
     for (const l of lines) map.set(l.itemId, l.qty);
     return map;
   }, [lines]);
+
+  // Autofill on repeat billing: once a full 10-digit phone is entered, look the
+  // customer up (debounced, best-effort). On a hit, prefill an empty name field
+  // and flag the returning customer. Never blocks bill generation.
+  useEffect(() => {
+    if (customer.phone.length !== 10) {
+      setReturning(null);
+      return;
+    }
+    let alive = true;
+    const t = setTimeout(async () => {
+      const found = await fetchCustomerByPhone(customer.phone);
+      if (!alive || !found) return;
+      setReturning(found);
+      setCustomer((c) =>
+        c.phone === found.phone && c.name.trim() === "" ? { ...c, name: found.name } : c,
+      );
+    }, 350);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [customer.phone]);
 
   const addToCart = (item: Item) => {
     setLines((prev) => {
@@ -86,8 +111,12 @@ export function Bill() {
       toast("Add items to the order first");
       return;
     }
-    if (customer.phone && customer.phone.length !== 10) {
-      setPhoneErr("Phone number must be exactly 10 digits");
+    if (customer.phone.length !== 10) {
+      setPhoneErr(
+        customer.phone.length === 0
+          ? "Phone number is required"
+          : "Phone number must be exactly 10 digits",
+      );
       return;
     }
     setGenerating(true);
@@ -178,37 +207,55 @@ export function Bill() {
               </button>
             )}
           </div>
-          <div className="flex gap-2.5 border-b border-line-soft px-[18px] py-3.5">
-            <input
-              type="text"
-              placeholder="Customer name"
-              value={customer.name}
-              onChange={(e) => setCustomer((c) => ({ ...c, name: e.target.value }))}
-              className="min-w-0 flex-1 rounded-[10px] border border-line bg-cream px-[11px] py-[9px] text-[13px] outline-none"
-            />
-            <input
-              type="tel"
-              inputMode="numeric"
-              maxLength={10}
-              placeholder="Phone"
-              value={customer.phone}
-              onChange={(e) => {
-                setCustomer((c) => ({ ...c, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }));
-                setPhoneErr("");
-              }}
-              onBlur={() =>
-                setPhoneErr(
-                  customer.phone && customer.phone.length !== 10
-                    ? "Phone number must be exactly 10 digits"
-                    : "",
-                )
-              }
-              className="w-[110px] rounded-[10px] border border-line bg-cream px-[11px] py-[9px] text-[13px] outline-none"
-            />
+          <div className="flex flex-col gap-2 border-b border-line-soft px-[18px] py-3.5">
+            <div className="relative">
+              <Phone
+                size={15}
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-light"
+              />
+              <input
+                type="tel"
+                inputMode="numeric"
+                maxLength={10}
+                placeholder="Phone number *"
+                value={customer.phone}
+                onChange={(e) => {
+                  setCustomer((c) => ({ ...c, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }));
+                  setPhoneErr("");
+                }}
+                onBlur={() =>
+                  setPhoneErr(
+                    customer.phone && customer.phone.length !== 10
+                      ? "Phone number must be exactly 10 digits"
+                      : "",
+                  )
+                }
+                className="w-full rounded-[10px] border border-line bg-cream py-[9px] pl-9 pr-[11px] text-[13px] outline-none focus:border-brown"
+              />
+            </div>
+            <div className="relative">
+              <User
+                size={15}
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-light"
+              />
+              <input
+                type="text"
+                placeholder="Customer name"
+                value={customer.name}
+                onChange={(e) => setCustomer((c) => ({ ...c, name: e.target.value }))}
+                className="w-full rounded-[10px] border border-line bg-cream py-[9px] pl-9 pr-[11px] text-[13px] outline-none focus:border-brown"
+              />
+            </div>
           </div>
           {phoneErr && (
             <div className="border-b border-line-soft px-[18px] py-2 text-[11px] font-semibold text-danger">
               {phoneErr}
+            </div>
+          )}
+          {returning && (
+            <div className="flex items-center gap-1.5 border-b border-line-soft bg-success-bg px-[18px] py-2 text-[11px] font-bold text-success">
+              <UserCheck size={13} />
+              Returning customer · {returning.visitCount} visit{returning.visitCount === 1 ? "" : "s"}
             </div>
           )}
 
@@ -326,7 +373,7 @@ export function Bill() {
                 </div>
                 <button
                   onClick={generate}
-                  disabled={generating || (customer.phone.length > 0 && customer.phone.length !== 10)}
+                  disabled={generating || customer.phone.length !== 10}
                   className="mt-3.5 flex w-full items-center justify-center gap-2 rounded-[13px] border-none bg-brown p-3.5 text-[15px] font-extrabold text-warm-white shadow-[0_4px_14px_rgba(124,74,30,.3)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {generating ? (
