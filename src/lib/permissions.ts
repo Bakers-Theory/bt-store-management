@@ -25,6 +25,8 @@ export function navItems(user: User | null): NavItem[] {
     items.push({ key: "stock", href: "/stock", icon: "📦", label: "Stock" });
   if (hasPermission(user, "sales"))
     items.push({ key: "bill", href: "/bill", icon: "🧾", label: "Bill" });
+  if (hasPermission(user, "sales"))
+    items.push({ key: "customers", href: "/customers", icon: "👥", label: "Customers" });
   if (hasPermission(user, "sales") || hasPermission(user, "inventory"))
     items.push({ key: "history", href: "/history", icon: "📋", label: "History" });
   return items;
@@ -38,6 +40,8 @@ export function canAccessSection(user: User | null, section: string): boolean {
     case "stock":
       return hasPermission(user, "inventory");
     case "bill":
+      return hasPermission(user, "sales");
+    case "customers":
       return hasPermission(user, "sales");
     case "history":
       return hasPermission(user, "sales") || hasPermission(user, "inventory");

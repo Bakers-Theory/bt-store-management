@@ -9,6 +9,7 @@ import { hasPermission } from "@/lib/permissions";
 
 const TITLES: Record<string, [string, string]> = {
   "/bill": ["New Bill", "Tap products to build the order"],
+  "/customers": ["Customers", "Directory, purchases & spend"],
   "/stock": ["Inventory", "Manage items, stock levels & pricing"],
   "/history": ["History", "Past bills and stock movements"],
   "/settings": ["Settings", "Store profile, staff & permissions"],

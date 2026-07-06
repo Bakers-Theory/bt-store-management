@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@/utils/supabase/client";
-import type { Bakery, Bill, BillLine, BillStatus, Item, Log, PaymentMethod, StoreLists, User } from "./types";
+import type { Bakery, Bill, BillLine, BillStatus, Customer, Item, Log, PaymentMethod, StoreLists, User } from "./types";
 import type { ProfileRow } from "./auth";
 import { profileToUser } from "./auth";
 
@@ -19,6 +19,7 @@ interface ItemRow {
 interface BillRow {
   id: string;
   bill_no: number;
+  customer_id: string | null;
   customer_name: string;
   customer_phone: string;
   subtotal: number;
@@ -57,6 +58,15 @@ interface LogRow {
   total: number | null;
   actor_name: string | null;
 }
+interface CustomerRow {
+  id: string;
+  phone: string;
+  name: string;
+  first_seen: string;
+  visit_count: number | string;
+  total_spend: number | string;
+  last_purchase: string | null;
+}
 interface SettingsRow {
   name: string;
   tagline: string;
@@ -91,9 +101,10 @@ const mapLine = (r: BillItemRow): BillLine => ({
   costPrice: 0, // cost is never fetched into the client; analytics uses item cost
 });
 
-const mapBill = (r: BillRow, lines: BillLine[]): Bill => ({
+export const mapBill = (r: BillRow, lines: BillLine[]): Bill => ({
   id: r.id,
   billNo: r.bill_no,
+  customerId: r.customer_id ?? undefined,
   customerName: r.customer_name,
   customerPhone: r.customer_phone,
   items: lines,
@@ -107,6 +118,18 @@ const mapBill = (r: BillRow, lines: BillLine[]): Bill => ({
   status: r.status,
   cancelledAt: r.cancelled_at ?? undefined,
   cancelledBy: r.cancelled_by ?? undefined,
+});
+
+// visit_count / total_spend arrive as bigint/numeric — Postgres serialises those
+// as strings over the wire, so coerce with Number().
+export const mapCustomer = (r: CustomerRow): Customer => ({
+  id: r.id,
+  phone: r.phone,
+  name: r.name,
+  firstSeen: r.first_seen,
+  visitCount: Number(r.visit_count),
+  totalSpend: Number(r.total_spend),
+  lastPurchase: r.last_purchase,
 });
 
 const mapLog = (r: LogRow): Log => ({
@@ -307,6 +330,48 @@ export async function fetchBill(id: string): Promise<Bill | null> {
     .select("id,bill_id,item_id,name,emoji,unit,qty,price")
     .eq("bill_id", id);
   return mapBill(billRow as BillRow, ((lineRows ?? []) as BillItemRow[]).map(mapLine));
+}
+
+// ─── Customers ────────────────────────────────────────────────────────────
+/** Directory + analytics: every customer with computed visit/spend totals. */
+export async function fetchCustomers(): Promise<Customer[]> {
+  const rows = await rpc<CustomerRow[]>("customers_with_stats", {});
+  return (rows ?? []).map(mapCustomer);
+}
+
+/**
+ * Look a customer up by exact phone for billing autofill. Best-effort: returns
+ * null on miss and never throws to the UI (a failed lookup must not block a bill).
+ * Filters the stats RPC client-side so the returning-customer chip gets the
+ * visit count in the same round-trip; fires only once per completed phone.
+ */
+export async function fetchCustomerByPhone(phone: string): Promise<Customer | null> {
+  try {
+    const customers = await fetchCustomers();
+    return customers.find((c) => c.phone === phone) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** All of one customer's bills (with line items), newest first. */
+export async function fetchCustomerBills(customerId: string): Promise<Bill[]> {
+  const supabase = createClient();
+  const { data: billRows } = await supabase
+    .from("bills")
+    .select("*")
+    .eq("customer_id", customerId)
+    .order("created_at", { ascending: false });
+  const rows = (billRows ?? []) as BillRow[];
+  if (rows.length === 0) return [];
+
+  const { data: lineRows } = await supabase
+    .from("bill_items")
+    .select("id,bill_id,item_id,name,emoji,unit,qty,price")
+    .in("bill_id", rows.map((r) => r.id));
+  const linesByBill = linesByBillId((lineRows ?? []) as BillItemRow[]);
+
+  return rows.map((b) => mapBill(b, linesByBill.get(b.id) ?? []));
 }
 
 export interface LogsPage {
