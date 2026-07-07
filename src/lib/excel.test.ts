@@ -12,11 +12,12 @@ const DEFAULT_BAKERY: Bakery = {
   currency: "₹",
   taxRate: 0,
   lowStockAlert: 5,
+  expiringSoonDays: 3,
 };
 
 const item: Item = {
   id: "i1", name: "Bread", emoji: "🍞", category: "Breads", unit: "pcs",
-  price: 40, costPrice: 20, qty: 5,
+  price: 40, costPrice: 20, qty: 5, tracksExpiry: true, earliestExpiry: null,
 };
 
 const bill = (over: Partial<Bill>): Bill => ({

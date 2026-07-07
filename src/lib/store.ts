@@ -17,6 +17,7 @@ import {
   rpcStockOut,
   rpcUpdateItem,
   rpcUpdateLogo,
+  rpcWriteOffBatch,
 } from "./supabase-data";
 
 // ─── Action result types (unchanged contract) ─────────────────────────────
@@ -46,6 +47,8 @@ export interface ItemInput {
   price: number;
   costPrice: number;
   qty: number;
+  tracksExpiry: boolean;
+  expiryDate: string | null;
 }
 
 export interface SettingsInput {
@@ -57,6 +60,7 @@ export interface SettingsInput {
   currency: string;
   taxRate: number;
   lowStockAlert: number;
+  expiringSoonDays: number;
 }
 
 interface StoreState {
@@ -75,8 +79,9 @@ interface StoreState {
 
   saveItem: (input: ItemInput, id?: string) => Promise<SaveItemResult>;
   deleteItem: (id: string) => Promise<void>;
-  stockIn: (itemId: string, qty: number, supplier: string, notes: string) => Promise<StockResult>;
+  stockIn: (itemId: string, qty: number, supplier: string, notes: string, expiry: string | null) => Promise<StockResult>;
   stockOut: (itemId: string, qty: number, reason: string, notes: string) => Promise<StockResult>;
+  writeOffBatch: (batchId: string) => Promise<Result>;
 
   generateBill: (
     customer: { name: string; phone: string },
@@ -112,6 +117,7 @@ const PLACEHOLDER_BAKERY: Bakery = {
   currency: "₹",
   taxRate: 0,
   lowStockAlert: 5,
+  expiringSoonDays: 3,
 };
 
 const EMPTY_LISTS: StoreLists = { categories: [], emojis: [], units: [], reasons: [] };
@@ -151,12 +157,12 @@ export const useBakeryStore = create<StoreState>()((set, get) => ({
     await get().load();
   },
 
-  stockIn: async (itemId, qty, supplier, notes) => {
+  stockIn: async (itemId, qty, supplier, notes, expiry) => {
     if (!itemId) return { ok: false, error: "Please select an item" };
     if (!qty || qty <= 0) return { ok: false, error: "Enter a valid quantity" };
     const item = get().items.find((i) => i.id === itemId);
     try {
-      await rpcStockIn(itemId, qty, supplier, notes);
+      await rpcStockIn(itemId, qty, supplier, notes, expiry);
       await get().load();
       return { ok: true, name: item?.name, unit: item?.unit, qty };
     } catch (e) {
@@ -172,6 +178,16 @@ export const useBakeryStore = create<StoreState>()((set, get) => ({
       await rpcStockOut(itemId, qty, reason, notes);
       await get().load();
       return { ok: true, name: item?.name, unit: item?.unit, qty };
+    } catch (e) {
+      return { ok: false, error: errMsg(e) };
+    }
+  },
+
+  writeOffBatch: async (batchId) => {
+    try {
+      await rpcWriteOffBatch(batchId);
+      await get().load();
+      return { ok: true };
     } catch (e) {
       return { ok: false, error: errMsg(e) };
     }
