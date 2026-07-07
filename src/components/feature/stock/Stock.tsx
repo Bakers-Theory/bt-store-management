@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Search, Plus, PackagePlus, PackageMinus, Package, Pencil, Trash2 } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
+import { expiryStatus } from "@/lib/expiry";
 import { Modal } from "@/components/ui/Modal";
 import { ItemModal } from "./ItemModal";
 import { StockInForm } from "./StockInForm";
@@ -18,9 +19,23 @@ function statusOf(qty: number, lowStockAlert: number) {
   return { label: "In stock", cls: "bg-success-bg text-success" };
 }
 
+function ExpiryBadge({
+  earliestExpiry, tracksExpiry, windowDays,
+}: { earliestExpiry: string | null; tracksExpiry: boolean; windowDays: number }) {
+  const s = expiryStatus(earliestExpiry, tracksExpiry, windowDays, new Date());
+  if (s === "none" || s === "fresh") return null;
+  const cls = s === "expired" ? "bg-danger-bg text-danger" : "bg-warn-bg text-warn";
+  return (
+    <span className={`ml-1.5 rounded-full px-2 py-0.5 text-[10.5px] font-bold ${cls}`}>
+      {s === "expired" ? "Expired" : "Expiring"}
+    </span>
+  );
+}
+
 export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
   const items = useBakeryStore((s) => s.items);
   const lowStockAlert = useBakeryStore((s) => s.bakery.lowStockAlert);
+  const expiringSoonDays = useBakeryStore((s) => s.bakery.expiringSoonDays);
   const currency = useBakeryStore((s) => s.bakery.currency);
   const deleteItem = useBakeryStore((s) => s.deleteItem);
   const categories = useBakeryStore((s) => s.lists.categories);
@@ -158,6 +173,11 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
                   <div className="flex min-w-0 items-center gap-3">
                     <span className="text-[22px]">{item.emoji || "📦"}</span>
                     <span className="truncate text-sm font-bold">{item.name}</span>
+                    <ExpiryBadge
+                      earliestExpiry={item.earliestExpiry}
+                      tracksExpiry={item.tracksExpiry}
+                      windowDays={expiringSoonDays}
+                    />
                   </div>
                   <div className="text-[13px] font-semibold text-ink-muted">
                     {item.category || "General"}
@@ -206,7 +226,14 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
                 >
                   <span className="text-[26px]">{item.emoji || "📦"}</span>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-bold">{item.name}</div>
+                    <div className="truncate text-sm font-bold">
+                      {item.name}
+                      <ExpiryBadge
+                        earliestExpiry={item.earliestExpiry}
+                        tracksExpiry={item.tracksExpiry}
+                        windowDays={expiringSoonDays}
+                      />
+                    </div>
                     <div className="num text-xs font-semibold text-ink-muted">
                       {currency}
                       {item.price.toFixed(2)} · {item.qty} {item.unit}

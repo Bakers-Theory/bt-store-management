@@ -1,10 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Lock, Save, Check, Info, Loader2 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
+import { fetchItemBatches } from "@/lib/supabase-data";
+import { expiryStatus, type ExpiryStatus } from "@/lib/expiry";
+import type { Batch } from "@/lib/types";
 
 export function ItemModal({
   itemId,
@@ -34,6 +37,16 @@ export function ItemModal({
   const [qty, setQty] = useState(editing ? String(editing.qty) : "");
   const [nameErr, setNameErr] = useState("");
   const [saving, setSaving] = useState(false);
+  const writeOffBatch = useBakeryStore((s) => s.writeOffBatch);
+  const expiringSoonDays = useBakeryStore((s) => s.bakery.expiringSoonDays);
+  const [tracksExpiry, setTracksExpiry] = useState(editing?.tracksExpiry ?? true);
+  const [expiryDate, setExpiryDate] = useState("");
+  const [batches, setBatches] = useState<Batch[]>([]);
+
+  const loadBatches = () => {
+    if (itemId) fetchItemBatches(itemId).then(setBatches);
+  };
+  useEffect(loadBatches, [itemId]);
 
   const dup =
     !itemId && name.trim()
@@ -48,6 +61,7 @@ export function ItemModal({
         name.trim() !== editing.name ||
         category !== editing.category ||
         unit !== editing.unit ||
+        tracksExpiry !== editing.tracksExpiry ||
         costPrice !== String(editing.costPrice) ||
         price !== String(editing.price) ||
         qty !== String(editing.qty))
@@ -70,6 +84,8 @@ export function ItemModal({
           price: parseFloat(price) || 0,
           costPrice: parseFloat(costPrice) || 0,
           qty: parseFloat(qty) || 0,
+          tracksExpiry,
+          expiryDate: tracksExpiry && expiryDate ? expiryDate : null,
         },
         itemId ?? undefined,
       );
@@ -178,19 +194,101 @@ export function ItemModal({
         </div>
       </div>
 
-      <div className="mb-3.5">
-        <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">
-          {itemId ? "Current Stock" : "Initial Stock"}
+      <div className="mb-3.5 flex items-center justify-between rounded-[11px] border border-line bg-cream px-3 py-2.5">
+        <label htmlFor="tracksExpiry" className="text-[13px] font-semibold text-ink">
+          This product expires
         </label>
         <input
-          type="number"
-          placeholder="0"
-          min="0"
-          step="0.01"
-          value={qty}
-          onChange={(e) => setQty(e.target.value)}
+          id="tracksExpiry"
+          type="checkbox"
+          checked={tracksExpiry}
+          onChange={(e) => setTracksExpiry(e.target.checked)}
+          className="h-4 w-4 accent-brown"
         />
       </div>
+
+      {!itemId && tracksExpiry && parseFloat(qty) > 0 && (
+        <div className="mb-3.5">
+          <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">
+            Initial batch expiry date
+          </label>
+          <input
+            type="date"
+            value={expiryDate}
+            onChange={(e) => setExpiryDate(e.target.value)}
+          />
+        </div>
+      )}
+
+      {itemId ? (
+        <div className="mb-3.5">
+          <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Current Stock</label>
+          <div className="rounded-[11px] border border-line bg-cream px-3 py-2.5 text-sm font-bold text-ink-muted">
+            {editing?.qty ?? 0} {unit}
+          </div>
+          <p className="mt-1 text-[11px] text-ink-light">
+            Change stock via Add Stock, Stock Out, or writing off a batch below.
+          </p>
+        </div>
+      ) : (
+        <div className="mb-3.5">
+          <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Initial Stock</label>
+          <input
+            type="number"
+            placeholder="0"
+            min="0"
+            step="0.01"
+            value={qty}
+            onChange={(e) => setQty(e.target.value)}
+          />
+        </div>
+      )}
+
+      {itemId && tracksExpiry && batches.length > 0 && (
+        <div className="mb-3.5">
+          <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Batches</label>
+          <div className="overflow-hidden rounded-[11px] border border-line">
+            {batches.map((b) => {
+              const status: ExpiryStatus = expiryStatus(
+                b.expiryDate, true, expiringSoonDays, new Date(),
+              );
+              const badge =
+                status === "expired"
+                  ? "bg-danger-bg text-danger"
+                  : status === "expiring"
+                    ? "bg-warn-bg text-warn"
+                    : "bg-success-bg text-success";
+              return (
+                <div
+                  key={b.id}
+                  className="flex items-center gap-2 border-t border-line-soft px-3 py-2 text-[12.5px] first:border-t-0"
+                >
+                  <span className="num font-bold text-ink">{b.qty} {unit}</span>
+                  <span className="text-ink-muted">
+                    {b.expiryDate ? `exp ${b.expiryDate}` : "no expiry"}
+                  </span>
+                  {b.expiryDate && (
+                    <span className={`rounded-full px-2 py-0.5 text-[10.5px] font-bold ${badge}`}>
+                      {status === "expired" ? "Expired" : status === "expiring" ? "Expiring" : "Fresh"}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    className="ml-auto text-[11.5px] font-bold text-danger"
+                    onClick={async () => {
+                      const r = await writeOffBatch(b.id);
+                      if (r.ok) { toast("Batch written off"); loadBatches(); }
+                      else toast(r.error ?? "Could not write off batch");
+                    }}
+                  >
+                    Write off
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="mb-3 flex items-center gap-1.5 text-[11px] text-ink-light">
         <Lock size={14} /> Bought price is for your records only — it never appears on printed bills.

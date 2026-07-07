@@ -5,6 +5,7 @@ import { Check, Loader2, Phone, Printer, Receipt as ReceiptIcon, ShoppingBasket,
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { computeTotals } from "@/lib/bill";
+import { expiryStatus } from "@/lib/expiry";
 import { fetchCustomerByPhone } from "@/lib/supabase-data";
 import { Modal } from "@/components/ui/Modal";
 import { Receipt } from "./Receipt";
@@ -14,6 +15,7 @@ export function Bill() {
   const items = useBakeryStore((s) => s.items);
   const currency = useBakeryStore((s) => s.bakery.currency);
   const taxRate = useBakeryStore((s) => s.bakery.taxRate);
+  const expiringSoonDays = useBakeryStore((s) => s.bakery.expiringSoonDays);
   const generateBill = useBakeryStore((s) => s.generateBill);
   const categories = useBakeryStore((s) => s.lists.categories);
   const toast = useUIStore((s) => s.toast);
@@ -27,6 +29,7 @@ export function Bill() {
   const [phoneErr, setPhoneErr] = useState("");
   const [returning, setReturning] = useState<Customer | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [expiryConfirmed, setExpiryConfirmed] = useState(false);
   const [lines, setLines] = useState<BillLine[]>([]);
   const [receipt, setReceipt] = useState<BillType | null>(null);
 
@@ -47,6 +50,18 @@ export function Bill() {
     for (const l of lines) map.set(l.itemId, l.qty);
     return map;
   }, [lines]);
+
+  // Cart lines whose item has expired in-stock batches (FIFO will hit them first).
+  const expiredInCart = useMemo(() => {
+    const byId = new Map(items.map((i) => [i.id, i]));
+    return lines
+      .map((l) => byId.get(l.itemId))
+      .filter(
+        (it): it is NonNullable<typeof it> =>
+          !!it &&
+          expiryStatus(it.earliestExpiry, it.tracksExpiry, expiringSoonDays, new Date()) === "expired",
+      );
+  }, [lines, items, expiringSoonDays]);
 
   // Autofill on repeat billing: once a full 10-digit phone is entered, look the
   // customer up (debounced, best-effort). On a hit, prefill an empty name field
@@ -116,6 +131,11 @@ export function Bill() {
       setPhoneErr("Phone number must be exactly 10 digits");
       return;
     }
+    if (expiredInCart.length > 0 && !expiryConfirmed) {
+      setExpiryConfirmed(true); // reveal the warning; require a second tap to proceed
+      toast("Some items have expired stock — review the warning, then tap again to sell");
+      return;
+    }
     setGenerating(true);
     try {
       const bill = await generateBill(customer, lines, payment, discountPct);
@@ -124,6 +144,7 @@ export function Bill() {
       setPayment("Cash");
       setDiscount("");
       setPhoneErr("");
+      setExpiryConfirmed(false);
       setReceipt(bill);
     } catch (e) {
       toast(e instanceof Error ? e.message : "Could not generate bill");
@@ -247,6 +268,14 @@ export function Bill() {
           {phoneErr && (
             <div className="border-b border-line-soft px-[18px] py-2 text-[11px] font-semibold text-danger">
               {phoneErr}
+            </div>
+          )}
+          {expiredInCart.length > 0 && (
+            <div className="flex items-start gap-1.5 border-b border-line-soft bg-danger-bg px-[18px] py-2 text-[11px] font-bold text-danger">
+              <span>⚠</span>
+              <span>
+                Expired stock: {expiredInCart.map((i) => i.name).join(", ")}. Tap Generate again to sell anyway.
+              </span>
             </div>
           )}
           {returning && (

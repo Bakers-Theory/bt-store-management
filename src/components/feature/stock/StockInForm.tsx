@@ -14,13 +14,21 @@ export function StockInForm({ onSuccess }: { onSuccess?: () => void } = {}) {
   const [qty, setQty] = useState("");
   const [supplier, setSupplier] = useState("");
   const [notes, setNotes] = useState("");
+  const [expiry, setExpiry] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const selected = items.find((i) => i.id === itemId);
 
   const submit = async () => {
     setBusy(true);
     try {
-      const r = await stockIn(itemId, parseFloat(qty), supplier, notes);
+      const r = await stockIn(
+        itemId,
+        parseFloat(qty),
+        supplier,
+        notes,
+        selected?.tracksExpiry && expiry ? expiry : null,
+      );
       if (!r.ok) {
         setErr(r.error ?? "");
         return;
@@ -30,6 +38,7 @@ export function StockInForm({ onSuccess }: { onSuccess?: () => void } = {}) {
       setQty("");
       setSupplier("");
       setNotes("");
+      setExpiry("");
       setErr("");
       onSuccess?.();
     } finally {
@@ -60,6 +69,12 @@ export function StockInForm({ onSuccess }: { onSuccess?: () => void } = {}) {
           <input type="text" placeholder="Supplier name" value={supplier} onChange={(e) => setSupplier(e.target.value)} />
         </div>
       </div>
+      {selected?.tracksExpiry && (
+        <div className="mb-3.5">
+          <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Batch expiry date</label>
+          <input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} />
+        </div>
+      )}
       <div className="mb-3.5">
         <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Notes (optional)</label>
         <input type="text" placeholder="e.g. Morning delivery" value={notes} onChange={(e) => setNotes(e.target.value)} />

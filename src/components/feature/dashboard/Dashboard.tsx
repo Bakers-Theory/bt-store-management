@@ -23,6 +23,7 @@ import {
   recommendationsFrom,
   type StockVerdict,
 } from "@/lib/analytics";
+import { expiryStatus } from "@/lib/expiry";
 import { ItemModal } from "@/components/feature/stock/ItemModal";
 import { ViewBillModal } from "@/components/feature/bill/ViewBillModal";
 import { StockInForm } from "@/components/feature/stock/StockInForm";
@@ -95,6 +96,7 @@ export function Dashboard() {
   const items = useBakeryStore((s) => s.items);
   const currency = useBakeryStore((s) => s.bakery.currency);
   const lowStockAlert = useBakeryStore((s) => s.bakery.lowStockAlert);
+  const expiringSoonDays = useBakeryStore((s) => s.bakery.expiringSoonDays);
   const toast = useUIStore((s) => s.toast);
 
   const [stats, setStats] = useState<DashboardStats | null>(
@@ -158,6 +160,12 @@ export function Dashboard() {
   const loading = !stats;
 
   const lowStock = items.filter((i) => i.qty <= lowStockAlert).length;
+  const expiredCount = items.filter(
+    (i) => expiryStatus(i.earliestExpiry, i.tracksExpiry, expiringSoonDays, new Date()) === "expired",
+  ).length;
+  const expiringCount = items.filter(
+    (i) => expiryStatus(i.earliestExpiry, i.tracksExpiry, expiringSoonDays, new Date()) === "expiring",
+  ).length;
 
   const todaySales = stats?.kpis.todaySales ?? 0;
   const yesterdaySales = stats?.kpis.yesterdaySales ?? 0;
@@ -234,6 +242,15 @@ export function Dashboard() {
       {lowStock > 0 && (
         <div className="mb-3 flex items-center gap-1.5 rounded-xl border border-[#ecd9a8] bg-warn-bg px-3.5 py-3 text-[13px] font-semibold text-warn">
           <AlertTriangle size={16} /> {lowStock} item{lowStock > 1 ? "s" : ""} running low on stock!
+        </div>
+      )}
+
+      {(expiredCount > 0 || expiringCount > 0) && (
+        <div className="mb-3 flex items-center gap-1.5 rounded-xl border border-[#f0c9c0] bg-danger-bg px-3.5 py-3 text-[13px] font-semibold text-danger">
+          <AlertTriangle size={16} />
+          {expiredCount > 0 && `${expiredCount} item${expiredCount > 1 ? "s" : ""} expired`}
+          {expiredCount > 0 && expiringCount > 0 && " · "}
+          {expiringCount > 0 && `${expiringCount} expiring soon`}
         </div>
       )}
 
