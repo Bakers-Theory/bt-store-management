@@ -217,6 +217,7 @@ export function ItemModal({
           <input
             type="date"
             value={expiryDate}
+            onKeyDown={(e) => { if (e.key !== "Tab") e.preventDefault(); }}
             onChange={(e) => setExpiryDate(e.target.value)}
           />
         </div>
@@ -271,6 +272,7 @@ export function ItemModal({
                       type="date"
                       value={b.expiryDate}
                       disabled={busyBatchId === b.id}
+                      onKeyDown={(e) => { if (e.key !== "Tab") e.preventDefault(); }}
                       aria-label={`Edit expiry date for batch of ${b.qty} ${unit}`}
                       onChange={async (e) => {
                         const v = e.target.value;
@@ -284,7 +286,7 @@ export function ItemModal({
                           setBusyBatchId(null);
                         }
                       }}
-                      className="rounded-[7px] border border-line bg-warm-white px-1.5 py-0.5 text-[11.5px] outline-none focus:border-brown disabled:opacity-50"
+                      className="w-[140px] rounded-[7px] border border-line bg-warm-white px-1.5 py-0.5 text-[11.5px] outline-none focus:border-brown disabled:opacity-50"
                     />
                   ) : (
                     <span className="text-ink-muted">no expiry</span>
@@ -297,7 +299,7 @@ export function ItemModal({
                   <button
                     type="button"
                     disabled={busyBatchId === b.id}
-                    className="ml-auto inline-flex items-center gap-1 text-[11.5px] font-bold text-danger disabled:opacity-50"
+                    className="ml-auto btn-danger inline-flex items-center gap-1 px-2.5 py-1 text-[11px] disabled:cursor-not-allowed disabled:opacity-50"
                     onClick={async () => {
                       setBusyBatchId(b.id);
                       try {

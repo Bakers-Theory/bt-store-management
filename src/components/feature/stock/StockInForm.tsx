@@ -72,7 +72,12 @@ export function StockInForm({ onSuccess }: { onSuccess?: () => void } = {}) {
       {selected?.tracksExpiry && (
         <div className="mb-3.5">
           <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Batch expiry date</label>
-          <input type="date" value={expiry} onChange={(e) => setExpiry(e.target.value)} />
+          <input
+            type="date"
+            value={expiry}
+            onKeyDown={(e) => { if (e.key !== "Tab") e.preventDefault(); }}
+            onChange={(e) => setExpiry(e.target.value)}
+          />
         </div>
       )}
       <div className="mb-3.5">
