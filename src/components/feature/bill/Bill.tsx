@@ -111,12 +111,9 @@ export function Bill() {
       toast("Add items to the order first");
       return;
     }
-    if (customer.phone.length !== 10) {
-      setPhoneErr(
-        customer.phone.length === 0
-          ? "Phone number is required"
-          : "Phone number must be exactly 10 digits",
-      );
+    // Phone is optional, but a partial entry is a typo — block 1–9 digits.
+    if (customer.phone.length > 0 && customer.phone.length !== 10) {
+      setPhoneErr("Phone number must be exactly 10 digits");
       return;
     }
     setGenerating(true);
@@ -217,7 +214,7 @@ export function Bill() {
                 type="tel"
                 inputMode="numeric"
                 maxLength={10}
-                placeholder="Phone number *"
+                placeholder="Phone number (optional)"
                 value={customer.phone}
                 onChange={(e) => {
                   setCustomer((c) => ({ ...c, phone: e.target.value.replace(/\D/g, "").slice(0, 10) }));
@@ -373,7 +370,7 @@ export function Bill() {
                 </div>
                 <button
                   onClick={generate}
-                  disabled={generating || customer.phone.length !== 10}
+                  disabled={generating || (customer.phone.length > 0 && customer.phone.length !== 10)}
                   className="mt-3.5 flex w-full items-center justify-center gap-2 rounded-[13px] border-none bg-brown p-3.5 text-[15px] font-extrabold text-warm-white shadow-[0_4px_14px_rgba(124,74,30,.3)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {generating ? (
