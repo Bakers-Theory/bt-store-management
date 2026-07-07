@@ -477,6 +477,8 @@ export const rpcStockOut = (itemId: string, qty: number, reason: string, notes: 
   rpc<void>("stock_out", { p_item: itemId, p_qty: qty, p_reason: reason, p_notes: notes });
 export const rpcWriteOffBatch = (batchId: string) =>
   rpc<void>("write_off_batch", { p_batch_id: batchId });
+export const rpcUpdateBatchExpiry = (batchId: string, expiry: string) =>
+  rpc<void>("update_batch_expiry", { p_batch_id: batchId, p_expiry: expiry });
 
 interface GeneratedBillRow {
   id: string; bill_no: number; subtotal: number; tax: number;

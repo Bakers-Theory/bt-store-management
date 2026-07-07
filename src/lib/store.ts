@@ -15,6 +15,7 @@ import {
   rpcSaveSettings,
   rpcStockIn,
   rpcStockOut,
+  rpcUpdateBatchExpiry,
   rpcUpdateItem,
   rpcUpdateLogo,
   rpcWriteOffBatch,
@@ -82,6 +83,7 @@ interface StoreState {
   stockIn: (itemId: string, qty: number, supplier: string, notes: string, expiry: string | null) => Promise<StockResult>;
   stockOut: (itemId: string, qty: number, reason: string, notes: string) => Promise<StockResult>;
   writeOffBatch: (batchId: string) => Promise<Result>;
+  updateBatchExpiry: (batchId: string, expiry: string) => Promise<Result>;
 
   generateBill: (
     customer: { name: string; phone: string },
@@ -186,6 +188,16 @@ export const useBakeryStore = create<StoreState>()((set, get) => ({
   writeOffBatch: async (batchId) => {
     try {
       await rpcWriteOffBatch(batchId);
+      await get().load();
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: errMsg(e) };
+    }
+  },
+
+  updateBatchExpiry: async (batchId, expiry) => {
+    try {
+      await rpcUpdateBatchExpiry(batchId, expiry);
       await get().load();
       return { ok: true };
     } catch (e) {

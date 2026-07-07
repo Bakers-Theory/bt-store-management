@@ -38,10 +38,12 @@ export function ItemModal({
   const [nameErr, setNameErr] = useState("");
   const [saving, setSaving] = useState(false);
   const writeOffBatch = useBakeryStore((s) => s.writeOffBatch);
+  const updateBatchExpiry = useBakeryStore((s) => s.updateBatchExpiry);
   const expiringSoonDays = useBakeryStore((s) => s.bakery.expiringSoonDays);
   const [tracksExpiry, setTracksExpiry] = useState(editing?.tracksExpiry ?? true);
   const [expiryDate, setExpiryDate] = useState("");
   const [batches, setBatches] = useState<Batch[]>([]);
+  const [busyBatchId, setBusyBatchId] = useState<string | null>(null);
 
   const loadBatches = () => {
     if (itemId) fetchItemBatches(itemId).then(setBatches);
@@ -264,9 +266,29 @@ export function ItemModal({
                   className="flex items-center gap-2 border-t border-line-soft px-3 py-2 text-[12.5px] first:border-t-0"
                 >
                   <span className="num font-bold text-ink">{b.qty} {unit}</span>
-                  <span className="text-ink-muted">
-                    {b.expiryDate ? `exp ${b.expiryDate}` : "no expiry"}
-                  </span>
+                  {b.expiryDate ? (
+                    <input
+                      type="date"
+                      value={b.expiryDate}
+                      disabled={busyBatchId === b.id}
+                      aria-label={`Edit expiry date for batch of ${b.qty} ${unit}`}
+                      onChange={async (e) => {
+                        const v = e.target.value;
+                        if (!v || v === b.expiryDate) return;
+                        setBusyBatchId(b.id);
+                        try {
+                          const r = await updateBatchExpiry(b.id, v);
+                          if (r.ok) { toast("Expiry updated"); loadBatches(); }
+                          else toast(r.error ?? "Could not update expiry");
+                        } finally {
+                          setBusyBatchId(null);
+                        }
+                      }}
+                      className="rounded-[7px] border border-line bg-warm-white px-1.5 py-0.5 text-[11.5px] outline-none focus:border-brown disabled:opacity-50"
+                    />
+                  ) : (
+                    <span className="text-ink-muted">no expiry</span>
+                  )}
                   {b.expiryDate && (
                     <span className={`rounded-full px-2 py-0.5 text-[10.5px] font-bold ${badge}`}>
                       {status === "expired" ? "Expired" : status === "expiring" ? "Expiring" : "Fresh"}
@@ -274,13 +296,20 @@ export function ItemModal({
                   )}
                   <button
                     type="button"
-                    className="ml-auto text-[11.5px] font-bold text-danger"
+                    disabled={busyBatchId === b.id}
+                    className="ml-auto inline-flex items-center gap-1 text-[11.5px] font-bold text-danger disabled:opacity-50"
                     onClick={async () => {
-                      const r = await writeOffBatch(b.id);
-                      if (r.ok) { toast("Batch written off"); loadBatches(); }
-                      else toast(r.error ?? "Could not write off batch");
+                      setBusyBatchId(b.id);
+                      try {
+                        const r = await writeOffBatch(b.id);
+                        if (r.ok) { toast("Batch written off"); loadBatches(); }
+                        else toast(r.error ?? "Could not write off batch");
+                      } finally {
+                        setBusyBatchId(null);
+                      }
                     }}
                   >
+                    {busyBatchId === b.id && <Loader2 size={12} className="animate-spin" />}
                     Write off
                   </button>
                 </div>
