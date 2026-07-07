@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@/utils/supabase/client";
-import type { Bakery, Bill, BillLine, BillStatus, Customer, Item, Log, PaymentMethod, StoreLists, User } from "./types";
+import type { Bakery, Batch, Bill, BillLine, BillStatus, Customer, Item, Log, PaymentMethod, StoreLists, User } from "./types";
 import type { ProfileRow } from "./auth";
 import { profileToUser } from "./auth";
 
@@ -15,6 +15,8 @@ interface ItemRow {
   price: number;
   cost_price: number | null;
   qty: number;
+  tracks_expiry: boolean;
+  earliest_expiry: string | null;
 }
 interface BillRow {
   id: string;
@@ -77,6 +79,14 @@ interface SettingsRow {
   currency: string;
   tax_rate: number;
   low_stock_alert: number;
+  expiring_soon_days: number;
+}
+interface BatchRow {
+  id: string;
+  item_id: string;
+  qty: number | string;
+  expiry_date: string | null;
+  created_at: string;
 }
 
 // ─── Mappers (DB row → app type) ────────────────────────────────────────────
@@ -89,6 +99,8 @@ const mapItem = (r: ItemRow): Item => ({
   price: r.price,
   costPrice: r.cost_price ?? 0,
   qty: r.qty,
+  tracksExpiry: r.tracks_expiry,
+  earliestExpiry: r.earliest_expiry,
 });
 
 const mapLine = (r: BillItemRow): BillLine => ({
@@ -158,6 +170,15 @@ const mapBakery = (r: SettingsRow): Bakery => ({
   currency: r.currency,
   taxRate: r.tax_rate,
   lowStockAlert: r.low_stock_alert,
+  expiringSoonDays: r.expiring_soon_days,
+});
+
+const mapBatch = (r: BatchRow): Batch => ({
+  id: r.id,
+  itemId: r.item_id,
+  qty: Number(r.qty),
+  expiryDate: r.expiry_date,
+  createdAt: r.created_at,
 });
 
 interface StoreListRow { kind: string; value: string }
@@ -374,6 +395,18 @@ export async function fetchCustomerBills(customerId: string): Promise<Bill[]> {
   return rows.map((b) => mapBill(b, linesByBill.get(b.id) ?? []));
 }
 
+/** One item's batches, soonest-expiry first (NULL-expiry last). For the item editor. */
+export async function fetchItemBatches(itemId: string): Promise<Batch[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("stock_batches")
+    .select("id,item_id,qty,expiry_date,created_at")
+    .eq("item_id", itemId)
+    .order("expiry_date", { ascending: true, nullsFirst: false })
+    .order("created_at", { ascending: true });
+  return ((data ?? []) as BatchRow[]).map(mapBatch);
+}
+
 export interface LogsPage {
   logs: Log[];
   hasMore: boolean;
@@ -423,6 +456,7 @@ async function rpc<T = unknown>(fn: string, args: Record<string, unknown>): Prom
 export interface ItemInputDb {
   name: string; emoji: string; category: string; unit: string;
   price: number; costPrice: number; qty: number;
+  tracksExpiry: boolean; expiryDate: string | null;
 }
 
 export const rpcCreateItem = (p: ItemInputDb) =>
@@ -433,10 +467,18 @@ export const rpcUpdateItem = (id: string, p: ItemInputDb) =>
   rpc<void>("update_item", { p_id: id, p });
 export const rpcDeleteItem = (id: string) => rpc<void>("delete_item", { p_id: id });
 
-export const rpcStockIn = (itemId: string, qty: number, supplier: string, notes: string) =>
-  rpc<void>("stock_in", { p_item: itemId, p_qty: qty, p_supplier: supplier, p_notes: notes });
+export const rpcStockIn = (
+  itemId: string, qty: number, supplier: string, notes: string, expiry: string | null,
+) =>
+  rpc<void>("stock_in", {
+    p_item: itemId, p_qty: qty, p_supplier: supplier, p_notes: notes, p_expiry: expiry,
+  });
 export const rpcStockOut = (itemId: string, qty: number, reason: string, notes: string) =>
   rpc<void>("stock_out", { p_item: itemId, p_qty: qty, p_reason: reason, p_notes: notes });
+export const rpcWriteOffBatch = (batchId: string) =>
+  rpc<void>("write_off_batch", { p_batch_id: batchId });
+export const rpcUpdateBatchExpiry = (batchId: string, expiry: string) =>
+  rpc<void>("update_batch_expiry", { p_batch_id: batchId, p_expiry: expiry });
 
 interface GeneratedBillRow {
   id: string; bill_no: number; subtotal: number; tax: number;
@@ -455,6 +497,7 @@ export const rpcDeleteBill = (id: string, by: string) =>
 export const rpcSaveSettings = (p: {
   name: string; tagline: string; address: string; phone: string;
   gst: string; currency: string; taxRate: number; lowStockAlert: number;
+  expiringSoonDays: number;
 }) => rpc<void>("save_settings", { p });
 export const rpcUpdateLogo = (url: string | null) => rpc<void>("update_logo", { p_url: url });
 export const rpcClearAllData = () => rpc<void>("clear_all_data", {});

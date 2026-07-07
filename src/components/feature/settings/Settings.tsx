@@ -36,6 +36,7 @@ export function Settings() {
   const [gst, setGst] = useState(bakery.gst);
   const [taxRate, setTaxRate] = useState(String(bakery.taxRate));
   const [lowStockAlert, setLowStockAlert] = useState(String(bakery.lowStockAlert));
+  const [expiringSoonDays, setExpiringSoonDays] = useState(String(bakery.expiringSoonDays));
   const [tab, setTab] = useState<"store" | "staff">("store");
   const [phoneErr, setPhoneErr] = useState("");
   const [savingSettings, setSavingSettings] = useState(false);
@@ -52,7 +53,8 @@ export function Settings() {
     phone !== bakery.phone ||
     gst !== bakery.gst ||
     taxRate !== String(bakery.taxRate) ||
-    lowStockAlert !== String(bakery.lowStockAlert);
+    lowStockAlert !== String(bakery.lowStockAlert) ||
+    expiringSoonDays !== String(bakery.expiringSoonDays);
 
   const onLogoFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -78,6 +80,7 @@ export function Settings() {
         currency: "₹",
         taxRate: parseFloat(taxRate) || 0,
         lowStockAlert: parseInt(lowStockAlert) || 5,
+        expiringSoonDays: parseInt(expiringSoonDays) || 3,
       });
       toast("Settings saved");
     } finally {
@@ -235,6 +238,16 @@ export function Settings() {
                   className={inputCls}
                   value={lowStockAlert}
                   onChange={(e) => setLowStockAlert(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Expiring-soon window (days)</label>
+                <input
+                  type="number"
+                  min="0"
+                  className={inputCls}
+                  value={expiringSoonDays}
+                  onChange={(e) => setExpiringSoonDays(e.target.value)}
                 />
               </div>
             </div>

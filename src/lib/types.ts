@@ -16,6 +16,7 @@ export interface Bakery {
   currency: string;
   taxRate: number;
   lowStockAlert: number;
+  expiringSoonDays: number;
 }
 
 export interface Item {
@@ -27,6 +28,16 @@ export interface Item {
   price: number; // selling price
   costPrice: number; // bought price (private)
   qty: number;
+  tracksExpiry: boolean;
+  earliestExpiry: string | null; // "YYYY-MM-DD" of soonest in-stock batch, or null
+}
+
+export interface Batch {
+  id: string;
+  itemId: string;
+  qty: number;
+  expiryDate: string | null; // "YYYY-MM-DD" or null (never expires)
+  createdAt: string; // ISO
 }
 
 export interface BillLine {
