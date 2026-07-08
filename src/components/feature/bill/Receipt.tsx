@@ -40,6 +40,9 @@ export function Receipt({ bill }: { bill: Bill }) {
       <div className="receipt-row"><span>Bill No:</span><span>#{bill.billNo}</span></div>
       <div className="receipt-row"><span>Date:</span><span>{dateStr}</span></div>
       <div className="receipt-row"><span>Time:</span><span>{timeStr}</span></div>
+      {bill.billerName && (
+        <div className="receipt-row"><span>Billed by:</span><span>{bill.billerName}</span></div>
+      )}
       {bill.customerName && (
         <div className="receipt-row"><span>Customer:</span><span className="font-bold">{bill.customerName}</span></div>
       )}

@@ -77,6 +77,7 @@ export interface Bill {
   taxRate: number;
   paymentMethod: PaymentMethod;
   discountPercent: number;
+  billerName: string; // name of the user who generated the bill ("" for legacy bills)
   date: string; // ISO
   status: BillStatus;
   cancelledAt?: string;

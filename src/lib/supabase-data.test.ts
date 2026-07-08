@@ -88,6 +88,7 @@ describe("mapBill", () => {
     created_at: "2026-06-30T10:00:00Z",
     cancelled_at: null,
     cancelled_by: null,
+    biller_name: "",
   };
 
   it("carries customer_id through as customerId", () => {

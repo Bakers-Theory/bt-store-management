@@ -34,6 +34,7 @@ interface BillRow {
   created_at: string;
   cancelled_at: string | null;
   cancelled_by: string | null;
+  biller_name: string | null; // joined from profiles via created_by (bills_v)
 }
 interface BillItemRow {
   id: string;
@@ -126,6 +127,7 @@ export const mapBill = (r: BillRow, lines: BillLine[]): Bill => ({
   taxRate: r.tax_rate,
   paymentMethod: r.payment_method,
   discountPercent: r.discount_percent,
+  billerName: r.biller_name ?? "",
   date: r.created_at,
   status: r.status,
   cancelledAt: r.cancelled_at ?? undefined,
@@ -256,7 +258,7 @@ export async function fetchReportData(): Promise<FullStoreData> {
   const supabase = createClient();
   const base = await fetchBaseData();
   const [billsRes, billItemsRes, logsRes, costRes] = await Promise.all([
-    supabase.from("bills").select("*").order("created_at"),
+    supabase.from("bills_v").select("*").order("created_at"),
     // Explicit columns — cost_price is revoked from the client role (see 0002).
     supabase.from("bill_items").select("id,bill_id,item_id,name,emoji,unit,qty,price"),
     supabase.from("activity_log_v").select("*").order("created_at", { ascending: false }),
@@ -322,7 +324,7 @@ export interface BillsPage {
 export async function fetchBillsPage(offset: number, limit: number): Promise<BillsPage> {
   const supabase = createClient();
   const { data: billRows } = await supabase
-    .from("bills")
+    .from("bills_v")
     .select("*")
     .order("created_at", { ascending: false })
     .range(offset, offset + limit - 1);
@@ -344,7 +346,7 @@ export async function fetchBillsPage(offset: number, limit: number): Promise<Bil
 /** A single bill with its line items — for on-demand viewing (e.g. dashboard). */
 export async function fetchBill(id: string): Promise<Bill | null> {
   const supabase = createClient();
-  const { data: billRow } = await supabase.from("bills").select("*").eq("id", id).single();
+  const { data: billRow } = await supabase.from("bills_v").select("*").eq("id", id).single();
   if (!billRow) return null;
   const { data: lineRows } = await supabase
     .from("bill_items")
@@ -379,7 +381,7 @@ export async function fetchCustomerByPhone(phone: string): Promise<Customer | nu
 export async function fetchCustomerBills(customerId: string): Promise<Bill[]> {
   const supabase = createClient();
   const { data: billRows } = await supabase
-    .from("bills")
+    .from("bills_v")
     .select("*")
     .eq("customer_id", customerId)
     .order("created_at", { ascending: false });
