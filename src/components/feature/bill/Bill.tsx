@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Check, Loader2, Phone, Printer, Receipt as ReceiptIcon, ShoppingBasket, User, UserCheck } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
+import { useCurrentUser } from "@/components/system/AuthProvider";
 import { computeTotals } from "@/lib/bill";
 import { expiryStatus } from "@/lib/expiry";
 import { fetchCustomerByPhone } from "@/lib/supabase-data";
@@ -20,6 +21,7 @@ export function Bill() {
   const categories = useBakeryStore((s) => s.lists.categories);
   const toast = useUIStore((s) => s.toast);
   const requestPrint = useUIStore((s) => s.requestPrint);
+  const currentUser = useCurrentUser();
 
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
@@ -27,6 +29,7 @@ export function Bill() {
   const [payment, setPayment] = useState<PaymentMethod>("Cash");
   const [discount, setDiscount] = useState("");
   const [phoneErr, setPhoneErr] = useState("");
+  const [nameErr, setNameErr] = useState("");
   const [returning, setReturning] = useState<Customer | null>(null);
   const [generating, setGenerating] = useState(false);
   const [expiryConfirmed, setExpiryConfirmed] = useState(false);
@@ -126,6 +129,10 @@ export function Bill() {
       toast("Add items to the order first");
       return;
     }
+    if (customer.name.trim() === "") {
+      setNameErr("Customer name is required");
+      return;
+    }
     // Phone is optional, but a partial entry is a typo — block 1–9 digits.
     if (customer.phone.length > 0 && customer.phone.length !== 10) {
       setPhoneErr("Phone number must be exactly 10 digits");
@@ -138,12 +145,13 @@ export function Bill() {
     }
     setGenerating(true);
     try {
-      const bill = await generateBill(customer, lines, payment, discountPct);
+      const bill = await generateBill(customer, lines, payment, discountPct, currentUser?.name ?? "");
       setLines([]);
       setCustomer({ name: "", phone: "" });
       setPayment("Cash");
       setDiscount("");
       setPhoneErr("");
+      setNameErr("");
       setExpiryConfirmed(false);
       setReceipt(bill);
     } catch (e) {
@@ -260,11 +268,22 @@ export function Bill() {
                 type="text"
                 placeholder="Customer name"
                 value={customer.name}
-                onChange={(e) => setCustomer((c) => ({ ...c, name: e.target.value }))}
+                onChange={(e) => {
+                  setCustomer((c) => ({ ...c, name: e.target.value }));
+                  setNameErr("");
+                }}
+                onBlur={() =>
+                  setNameErr(customer.name.trim() === "" ? "Customer name is required" : "")
+                }
                 className="w-full rounded-[10px] border border-line bg-cream py-[9px] pl-9 pr-[11px] text-[13px] outline-none focus:border-brown"
               />
             </div>
           </div>
+          {nameErr && (
+            <div className="border-b border-line-soft px-[18px] py-2 text-[11px] font-semibold text-danger">
+              {nameErr}
+            </div>
+          )}
           {phoneErr && (
             <div className="border-b border-line-soft px-[18px] py-2 text-[11px] font-semibold text-danger">
               {phoneErr}
@@ -399,7 +418,11 @@ export function Bill() {
                 </div>
                 <button
                   onClick={generate}
-                  disabled={generating || (customer.phone.length > 0 && customer.phone.length !== 10)}
+                  disabled={
+                    generating ||
+                    customer.name.trim() === "" ||
+                    (customer.phone.length > 0 && customer.phone.length !== 10)
+                  }
                   className="mt-3.5 flex w-full items-center justify-center gap-2 rounded-[13px] border-none bg-brown p-3.5 text-[15px] font-extrabold text-warm-white shadow-[0_4px_14px_rgba(124,74,30,.3)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {generating ? (
