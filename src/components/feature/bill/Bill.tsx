@@ -255,59 +255,120 @@ export function Bill() {
               })}
             </div>
           ) : (
-            <div className="overflow-hidden rounded-[18px] border border-line bg-warm-white shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
-              <div className="grid grid-cols-[2.5fr_1fr_auto] gap-3 bg-[#f8ecd8] px-5 py-[13px] text-[11.5px] font-bold uppercase tracking-[0.04em] text-[#8a6a3c]">
-                <div>Product</div>
-                <div className="text-right">Price</div>
-                <div className="min-w-[92px] text-right">In cart</div>
-              </div>
-              {filteredItems.map((item) => {
-                const inCart = cartQtyById.get(item.id) || 0;
-                return (
-                  <div
-                    key={item.id}
-                    className="grid w-full grid-cols-[2.5fr_1fr_auto] items-center gap-3 border-t border-line-soft px-5 py-[13px]"
-                  >
-                    <button
-                      onClick={() => addToCart(item)}
-                      className="flex min-w-0 items-center gap-3 text-left"
+            <>
+              {/* Desktop table */}
+              <div className="hidden overflow-hidden rounded-[18px] border border-line bg-warm-white shadow-[0_2px_12px_rgba(100,60,20,0.05)] lg:block">
+                <div className="grid grid-cols-[2.5fr_1fr_auto] gap-3 bg-[#f8ecd8] px-5 py-[13px] text-[11.5px] font-bold uppercase tracking-[0.04em] text-[#8a6a3c]">
+                  <div>Product</div>
+                  <div className="text-right">Price</div>
+                  <div className="min-w-[92px] text-right">In cart</div>
+                </div>
+                {filteredItems.map((item) => {
+                  const inCart = cartQtyById.get(item.id) || 0;
+                  return (
+                    <div
+                      key={item.id}
+                      className="grid w-full grid-cols-[2.5fr_1fr_auto] items-center gap-3 border-t border-line-soft px-5 py-[13px]"
                     >
-                      <span className="text-[22px]">{item.emoji || "📦"}</span>
-                      <span className="truncate text-sm font-bold">{item.name}</span>
-                    </button>
-                    <div className="num text-right text-[13.5px] font-bold text-brown">
-                      {currency}
-                      {item.price.toFixed(2)}
+                      <button
+                        onClick={() => addToCart(item)}
+                        className="flex min-w-0 items-center gap-3 text-left"
+                      >
+                        <span className="text-[22px]">{item.emoji || "📦"}</span>
+                        <span className="truncate text-sm font-bold">{item.name}</span>
+                      </button>
+                      <div className="num text-right text-[13.5px] font-bold text-brown">
+                        {currency}
+                        {item.price.toFixed(2)}
+                      </div>
+                      <div className="flex min-w-[92px] justify-end">
+                        {inCart > 0 ? (
+                          <div className="flex items-center gap-1.5 rounded-[9px] bg-cream-dark p-[3px]">
+                            <button
+                              onClick={() => removeFromCart(item)}
+                              aria-label={`Remove one ${item.name}`}
+                              className="flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-base font-extrabold text-brown"
+                            >
+                              −
+                            </button>
+                            <span className="num min-w-[20px] text-center text-[13.5px] font-extrabold">
+                              {inCart}
+                            </span>
+                            <button
+                              onClick={() => addToCart(item)}
+                              aria-label={`Add one ${item.name}`}
+                              className="flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-base font-extrabold text-brown"
+                            >
+                              +
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-ink-light">—</span>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex min-w-[92px] justify-end">
+                  );
+                })}
+              </div>
+
+              {/* Phone cards */}
+              <div className="flex flex-col gap-2.5 lg:hidden">
+                {filteredItems.map((item) => {
+                  const inCart = cartQtyById.get(item.id) || 0;
+                  return (
+                    <div
+                      key={item.id}
+                      className={`flex items-center gap-3 rounded-[15px] border bg-warm-white px-[15px] py-[13px] ${
+                        inCart ? "border-[1.5px] border-brown" : "border-line"
+                      }`}
+                    >
+                      <button
+                        onClick={() => addToCart(item)}
+                        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                      >
+                        <span className="text-[26px]">{item.emoji || "📦"}</span>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-bold">{item.name}</div>
+                          <div className="num text-xs font-semibold text-ink-muted">
+                            {currency}
+                            {item.price.toFixed(2)}
+                          </div>
+                        </div>
+                      </button>
                       {inCart > 0 ? (
-                        <div className="flex items-center gap-1.5 rounded-[9px] bg-cream-dark p-[3px]">
+                        <div className="flex shrink-0 items-center gap-1.5 rounded-[9px] bg-cream-dark p-[3px]">
                           <button
                             onClick={() => removeFromCart(item)}
                             aria-label={`Remove one ${item.name}`}
-                            className="flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-base font-extrabold text-brown"
+                            className="flex h-[28px] w-[28px] cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-lg font-extrabold text-brown"
                           >
                             −
                           </button>
-                          <span className="num min-w-[20px] text-center text-[13.5px] font-extrabold">
+                          <span className="num min-w-[20px] text-center text-sm font-extrabold">
                             {inCart}
                           </span>
                           <button
                             onClick={() => addToCart(item)}
                             aria-label={`Add one ${item.name}`}
-                            className="flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-base font-extrabold text-brown"
+                            className="flex h-[28px] w-[28px] cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-lg font-extrabold text-brown"
                           >
                             +
                           </button>
                         </div>
                       ) : (
-                        <span className="text-ink-light">—</span>
+                        <button
+                          onClick={() => addToCart(item)}
+                          aria-label={`Add ${item.name}`}
+                          className="flex h-[32px] w-[32px] shrink-0 items-center justify-center rounded-[9px] border border-line bg-warm-white text-lg font-extrabold text-brown"
+                        >
+                          +
+                        </button>
                       )}
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
 
