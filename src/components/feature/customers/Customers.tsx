@@ -39,11 +39,14 @@ export function Customers() {
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState(false);
+  const [retryToken, setRetryToken] = useState(0);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Customer | null>(null);
 
   useEffect(() => {
     let alive = true;
+    setError(false);
     fetchCustomers()
       .then((rows) => {
         if (!alive) return;
@@ -51,12 +54,14 @@ export function Customers() {
         setLoaded(true);
       })
       .catch(() => {
-        if (alive) setLoaded(true);
+        if (!alive) return;
+        setLoaded(true);
+        setError(true);
       });
     return () => {
       alive = false;
     };
-  }, []);
+  }, [retryToken]);
 
   // Default sort: highest lifetime spend first.
   const visible = useMemo(() => {
@@ -81,6 +86,20 @@ export function Customers() {
 
       {!loaded ? (
         <ListSkeleton />
+      ) : error ? (
+        <div className="px-5 py-10 text-center text-ink-muted">
+          <div className="mb-3 flex justify-center">
+            <Users size={48} />
+          </div>
+          <p className="mb-3 text-sm">Couldn&apos;t load customers.</p>
+          <button
+            type="button"
+            onClick={() => setRetryToken((t) => t + 1)}
+            className="rounded-full bg-brown px-4 py-1.5 text-[13px] font-bold text-warm-white"
+          >
+            Retry
+          </button>
+        </div>
       ) : visible.length === 0 ? (
         <div className="px-5 py-10 text-center text-ink-muted">
           <div className="mb-3 flex justify-center">

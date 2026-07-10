@@ -107,26 +107,36 @@ export function Dashboard() {
   const [viewBill, setViewBill] = useState<Bill | null>(null);
   const [topCustomers, setTopCustomers] = useState<Customer[]>([]);
   const [custLoaded, setCustLoaded] = useState(false);
+  const [statsError, setStatsError] = useState(false);
+  const [statsRetryToken, setStatsRetryToken] = useState(0);
 
   // Sales analytics are aggregated server-side (bounded payload) rather than by
   // downloading every bill. Served from cache instantly on revisit, then
-  // revalidated; item-derived views below stay reactive to the store.
+  // revalidated; item-derived views below stay reactive to the store. A failed
+  // fetch surfaces as an explicit error (with retry) rather than leaving the
+  // skeleton spinning forever or silently keeping stale/no data.
   useEffect(() => {
     let alive = true;
+    setStatsError(false);
     fetchDashboardStats()
       .then((s) => {
         if (!alive) return;
         if (user?.id) statsCache = { uid: user.id, data: s };
         setStats(s);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (alive) setStatsError(true);
+      });
     return () => {
       alive = false;
     };
-  }, [user?.id]);
+  }, [user?.id, statsRetryToken]);
 
   // Top customers by lifetime spend — analytics-gated, computed on read. Fetched
-  // separately from the aggregate stats payload; failures degrade silently.
+  // separately from the aggregate stats payload. On failure `custError` is set
+  // so the card can show a distinct "couldn't load" state instead of reading as
+  // "this store has no customers."
+  const [custError, setCustError] = useState(false);
   useEffect(() => {
     if (!hasPermission(user, "analytics")) return;
     let alive = true;
@@ -137,7 +147,10 @@ export function Dashboard() {
         setCustLoaded(true);
       })
       .catch(() => {
-        if (alive) setCustLoaded(true);
+        if (alive) {
+          setCustLoaded(true);
+          setCustError(true);
+        }
       });
     return () => {
       alive = false;
@@ -157,7 +170,10 @@ export function Dashboard() {
   // The page shell renders immediately. `loading` is true only on a cold load
   // (no cached stats); on revisit `stats` is served from cache so the real data
   // shows instantly while it revalidates silently in the background.
-  const loading = !stats;
+  // Only shows skeletons while genuinely still in flight and nothing cached is
+  // available yet — a failed fetch with no cache falls through to the error
+  // banner below instead of spinning forever.
+  const loading = !stats && !statsError;
 
   const lowStock = items.filter((i) => i.qty <= lowStockAlert).length;
   const expiredCount = items.filter(
@@ -239,6 +255,21 @@ export function Dashboard() {
 
   return (
     <>
+      {statsError && !stats && (
+        <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-[#f0c9c0] bg-danger-bg px-3.5 py-3 text-[13px] font-semibold text-danger">
+          <span className="flex items-center gap-1.5">
+            <AlertTriangle size={16} /> Couldn&apos;t load sales analytics.
+          </span>
+          <button
+            type="button"
+            onClick={() => setStatsRetryToken((t) => t + 1)}
+            className="shrink-0 rounded-full bg-danger px-3 py-1 text-[12px] font-bold text-white"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {lowStock > 0 && (
         <div className="mb-3 flex items-center gap-1.5 rounded-xl border border-[#ecd9a8] bg-warn-bg px-3.5 py-3 text-[13px] font-semibold text-warn">
           <AlertTriangle size={16} /> {lowStock} item{lowStock > 1 ? "s" : ""} running low on stock!
@@ -551,6 +582,8 @@ export function Dashboard() {
                       <Skeleton className="h-4 w-12" />
                     </div>
                   ))
+                ) : custError ? (
+                  <div className="p-3 text-center text-[12.5px] text-danger">Couldn&apos;t load customers</div>
                 ) : topCustomers.length === 0 ? (
                   <div className="p-3 text-center text-[12.5px] text-ink-muted">No customers yet</div>
                 ) : (

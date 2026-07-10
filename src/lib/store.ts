@@ -4,6 +4,9 @@ import { create } from "zustand";
 import type { Bakery, Bill, BillLine, Item, PaymentMethod, Permissions, StoreLists } from "./types";
 import {
   fetchBaseData,
+  fetchItems,
+  fetchLists,
+  fetchSettings,
   rpcAddListValue,
   rpcCancelBill,
   rpcClearAllData,
@@ -125,173 +128,213 @@ const PLACEHOLDER_BAKERY: Bakery = {
 
 const EMPTY_LISTS: StoreLists = { categories: [], emojis: [], units: [], reasons: [] };
 
-export const useBakeryStore = create<StoreState>()((set, get) => ({
-  bakery: PLACEHOLDER_BAKERY,
-  items: [],
-  lists: EMPTY_LISTS,
-  _hasHydrated: false,
+export const useBakeryStore = create<StoreState>()((set, get) => {
+  // Patch one item in place (by id), appending it if it's not cached yet.
+  // Used by item-scoped RPCs that now return the updated items_v row, so a
+  // single stock/price change no longer re-downloads the whole catalogue.
+  const patchItem = (item: Item) =>
+    set((s) => {
+      const idx = s.items.findIndex((i) => i.id === item.id);
+      if (idx === -1) return { items: [...s.items, item] };
+      const items = [...s.items];
+      items[idx] = item;
+      return { items };
+    });
 
-  load: async () => {
+  // Re-fetch only the bounded resource a mutation actually touched, instead
+  // of the full base-data reload every action used to trigger. Best-effort —
+  // on failure the previous cached value is kept rather than clobbered.
+  const refreshItems = async () => {
     try {
-      const data = await fetchBaseData();
-      set({ ...data, _hasHydrated: true });
+      set({ items: await fetchItems() });
     } catch {
-      set({ _hasHydrated: true });
+      /* keep previous items */
     }
-  },
-
-  // ─── Items ───────────────────────────────────────────────────────────────
-  saveItem: async (input, id) => {
-    if (id) {
-      await rpcUpdateItem(id, input);
-      await get().load();
-      return { kind: "updated" };
-    }
-    const r = await rpcCreateItem(input);
-    await get().load();
-    if (r.kind === "merged") {
-      return { kind: "merged", name: r.name ?? input.name, qty: r.qty ?? input.qty, unit: r.unit ?? input.unit };
-    }
-    return { kind: "added" };
-  },
-
-  deleteItem: async (id) => {
-    await rpcDeleteItem(id);
-    await get().load();
-  },
-
-  stockIn: async (itemId, qty, supplier, notes, expiry) => {
-    if (!itemId) return { ok: false, error: "Please select an item" };
-    if (!qty || qty <= 0) return { ok: false, error: "Enter a valid quantity" };
-    const item = get().items.find((i) => i.id === itemId);
+  };
+  const refreshSettings = async () => {
     try {
-      await rpcStockIn(itemId, qty, supplier, notes, expiry);
-      await get().load();
-      return { ok: true, name: item?.name, unit: item?.unit, qty };
-    } catch (e) {
-      return { ok: false, error: errMsg(e) };
+      set({ bakery: await fetchSettings() });
+    } catch {
+      /* keep previous settings */
     }
-  },
-
-  stockOut: async (itemId, qty, reason, notes) => {
-    if (!itemId) return { ok: false, error: "Please select an item" };
-    if (!qty || qty <= 0) return { ok: false, error: "Enter a valid quantity" };
-    const item = get().items.find((i) => i.id === itemId);
+  };
+  const refreshLists = async () => {
     try {
-      await rpcStockOut(itemId, qty, reason, notes);
-      await get().load();
-      return { ok: true, name: item?.name, unit: item?.unit, qty };
-    } catch (e) {
-      return { ok: false, error: errMsg(e) };
+      set({ lists: await fetchLists() });
+    } catch {
+      /* keep previous lists */
     }
-  },
+  };
 
-  writeOffBatch: async (batchId) => {
-    try {
-      await rpcWriteOffBatch(batchId);
-      await get().load();
-      return { ok: true };
-    } catch (e) {
-      return { ok: false, error: errMsg(e) };
-    }
-  },
+  return {
+    bakery: PLACEHOLDER_BAKERY,
+    items: [],
+    lists: EMPTY_LISTS,
+    _hasHydrated: false,
 
-  updateBatchExpiry: async (batchId, expiry) => {
-    try {
-      await rpcUpdateBatchExpiry(batchId, expiry);
-      await get().load();
-      return { ok: true };
-    } catch (e) {
-      return { ok: false, error: errMsg(e) };
-    }
-  },
+    load: async () => {
+      try {
+        const data = await fetchBaseData();
+        set({ ...data, _hasHydrated: true });
+      } catch {
+        set({ _hasHydrated: true });
+      }
+    },
 
-  // ─── Bills ───────────────────────────────────────────────────────────────
-  generateBill: async (customer, lines, paymentMethod, discountPercent, billerName) => {
-    const row = await rpcGenerateBill(
-      { ...customer, payment: paymentMethod, discount: discountPercent },
-      lines.map((l) => ({ itemId: l.itemId, qty: l.qty })),
-    );
-    const bill: Bill = {
-      id: row.id,
-      billNo: row.bill_no,
-      customerName: customer.name,
-      customerPhone: customer.phone,
-      items: lines.map((l) => ({ ...l })),
-      subtotal: row.subtotal,
-      tax: row.tax,
-      total: row.total,
-      taxRate: row.tax_rate,
-      paymentMethod,
-      discountPercent,
-      billerName,
-      date: row.created_at,
-      status: "active",
-    };
-    await get().load();
-    return bill;
-  },
+    // ─── Items ─────────────────────────────────────────────────────────────
+    saveItem: async (input, id) => {
+      if (id) {
+        patchItem(await rpcUpdateItem(id, input));
+        return { kind: "updated" };
+      }
+      const r = await rpcCreateItem(input);
+      if (r.item) patchItem(r.item);
+      if (r.kind === "merged") {
+        return { kind: "merged", name: r.name ?? input.name, qty: r.qty ?? input.qty, unit: r.unit ?? input.unit };
+      }
+      return { kind: "added" };
+    },
 
-  cancelBill: async (id, byName) => {
-    try {
-      await rpcCancelBill(id, byName);
-      await get().load();
-      return { ok: true };
-    } catch (e) {
-      return { ok: false, error: errMsg(e) };
-    }
-  },
+    deleteItem: async (id) => {
+      await rpcDeleteItem(id);
+      set((s) => ({ items: s.items.filter((i) => i.id !== id) }));
+    },
 
-  deleteBill: async (id, byName) => {
-    try {
-      await rpcDeleteBill(id, byName);
-      await get().load();
-      return { ok: true };
-    } catch (e) {
-      return { ok: false, error: errMsg(e) };
-    }
-  },
+    stockIn: async (itemId, qty, supplier, notes, expiry) => {
+      if (!itemId) return { ok: false, error: "Please select an item" };
+      if (!qty || qty <= 0) return { ok: false, error: "Enter a valid quantity" };
+      const item = get().items.find((i) => i.id === itemId);
+      try {
+        const updated = await rpcStockIn(itemId, qty, supplier, notes, expiry);
+        patchItem(updated);
+        return { ok: true, name: item?.name, unit: item?.unit, qty };
+      } catch (e) {
+        return { ok: false, error: errMsg(e) };
+      }
+    },
 
-  // ─── Settings ──────────────────────────────────────────────────────────────
-  saveSettings: async (input) => {
-    await rpcSaveSettings(input);
-    await get().load();
-  },
+    stockOut: async (itemId, qty, reason, notes) => {
+      if (!itemId) return { ok: false, error: "Please select an item" };
+      if (!qty || qty <= 0) return { ok: false, error: "Enter a valid quantity" };
+      const item = get().items.find((i) => i.id === itemId);
+      try {
+        const updated = await rpcStockOut(itemId, qty, reason, notes);
+        patchItem(updated);
+        return { ok: true, name: item?.name, unit: item?.unit, qty };
+      } catch (e) {
+        return { ok: false, error: errMsg(e) };
+      }
+    },
 
-  uploadLogo: async (dataUrl) => {
-    await rpcUpdateLogo(dataUrl);
-    await get().load();
-  },
+    writeOffBatch: async (batchId) => {
+      try {
+        patchItem(await rpcWriteOffBatch(batchId));
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, error: errMsg(e) };
+      }
+    },
 
-  removeLogo: async () => {
-    await rpcUpdateLogo(null);
-    await get().load();
-  },
+    updateBatchExpiry: async (batchId, expiry) => {
+      try {
+        patchItem(await rpcUpdateBatchExpiry(batchId, expiry));
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, error: errMsg(e) };
+      }
+    },
 
-  clearAllData: async () => {
-    await rpcClearAllData();
-    await get().load();
-  },
+    // ─── Bills ─────────────────────────────────────────────────────────────
+    // A bill can consume stock across many items at once (FIFO, per line), so
+    // it refreshes the item list rather than patching a single row — still far
+    // cheaper than the old full reload, since settings/lists never change here.
+    generateBill: async (customer, lines, paymentMethod, discountPercent, billerName) => {
+      const row = await rpcGenerateBill(
+        { ...customer, payment: paymentMethod, discount: discountPercent },
+        lines.map((l) => ({ itemId: l.itemId, qty: l.qty })),
+      );
+      const bill: Bill = {
+        id: row.id,
+        billNo: row.bill_no,
+        customerName: customer.name,
+        customerPhone: customer.phone,
+        items: lines.map((l) => ({ ...l })),
+        subtotal: row.subtotal,
+        tax: row.tax,
+        total: row.total,
+        taxRate: row.tax_rate,
+        paymentMethod,
+        discountPercent,
+        billerName,
+        date: row.created_at,
+        status: "active",
+      };
+      await refreshItems();
+      return bill;
+    },
 
-  addListValue: async (kind, value) => {
-    try {
-      await rpcAddListValue(kind, value);
-      await get().load();
-      return { ok: true };
-    } catch (e) {
-      return { ok: false, error: errMsg(e) };
-    }
-  },
+    cancelBill: async (id, byName) => {
+      try {
+        await rpcCancelBill(id, byName);
+        await refreshItems();
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, error: errMsg(e) };
+      }
+    },
 
-  deleteListValue: async (id) => {
-    try {
-      await rpcDeleteListValue(id);
-      await get().load();
-      return { ok: true };
-    } catch (e) {
-      return { ok: false, error: errMsg(e) };
-    }
-  },
-}));
+    deleteBill: async (id, byName) => {
+      try {
+        await rpcDeleteBill(id, byName);
+        await refreshItems();
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, error: errMsg(e) };
+      }
+    },
+
+    // ─── Settings ────────────────────────────────────────────────────────────
+    saveSettings: async (input) => {
+      await rpcSaveSettings(input);
+      await refreshSettings();
+    },
+
+    uploadLogo: async (dataUrl) => {
+      await rpcUpdateLogo(dataUrl);
+      await refreshSettings();
+    },
+
+    removeLogo: async () => {
+      await rpcUpdateLogo(null);
+      await refreshSettings();
+    },
+
+    // Wipes bills/items/batches/log but leaves settings and lists untouched.
+    clearAllData: async () => {
+      await rpcClearAllData();
+      await refreshItems();
+    },
+
+    addListValue: async (kind, value) => {
+      try {
+        await rpcAddListValue(kind, value);
+        await refreshLists();
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, error: errMsg(e) };
+      }
+    },
+
+    deleteListValue: async (id) => {
+      try {
+        await rpcDeleteListValue(id);
+        await refreshLists();
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, error: errMsg(e) };
+      }
+    },
+  };
+});
 
 export type { Permissions };
