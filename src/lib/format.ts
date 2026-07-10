@@ -26,7 +26,14 @@ export function formatDateFull(iso: string): string {
   );
 }
 
-/** Match the original `parseFloat((n).toFixed(3))` rounding used on stock qty. */
-export function round3(n: number): number {
-  return parseFloat(n.toFixed(3));
+/** First letter of each of the first two words in `name`, uppercased. Returns
+ *  `fallback` verbatim for a blank name (e.g. an avatar placeholder glyph). */
+export function initials(name: string, fallback = "?"): string {
+  const trimmed = (name || "").trim();
+  if (!trimmed) return fallback;
+  return trimmed
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? "")
+    .join("");
 }

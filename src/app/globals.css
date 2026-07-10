@@ -283,20 +283,21 @@
 
 /* Print — only the receipt inside .print-area is visible */
 @media print {
-  body * {
-    visibility: hidden;
+  @page {
+    size: 76mm auto;
+    margin: 0;
   }
-  .print-area,
-  .print-area * {
-    visibility: visible;
+  body > *:not(.print-area) {
+    display: none !important;
   }
   .print-area {
-    /* !important is required: PrintHost sets an inline `left:-9999px` to hide
-       the receipt off-screen on-screen, and inline styles beat media-query
-       rules. Without !important the receipt stays off-page and prints blank. */
-    position: fixed !important;
-    left: 0 !important;
-    top: 0 !important;
+    /* !important overrides PrintHost's inline `position:absolute; left:-9999px`
+       (used to hide the receipt off-screen while on screen). In print we pull
+       it back into normal flow so it starts at the top of the page. */
+    display: block !important;
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
     width: 76mm;
     background: #fff;
     font-family: "Courier New", monospace;

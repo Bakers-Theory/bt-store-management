@@ -227,21 +227,36 @@ export interface BaseData {
  * reads server-side aggregates and History paginates. See `fetchDashboardStats`
  * / `fetchBillsPage` / `fetchLogsPage`.
  */
-export async function fetchBaseData(): Promise<BaseData> {
+export async function fetchItems(): Promise<Item[]> {
   const supabase = createClient();
-  const [settingsRes, itemsRes, listsRes] = await Promise.all([
-    supabase.from("store_settings").select("*").eq("id", 1).single(),
-    supabase.from("items_v").select("*").order("created_at"),
-    supabase.from("store_lists").select("kind,value").order("kind").order("sort_order"),
+  const { data } = await supabase.from("items_v").select("*").order("created_at");
+  return ((data ?? []) as ItemRow[]).map(mapItem);
+}
+
+export async function fetchSettings(): Promise<Bakery> {
+  const supabase = createClient();
+  const { data } = await supabase.from("store_settings").select("*").eq("id", 1).single();
+  if (!data) throw new Error("Store settings not found in Supabase");
+  return mapBakery(data as SettingsRow);
+}
+
+export async function fetchLists(): Promise<StoreLists> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("store_lists")
+    .select("kind,value")
+    .order("kind")
+    .order("sort_order");
+  return groupLists((data ?? []) as StoreListRow[]);
+}
+
+export async function fetchBaseData(): Promise<BaseData> {
+  const [bakery, items, lists] = await Promise.all([
+    fetchSettings(),
+    fetchItems(),
+    fetchLists(),
   ]);
-  if (!settingsRes.data) {
-    throw new Error("Store settings not found in Supabase");
-  }
-  return {
-    bakery: mapBakery(settingsRes.data as SettingsRow),
-    items: ((itemsRes.data ?? []) as ItemRow[]).map(mapItem),
-    lists: groupLists((listsRes.data ?? []) as StoreListRow[]),
-  };
+  return { bakery, items, lists };
 }
 
 export interface FullStoreData extends BaseData {
@@ -365,13 +380,20 @@ export async function fetchCustomers(): Promise<Customer[]> {
 /**
  * Look a customer up by exact phone for billing autofill. Best-effort: returns
  * null on miss and never throws to the UI (a failed lookup must not block a bill).
- * Filters the stats RPC client-side so the returning-customer chip gets the
- * visit count in the same round-trip; fires only once per completed phone.
+ * Filters on the indexed `customers.phone` server-side (not a full-table
+ * aggregate) so the returning-customer chip gets the visit count in the same
+ * round-trip; fires only once per completed phone.
+ *
+ * The catch-all below is a deliberate tradeoff, not an accident: it also
+ * swallows genuine RLS/network errors as "no such customer." Keep that
+ * intentional here — don't copy this pattern to a call site where a failure
+ * needs to be distinguishable from "not found" (see the Dashboard/Customers
+ * fetch-error handling, which surfaces failures instead of masking them).
  */
 export async function fetchCustomerByPhone(phone: string): Promise<Customer | null> {
   try {
-    const customers = await fetchCustomers();
-    return customers.find((c) => c.phone === phone) ?? null;
+    const rows = await rpc<CustomerRow[]>("customer_by_phone", { p_phone: phone });
+    return (rows ?? []).map(mapCustomer)[0] ?? null;
   } catch {
     return null;
   }
@@ -461,26 +483,46 @@ export interface ItemInputDb {
   tracksExpiry: boolean; expiryDate: string | null;
 }
 
-export const rpcCreateItem = (p: ItemInputDb) =>
-  rpc<{ kind: "added" | "merged"; name?: string; qty?: number; unit?: string }>(
-    "create_item", { p },
-  );
-export const rpcUpdateItem = (id: string, p: ItemInputDb) =>
-  rpc<void>("update_item", { p_id: id, p });
+// The item-scoped RPCs below return the affected items_v row (rather than
+// void) so the caller can patch its local item cache without a full reload.
+interface CreateItemResult {
+  kind: "added" | "merged"; name?: string; qty?: number; unit?: string; item?: ItemRow;
+}
+export async function rpcCreateItem(
+  p: ItemInputDb,
+): Promise<{ kind: "added" | "merged"; name?: string; qty?: number; unit?: string; item?: Item }> {
+  const r = await rpc<CreateItemResult>("create_item", { p });
+  return { ...r, item: r.item ? mapItem(r.item) : undefined };
+}
+export async function rpcUpdateItem(id: string, p: ItemInputDb): Promise<Item> {
+  return mapItem(await rpc<ItemRow>("update_item", { p_id: id, p }));
+}
 export const rpcDeleteItem = (id: string) => rpc<void>("delete_item", { p_id: id });
 
-export const rpcStockIn = (
+export async function rpcStockIn(
   itemId: string, qty: number, supplier: string, notes: string, expiry: string | null,
-) =>
-  rpc<void>("stock_in", {
-    p_item: itemId, p_qty: qty, p_supplier: supplier, p_notes: notes, p_expiry: expiry,
-  });
-export const rpcStockOut = (itemId: string, qty: number, reason: string, notes: string) =>
-  rpc<void>("stock_out", { p_item: itemId, p_qty: qty, p_reason: reason, p_notes: notes });
-export const rpcWriteOffBatch = (batchId: string) =>
-  rpc<void>("write_off_batch", { p_batch_id: batchId });
-export const rpcUpdateBatchExpiry = (batchId: string, expiry: string) =>
-  rpc<void>("update_batch_expiry", { p_batch_id: batchId, p_expiry: expiry });
+): Promise<Item> {
+  return mapItem(
+    await rpc<ItemRow>("stock_in", {
+      p_item: itemId, p_qty: qty, p_supplier: supplier, p_notes: notes, p_expiry: expiry,
+    }),
+  );
+}
+export async function rpcStockOut(
+  itemId: string, qty: number, reason: string, notes: string,
+): Promise<Item> {
+  return mapItem(
+    await rpc<ItemRow>("stock_out", { p_item: itemId, p_qty: qty, p_reason: reason, p_notes: notes }),
+  );
+}
+export async function rpcWriteOffBatch(batchId: string): Promise<Item> {
+  return mapItem(await rpc<ItemRow>("write_off_batch", { p_batch_id: batchId }));
+}
+export async function rpcUpdateBatchExpiry(batchId: string, expiry: string): Promise<Item> {
+  return mapItem(
+    await rpc<ItemRow>("update_batch_expiry", { p_batch_id: batchId, p_expiry: expiry }),
+  );
+}
 
 interface GeneratedBillRow {
   id: string; bill_no: number; subtotal: number; tax: number;

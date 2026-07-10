@@ -16,7 +16,7 @@ import { useBakeryStore } from "@/lib/store";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { useUIStore } from "@/lib/ui-store";
 import { hasPermission } from "@/lib/permissions";
-import { formatDateFull } from "@/lib/format";
+import { formatDateFull, initials } from "@/lib/format";
 import { fetchBillsPage, fetchLogsPage } from "@/lib/supabase-data";
 import { tabCls } from "@/components/ui/tabClass";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -72,15 +72,11 @@ let histCache: {
   logsMore: boolean;
 } | null = null;
 
-const initials = (name: string) => {
+// "Walk-in" (the no-name placeholder) always renders as a single "W" rather
+// than initials-of-two-words; every other name defers to the shared helper.
+const billerInitials = (name: string) => {
   const n = (name || "Walk-in").trim();
-  if (!n || n.toLowerCase() === "walk-in") return "W";
-  return n
-    .split(/\s+/)
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
+  return !n || n.toLowerCase() === "walk-in" ? "W" : initials(n);
 };
 
 const chipCls = (active: boolean) =>
@@ -332,7 +328,7 @@ export function History() {
                 return (
                   <div key={b.id} className="flex flex-wrap items-center gap-3.5 border-t border-line-soft px-5 py-3.5 first:border-t-0">
                     <div className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-[11px] bg-[#f4e7d2] text-[13px] font-bold text-brown">
-                      {initials(b.customerName)}
+                      {billerInitials(b.customerName)}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-bold text-ink">{b.customerName || "Walk-in"}</div>

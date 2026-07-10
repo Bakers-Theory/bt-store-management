@@ -27,7 +27,7 @@ describe("hasPermission", () => {
 
 describe("navItems", () => {
   it("orders dashboard, stock, bill, history by permission", () => {
-    expect(navItems(owner).map((n) => n.key)).toEqual(["dashboard", "stock", "bill", "history"]);
+    expect(navItems(owner).map((n) => n.key)).toEqual(["dashboard", "stock", "bill", "customers", "history"]);
   });
   it("history shows when either sales or inventory is granted", () => {
     expect(navItems(staff({ inventory: true })).map((n) => n.key)).toEqual(["stock", "history"]);

@@ -4,20 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { Search, Users } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { fetchCustomers } from "@/lib/supabase-data";
+import { initials } from "@/lib/format";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { CustomerModal } from "./CustomerModal";
 import type { Customer } from "@/lib/types";
-
-const initials = (name: string) => {
-  const n = (name || "").trim();
-  if (!n) return "#";
-  return n
-    .split(/\s+/)
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-};
 
 const ListSkeleton = () => (
   <div className="overflow-hidden rounded-[18px] border border-line bg-warm-white shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
@@ -39,11 +29,14 @@ export function Customers() {
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState(false);
+  const [retryToken, setRetryToken] = useState(0);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Customer | null>(null);
 
   useEffect(() => {
     let alive = true;
+    setError(false);
     fetchCustomers()
       .then((rows) => {
         if (!alive) return;
@@ -51,12 +44,14 @@ export function Customers() {
         setLoaded(true);
       })
       .catch(() => {
-        if (alive) setLoaded(true);
+        if (!alive) return;
+        setLoaded(true);
+        setError(true);
       });
     return () => {
       alive = false;
     };
-  }, []);
+  }, [retryToken]);
 
   // Default sort: highest lifetime spend first.
   const visible = useMemo(() => {
@@ -81,6 +76,20 @@ export function Customers() {
 
       {!loaded ? (
         <ListSkeleton />
+      ) : error ? (
+        <div className="px-5 py-10 text-center text-ink-muted">
+          <div className="mb-3 flex justify-center">
+            <Users size={48} />
+          </div>
+          <p className="mb-3 text-sm">Couldn&apos;t load customers.</p>
+          <button
+            type="button"
+            onClick={() => setRetryToken((t) => t + 1)}
+            className="rounded-full bg-brown px-4 py-1.5 text-[13px] font-bold text-warm-white"
+          >
+            Retry
+          </button>
+        </div>
       ) : visible.length === 0 ? (
         <div className="px-5 py-10 text-center text-ink-muted">
           <div className="mb-3 flex justify-center">
@@ -99,7 +108,7 @@ export function Customers() {
               className="flex w-full items-center gap-3.5 border-t border-line-soft px-5 py-3.5 text-left transition-colors first:border-t-0 hover:bg-cream"
             >
               <div className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-[11px] bg-[#f4e7d2] text-[13px] font-bold text-brown">
-                {initials(c.name)}
+                {initials(c.name, "#")}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-bold text-ink">{c.name || "Unnamed"}</div>

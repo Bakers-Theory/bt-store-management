@@ -14,6 +14,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   release:
@@ -44,3 +45,13 @@ jobs:
             --title "${{ steps.notes.outputs.tag }}" \
             --notes-file release-notes.md \
             --target "$GITHUB_SHA"
+
+      # Releases created with the default GITHUB_TOKEN don't trigger other
+      # workflows (GitHub suppresses that cascade to prevent infinite runs),
+      # so `deploy.yml`'s `release: published` trigger would never fire on its
+      # own here. workflow_dispatch is exempt from that restriction, so
+      # dispatch it explicitly instead of relying on the release event.
+      - name: Trigger production deploy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy.yml --ref "${{ steps.notes.outputs.tag }}"
