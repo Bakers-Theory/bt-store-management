@@ -230,27 +230,40 @@ export function Bill() {
               {filteredItems.map((item) => {
                 const inCart = cartQtyById.get(item.id) || 0;
                 return (
-                  <button
+                  <div
                     key={item.id}
-                    onClick={() => addToCart(item)}
-                    className={`relative flex flex-col gap-[7px] rounded-2xl p-3.5 text-left transition-all ${
+                    className={`relative rounded-2xl transition-all ${
                       inCart
                         ? "border-[1.5px] border-brown bg-warm-white shadow-[0_3px_12px_rgba(124,74,30,.14)]"
                         : "border border-line bg-warm-white shadow-[0_1px_3px_rgba(100,60,20,.05)]"
                     }`}
                   >
+                    <button
+                      onClick={() => addToCart(item)}
+                      className="flex w-full flex-col gap-[7px] p-3.5 text-left"
+                    >
+                      <div className="text-[34px] leading-none">{item.emoji || "📦"}</div>
+                      <div className="text-[13.5px] font-bold leading-tight">{item.name}</div>
+                      <div className="num text-[13px] font-extrabold text-brown">
+                        {currency}
+                        {item.price.toFixed(2)}
+                      </div>
+                    </button>
                     {inCart > 0 && (
-                      <span className="absolute right-[9px] top-[9px] flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-brown px-[5px] text-xs font-extrabold text-warm-white">
-                        {inCart}
-                      </span>
+                      <>
+                        <span className="pointer-events-none absolute right-[9px] top-[9px] flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-brown px-[5px] text-xs font-extrabold text-warm-white">
+                          {inCart}
+                        </span>
+                        <button
+                          onClick={() => removeFromCart(item)}
+                          aria-label={`Remove one ${item.name}`}
+                          className="absolute bottom-[9px] right-[9px] flex h-[24px] w-[24px] cursor-pointer items-center justify-center rounded-full border-none bg-danger-bg text-base font-extrabold leading-none text-danger"
+                        >
+                          −
+                        </button>
+                      </>
                     )}
-                    <div className="text-[34px] leading-none">{item.emoji || "📦"}</div>
-                    <div className="text-[13.5px] font-bold leading-tight">{item.name}</div>
-                    <div className="num text-[13px] font-extrabold text-brown">
-                      {currency}
-                      {item.price.toFixed(2)}
-                    </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>
