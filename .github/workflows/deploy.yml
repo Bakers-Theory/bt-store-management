@@ -1,0 +1,48 @@
+name: Deploy to Vercel
+
+# Fires whenever a GitHub Release is published — including the releases
+# created by the `Release` workflow's `gh release create` step — so cutting a
+# release is what promotes a build to production, decoupled from every push
+# to main. `workflow_dispatch` is kept as a manual escape hatch (e.g. to
+# re-deploy the current release without cutting a new one).
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint
+      - run: pnpm run typecheck
+      - run: pnpm run test
+
+  deploy:
+    needs: checks
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      # Deploy Hooks trigger a deployment of the hook's configured branch on
+      # Vercel's side — simpler than the CLI flow (no VERCEL_TOKEN/ORG_ID/
+      # PROJECT_ID needed), at the cost of deploying that branch's current
+      # HEAD rather than the exact tagged commit. Fine as long as releases are
+      # cut right after merging, with nothing else landing on main in between.
+      - name: Trigger Vercel deployment
+        run: curl -fsS -X POST "${{ secrets.VERCEL_DEPLOY_HOOK_URL }}"
