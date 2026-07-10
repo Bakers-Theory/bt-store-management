@@ -431,7 +431,7 @@ export function Bill() {
               {lines.length > 0 && (
                 <button
                   onClick={clearCart}
-                  className="cursor-pointer border-none bg-transparent text-xs font-bold text-danger"
+                  className="flex cursor-pointer items-center rounded-lg border-none bg-danger-bg px-3 py-1.5 text-xs font-bold text-danger transition-transform active:scale-95"
                 >
                   Clear
                 </button>
