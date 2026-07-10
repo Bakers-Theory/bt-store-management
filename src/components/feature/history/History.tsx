@@ -11,6 +11,7 @@ import {
   ReceiptText,
   Search,
   Trash2,
+  X,
 } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useCurrentUser } from "@/components/system/AuthProvider";
@@ -297,10 +298,20 @@ export function History() {
               <input
                 type="text"
                 placeholder="Search by bill # or customer…"
-                className="w-full pl-9"
+                className="w-full pl-9 pr-9"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch("")}
+                  aria-label="Clear search"
+                  className="absolute right-2.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-ink-light hover:bg-cream hover:text-ink-muted"
+                >
+                  <X size={15} />
+                </button>
+              )}
             </div>
             <div className="flex gap-2">
               {(["All", "Active", "Cancelled"] as const).map((f) => (

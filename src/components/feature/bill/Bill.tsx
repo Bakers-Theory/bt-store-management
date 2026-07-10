@@ -181,13 +181,25 @@ export function Bill() {
         {/* Products */}
         <div className="min-w-0">
           <div className="mb-3 flex items-center gap-2">
-            <input
-              type="text"
-              placeholder="Search products to add…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="min-w-0 flex-1 rounded-xl border border-line bg-warm-white px-3.5 py-3 text-sm outline-none"
-            />
+            <div className="relative min-w-0 flex-1">
+              <input
+                type="text"
+                placeholder="Search products to add…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full rounded-xl border border-line bg-warm-white py-3 pl-3.5 pr-10 text-sm outline-none"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch("")}
+                  aria-label="Clear search"
+                  className="absolute right-2.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-ink-light hover:bg-cream hover:text-ink-muted"
+                >
+                  <X size={15} />
+                </button>
+              )}
+            </div>
             <div className="flex shrink-0 gap-1.5 rounded-[10px] bg-cream-dark p-[3px]">
               <button
                 type="button"

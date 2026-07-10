@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Search, Plus, PackagePlus, PackageMinus, Package, Pencil, Trash2 } from "lucide-react";
+import { Search, Plus, PackagePlus, PackageMinus, Package, Pencil, Trash2, X } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { expiryStatus } from "@/lib/expiry";
@@ -104,8 +104,18 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
             placeholder="Search items…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-xl border border-line bg-warm-white py-[11px] pl-[38px] pr-[13px] text-sm outline-none"
+            className="w-full rounded-xl border border-line bg-warm-white py-[11px] pl-[38px] pr-10 text-sm outline-none"
           />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch("")}
+              aria-label="Clear search"
+              className="absolute right-2.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-ink-light hover:bg-cream hover:text-ink-muted"
+            >
+              <X size={15} />
+            </button>
+          )}
         </div>
         <button
           className="btn-primary flex items-center gap-1.5 whitespace-nowrap text-[13.5px]"
