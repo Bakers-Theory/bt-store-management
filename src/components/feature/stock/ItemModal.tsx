@@ -65,8 +65,7 @@ export function ItemModal({
         unit !== editing.unit ||
         tracksExpiry !== editing.tracksExpiry ||
         costPrice !== String(editing.costPrice) ||
-        price !== String(editing.price) ||
-        qty !== String(editing.qty))
+        price !== String(editing.price))
     : name.trim().length > 0;
 
   const save = async () => {
@@ -224,6 +223,9 @@ export function ItemModal({
       )}
 
       {itemId ? (
+        // Read-only by design: update_item never writes qty (see 0011_stock_batches.sql) —
+        // stock only changes via Add Stock / Stock Out / batch write-off below. An editable
+        // qty input here would silently no-op server-side.
         <div className="mb-3.5">
           <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Current Stock</label>
           <div className="rounded-[11px] border border-line bg-cream px-3 py-2.5 text-sm font-bold text-ink-muted">

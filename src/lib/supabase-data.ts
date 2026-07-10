@@ -383,6 +383,12 @@ export async function fetchCustomers(): Promise<Customer[]> {
  * Filters on the indexed `customers.phone` server-side (not a full-table
  * aggregate) so the returning-customer chip gets the visit count in the same
  * round-trip; fires only once per completed phone.
+ *
+ * The catch-all below is a deliberate tradeoff, not an accident: it also
+ * swallows genuine RLS/network errors as "no such customer." Keep that
+ * intentional here — don't copy this pattern to a call site where a failure
+ * needs to be distinguishable from "not found" (see the Dashboard/Customers
+ * fetch-error handling, which surfaces failures instead of masking them).
  */
 export async function fetchCustomerByPhone(phone: string): Promise<Customer | null> {
   try {

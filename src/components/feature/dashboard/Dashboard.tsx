@@ -7,7 +7,7 @@ import { useBakeryStore } from "@/lib/store";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { useUIStore } from "@/lib/ui-store";
 import { hasPermission } from "@/lib/permissions";
-import { formatDate } from "@/lib/format";
+import { formatDate, initials } from "@/lib/format";
 import { exportExcelReport } from "@/lib/excel";
 import {
   fetchDashboardStats,
@@ -74,16 +74,6 @@ const verdictRank: Record<StockVerdict, number> = {
   "Slow-moving": 3,
   Healthy: 4,
 };
-
-function initials(name: string): string {
-  const trimmed = name.trim();
-  if (!trimmed) return "?";
-  return trimmed
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase() ?? "")
-    .join("");
-}
 
 // Cache the last-fetched stats (keyed by user, so a user switch on the same tab
 // never shows the previous user's data) so navigating back to the dashboard
