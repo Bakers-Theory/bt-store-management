@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, LayoutGrid, List, Loader2, Phone, Printer, Receipt as ReceiptIcon, ShoppingBasket, Trash2, User, UserCheck, X } from "lucide-react";
+import { Check, LayoutGrid, List, Loader2, Phone, Printer, Receipt as ReceiptIcon, ShoppingBasket, User, UserCheck, X } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { useCurrentUser } from "@/components/system/AuthProvider";
@@ -123,9 +123,6 @@ export function Bill() {
       return prev.map((bi, i) => (i === idx ? { ...bi, qty: bi.qty - 1 } : bi));
     });
 
-  const deleteFromCart = (item: Item) =>
-    setLines((prev) => prev.filter((bi) => bi.itemId !== item.id));
-
   const inc = (idx: number) =>
     setLines((prev) => prev.map((bi, i) => (i === idx ? { ...bi, qty: bi.qty + 1 } : bi)));
 
@@ -239,32 +236,46 @@ export function Bill() {
                   <div key={item.id} className="relative">
                     <button
                       onClick={() => addToCart(item)}
-                      className={`flex w-full flex-col gap-[7px] rounded-2xl p-3.5 text-left transition-all ${
+                      className={`flex w-full flex-col gap-[7px] rounded-2xl border-[1.5px] p-3.5 pr-[52px] text-left transition-all lg:pr-3.5 ${
                         inCart
-                          ? "border-[1.5px] border-brown bg-warm-white shadow-[0_3px_12px_rgba(124,74,30,.14)]"
-                          : "border border-line bg-warm-white shadow-[0_1px_3px_rgba(100,60,20,.05)]"
+                          ? "border-brown bg-warm-white shadow-[0_3px_12px_rgba(124,74,30,.14)]"
+                          : "border-line bg-warm-white shadow-[0_1px_3px_rgba(100,60,20,.05)]"
                       }`}
                     >
                       <div className="text-[34px] leading-none">{item.emoji || "📦"}</div>
-                      <div className="text-[13.5px] font-bold leading-tight">{item.name}</div>
+                      <div className="line-clamp-2 min-h-[34px] text-[13.5px] font-bold leading-tight">
+                        {item.name}
+                      </div>
                       <div className="num text-[13px] font-extrabold text-brown">
                         {currency}
                         {item.price.toFixed(2)}
                       </div>
                     </button>
                     {inCart > 0 && (
-                      <>
-                        <span className="pointer-events-none absolute right-[9px] top-[9px] flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-brown px-[5px] text-xs font-extrabold text-warm-white">
+                      <span className="pointer-events-none absolute right-[9px] top-[9px] hidden h-[22px] min-w-[22px] items-center justify-center rounded-full bg-brown px-[5px] text-xs font-extrabold text-warm-white lg:flex">
+                        {inCart}
+                      </span>
+                    )}
+                    {inCart > 0 && (
+                      <div className="absolute right-2 top-1/2 flex -translate-y-1/2 flex-col items-center gap-0.5 rounded-full bg-cream-dark p-1 shadow-[0_2px_8px_rgba(100,60,20,0.14)] lg:hidden">
+                        <button
+                          onClick={() => addToCart(item)}
+                          aria-label={`Add one ${item.name}`}
+                          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border-none bg-warm-white text-lg font-extrabold leading-none text-brown transition-colors active:bg-cream"
+                        >
+                          +
+                        </button>
+                        <span className="num min-w-[20px] py-0.5 text-center text-sm font-extrabold">
                           {inCart}
                         </span>
                         <button
-                          onClick={() => deleteFromCart(item)}
-                          aria-label={`Remove ${item.name} from order`}
-                          className="absolute left-[9px] top-[9px] flex h-[22px] w-[22px] items-center justify-center rounded-full bg-danger-bg text-danger"
+                          onClick={() => removeFromCart(item)}
+                          aria-label={`Remove one ${item.name}`}
+                          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border-none bg-warm-white text-lg font-extrabold leading-none text-brown transition-colors active:bg-cream"
                         >
-                          <Trash2 size={13} />
+                          −
                         </button>
-                      </>
+                      </div>
                     )}
                   </div>
                 );
@@ -282,47 +293,27 @@ export function Bill() {
                 {filteredItems.map((item) => {
                   const inCart = cartQtyById.get(item.id) || 0;
                   return (
-                    <div
+                    <button
                       key={item.id}
-                      className="grid w-full grid-cols-[2.5fr_1fr_auto] items-center gap-3 border-t border-line-soft px-5 py-[13px]"
+                      onClick={() => addToCart(item)}
+                      className="grid w-full grid-cols-[2.5fr_1fr_auto] items-center gap-3 border-t border-line-soft px-5 py-[13px] text-left transition-colors hover:bg-cream"
                     >
-                      <button
-                        onClick={() => addToCart(item)}
-                        className="flex min-w-0 items-center gap-3 text-left"
-                      >
+                      <div className="flex min-w-0 items-center gap-3">
                         <span className="text-[22px]">{item.emoji || "📦"}</span>
                         <span className="truncate text-sm font-bold">{item.name}</span>
-                      </button>
+                      </div>
                       <div className="num text-right text-[13.5px] font-bold text-brown">
                         {currency}
                         {item.price.toFixed(2)}
                       </div>
                       <div className="flex min-w-[92px] justify-end">
                         {inCart > 0 ? (
-                          <div className="flex items-center gap-1.5 rounded-[9px] bg-cream-dark p-[3px]">
-                            <button
-                              onClick={() => removeFromCart(item)}
-                              aria-label={`Remove one ${item.name}`}
-                              className="flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-base font-extrabold text-brown"
-                            >
-                              −
-                            </button>
-                            <span className="num min-w-[20px] text-center text-[13.5px] font-extrabold">
-                              {inCart}
-                            </span>
-                            <button
-                              onClick={() => addToCart(item)}
-                              aria-label={`Add one ${item.name}`}
-                              className="flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-base font-extrabold text-brown"
-                            >
-                              +
-                            </button>
-                          </div>
+                          <span className="num text-[13.5px] font-extrabold text-brown">{inCart}</span>
                         ) : (
                           <span className="text-ink-light">—</span>
                         )}
                       </div>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -351,7 +342,7 @@ export function Bill() {
                           </div>
                         </div>
                       </button>
-                      {inCart > 0 ? (
+                      {inCart > 0 && (
                         <div className="flex shrink-0 items-center gap-1.5 rounded-[9px] bg-cream-dark p-[3px]">
                           <button
                             onClick={() => removeFromCart(item)}
@@ -371,14 +362,6 @@ export function Bill() {
                             +
                           </button>
                         </div>
-                      ) : (
-                        <button
-                          onClick={() => addToCart(item)}
-                          aria-label={`Add ${item.name}`}
-                          className="flex h-[32px] w-[32px] shrink-0 items-center justify-center rounded-[9px] border border-line bg-warm-white text-lg font-extrabold text-brown"
-                        >
-                          +
-                        </button>
                       )}
                     </div>
                   );
