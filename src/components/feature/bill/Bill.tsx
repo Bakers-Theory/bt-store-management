@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, LayoutGrid, List, Loader2, Phone, Printer, Receipt as ReceiptIcon, ShoppingBasket, User, UserCheck } from "lucide-react";
+import { Check, LayoutGrid, List, Loader2, Phone, Printer, Receipt as ReceiptIcon, ShoppingBasket, Trash2, User, UserCheck, X } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { useCurrentUser } from "@/components/system/AuthProvider";
@@ -26,6 +26,7 @@ export function Bill() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
   const [view, setView] = useState<"grid" | "list">("grid");
+  const [cartOpen, setCartOpen] = useState(false); // mobile bottom-sheet expansion
   const [customer, setCustomer] = useState({ name: "", phone: "" });
   const [payment, setPayment] = useState<PaymentMethod>("Cash");
   const [discount, setDiscount] = useState("");
@@ -39,6 +40,7 @@ export function Bill() {
 
   const discountPct = Math.min(100, Math.max(0, parseFloat(discount) || 0));
   const { subtotal, discount: discountAmt, tax, total } = computeTotals(lines, taxRate, discountPct);
+  const cartCount = lines.reduce((n, l) => n + l.qty, 0);
 
   const filteredItems = useMemo(() => {
     const q = search.toLowerCase();
@@ -121,6 +123,9 @@ export function Bill() {
       return prev.map((bi, i) => (i === idx ? { ...bi, qty: bi.qty - 1 } : bi));
     });
 
+  const deleteFromCart = (item: Item) =>
+    setLines((prev) => prev.filter((bi) => bi.itemId !== item.id));
+
   const inc = (idx: number) =>
     setLines((prev) => prev.map((bi, i) => (i === idx ? { ...bi, qty: bi.qty + 1 } : bi)));
 
@@ -162,6 +167,7 @@ export function Bill() {
       setPhoneErr("");
       setNameErr("");
       setExpiryConfirmed(false);
+      setCartOpen(false);
       setReceipt(bill);
     } catch (e) {
       toast(e instanceof Error ? e.message : "Could not generate bill");
@@ -174,7 +180,7 @@ export function Bill() {
 
   return (
     <>
-      <div className="grid gap-4 lg:grid-cols-[1fr_372px]">
+      <div className={`grid gap-4 lg:grid-cols-[1fr_372px] lg:pb-0 ${lines.length > 0 ? "pb-24" : ""}`}>
         {/* Products */}
         <div className="min-w-0">
           <div className="mb-3 flex items-center gap-2">
@@ -230,17 +236,14 @@ export function Bill() {
               {filteredItems.map((item) => {
                 const inCart = cartQtyById.get(item.id) || 0;
                 return (
-                  <div
-                    key={item.id}
-                    className={`relative rounded-2xl transition-all ${
-                      inCart
-                        ? "border-[1.5px] border-brown bg-warm-white shadow-[0_3px_12px_rgba(124,74,30,.14)]"
-                        : "border border-line bg-warm-white shadow-[0_1px_3px_rgba(100,60,20,.05)]"
-                    }`}
-                  >
+                  <div key={item.id} className="relative">
                     <button
                       onClick={() => addToCart(item)}
-                      className="flex w-full flex-col gap-[7px] p-3.5 text-left"
+                      className={`flex w-full flex-col gap-[7px] rounded-2xl p-3.5 text-left transition-all ${
+                        inCart
+                          ? "border-[1.5px] border-brown bg-warm-white shadow-[0_3px_12px_rgba(124,74,30,.14)]"
+                          : "border border-line bg-warm-white shadow-[0_1px_3px_rgba(100,60,20,.05)]"
+                      }`}
                     >
                       <div className="text-[34px] leading-none">{item.emoji || "📦"}</div>
                       <div className="text-[13.5px] font-bold leading-tight">{item.name}</div>
@@ -255,11 +258,11 @@ export function Bill() {
                           {inCart}
                         </span>
                         <button
-                          onClick={() => removeFromCart(item)}
-                          aria-label={`Remove one ${item.name}`}
-                          className="absolute bottom-[9px] right-[9px] flex h-[24px] w-[24px] cursor-pointer items-center justify-center rounded-full border-none bg-danger-bg text-base font-extrabold leading-none text-danger"
+                          onClick={() => deleteFromCart(item)}
+                          aria-label={`Remove ${item.name} from order`}
+                          className="absolute left-[9px] top-[9px] flex h-[22px] w-[22px] items-center justify-center rounded-full bg-danger-bg text-danger"
                         >
-                          −
+                          <Trash2 size={13} />
                         </button>
                       </>
                     )}
@@ -385,18 +388,67 @@ export function Bill() {
           )}
         </div>
 
-        {/* Order panel */}
-        <div className="sticky top-3.5 self-start overflow-hidden rounded-[18px] border border-line bg-warm-white shadow-[0_4px_18px_rgba(100,60,20,0.08)]">
+        {/* Mobile floating summary bar — tap to open the order sheet */}
+        {lines.length > 0 && !cartOpen && (
+          <button
+            type="button"
+            onClick={() => setCartOpen(true)}
+            className="fixed inset-x-4 bottom-[104px] z-[110] flex items-center justify-between gap-3 rounded-full bg-brown py-2.5 pl-3 pr-5 text-warm-white shadow-[0_10px_28px_rgba(124,74,30,0.45)] transition-transform active:scale-[0.98] lg:hidden"
+          >
+            <span className="flex items-center gap-3">
+              <span className="relative flex h-9 w-9 items-center justify-center rounded-full bg-warm-white/15">
+                <ShoppingBasket size={18} />
+                <span className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-warm-white px-[4px] text-[11px] font-extrabold text-brown shadow-sm">
+                  {cartCount}
+                </span>
+              </span>
+              <span className="flex flex-col items-start leading-tight">
+                <span className="text-[13px] font-extrabold">View order</span>
+                <span className="text-[11px] font-semibold text-warm-white/70">
+                  {cartCount} item{cartCount === 1 ? "" : "s"}
+                </span>
+              </span>
+            </span>
+            <span className="num text-[15px] font-extrabold">
+              {currency}
+              {total.toFixed(2)}
+            </span>
+          </button>
+        )}
+
+        {/* Mobile backdrop when the sheet is open */}
+        {cartOpen && (
+          <div
+            className="fixed inset-0 z-[200] bg-black/40 lg:hidden"
+            onClick={() => setCartOpen(false)}
+          />
+        )}
+
+        {/* Order panel — right sidebar on desktop, bottom sheet on mobile */}
+        <div
+          className={`fixed inset-x-0 bottom-0 z-[210] max-h-[85vh] overflow-y-auto rounded-t-[20px] border border-line bg-warm-white shadow-[0_-8px_30px_rgba(100,60,20,0.18)] transition-transform duration-300 lg:sticky lg:top-3.5 lg:z-auto lg:max-h-none lg:translate-y-0 lg:self-start lg:overflow-hidden lg:rounded-[18px] lg:shadow-[0_4px_18px_rgba(100,60,20,0.08)] ${
+            cartOpen ? "translate-y-0" : "translate-y-full lg:translate-y-0"
+          }`}
+        >
           <div className="flex items-center justify-between border-b border-line-soft px-[18px] py-4">
             <h3 className="text-base font-extrabold">Current order</h3>
-            {lines.length > 0 && (
+            <div className="flex items-center gap-3">
+              {lines.length > 0 && (
+                <button
+                  onClick={clearCart}
+                  className="cursor-pointer border-none bg-transparent text-xs font-bold text-danger"
+                >
+                  Clear
+                </button>
+              )}
               <button
-                onClick={clearCart}
-                className="cursor-pointer border-none bg-transparent text-xs font-bold text-danger"
+                onClick={() => setCartOpen(false)}
+                aria-label="Close order"
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-line bg-warm-white text-ink-muted lg:hidden"
               >
-                Clear
+                <X size={16} />
               </button>
-            )}
+            </div>
           </div>
           <div className="flex flex-col gap-2 border-b border-line-soft px-[18px] py-3.5">
             <div className="relative">
