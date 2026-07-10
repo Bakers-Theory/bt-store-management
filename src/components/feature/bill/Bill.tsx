@@ -113,6 +113,14 @@ export function Bill() {
     });
   };
 
+  const removeFromCart = (item: Item) =>
+    setLines((prev) => {
+      const idx = prev.findIndex((bi) => bi.itemId === item.id);
+      if (idx < 0) return prev;
+      if (prev[idx].qty <= 1) return prev.filter((_, i) => i !== idx);
+      return prev.map((bi, i) => (i === idx ? { ...bi, qty: bi.qty - 1 } : bi));
+    });
+
   const inc = (idx: number) =>
     setLines((prev) => prev.map((bi, i) => (i === idx ? { ...bi, qty: bi.qty + 1 } : bi)));
 
@@ -247,31 +255,56 @@ export function Bill() {
               })}
             </div>
           ) : (
-            <div className="flex flex-col gap-2">
+            <div className="overflow-hidden rounded-[18px] border border-line bg-warm-white shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
+              <div className="grid grid-cols-[2.5fr_1fr_auto] gap-3 bg-[#f8ecd8] px-5 py-[13px] text-[11.5px] font-bold uppercase tracking-[0.04em] text-[#8a6a3c]">
+                <div>Product</div>
+                <div className="text-right">Price</div>
+                <div className="min-w-[92px] text-right">In cart</div>
+              </div>
               {filteredItems.map((item) => {
                 const inCart = cartQtyById.get(item.id) || 0;
                 return (
-                  <button
+                  <div
                     key={item.id}
-                    onClick={() => addToCart(item)}
-                    className={`relative flex items-center gap-3 rounded-[15px] px-[15px] py-[11px] text-left transition-all ${
-                      inCart
-                        ? "border-[1.5px] border-brown bg-warm-white shadow-[0_3px_12px_rgba(124,74,30,.14)]"
-                        : "border border-line bg-warm-white shadow-[0_1px_3px_rgba(100,60,20,.05)]"
-                    }`}
+                    className="grid w-full grid-cols-[2.5fr_1fr_auto] items-center gap-3 border-t border-line-soft px-5 py-[13px]"
                   >
-                    <span className="text-[26px] leading-none">{item.emoji || "📦"}</span>
-                    <span className="min-w-0 flex-1 truncate text-sm font-bold">{item.name}</span>
-                    <span className="num shrink-0 text-[13.5px] font-extrabold text-brown">
+                    <button
+                      onClick={() => addToCart(item)}
+                      className="flex min-w-0 items-center gap-3 text-left"
+                    >
+                      <span className="text-[22px]">{item.emoji || "📦"}</span>
+                      <span className="truncate text-sm font-bold">{item.name}</span>
+                    </button>
+                    <div className="num text-right text-[13.5px] font-bold text-brown">
                       {currency}
                       {item.price.toFixed(2)}
-                    </span>
-                    {inCart > 0 && (
-                      <span className="flex h-[22px] min-w-[22px] shrink-0 items-center justify-center rounded-full bg-brown px-[5px] text-xs font-extrabold text-warm-white">
-                        {inCart}
-                      </span>
-                    )}
-                  </button>
+                    </div>
+                    <div className="flex min-w-[92px] justify-end">
+                      {inCart > 0 ? (
+                        <div className="flex items-center gap-1.5 rounded-[9px] bg-cream-dark p-[3px]">
+                          <button
+                            onClick={() => removeFromCart(item)}
+                            aria-label={`Remove one ${item.name}`}
+                            className="flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-base font-extrabold text-brown"
+                          >
+                            −
+                          </button>
+                          <span className="num min-w-[20px] text-center text-[13.5px] font-extrabold">
+                            {inCart}
+                          </span>
+                          <button
+                            onClick={() => addToCart(item)}
+                            aria-label={`Add one ${item.name}`}
+                            className="flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-base font-extrabold text-brown"
+                          >
+                            +
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-ink-light">—</span>
+                      )}
+                    </div>
+                  </div>
                 );
               })}
             </div>
