@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, Loader2, Phone, Printer, Receipt as ReceiptIcon, ShoppingBasket, User, UserCheck } from "lucide-react";
+import { Check, LayoutGrid, List, Loader2, Phone, Printer, Receipt as ReceiptIcon, ShoppingBasket, User, UserCheck, X } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { useCurrentUser } from "@/components/system/AuthProvider";
@@ -25,6 +25,8 @@ export function Bill() {
 
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
+  const [view, setView] = useState<"grid" | "list">("grid");
+  const [cartOpen, setCartOpen] = useState(false); // mobile bottom-sheet expansion
   const [customer, setCustomer] = useState({ name: "", phone: "" });
   const [payment, setPayment] = useState<PaymentMethod>("Cash");
   const [discount, setDiscount] = useState("");
@@ -38,6 +40,7 @@ export function Bill() {
 
   const discountPct = Math.min(100, Math.max(0, parseFloat(discount) || 0));
   const { subtotal, discount: discountAmt, tax, total } = computeTotals(lines, taxRate, discountPct);
+  const cartCount = lines.reduce((n, l) => n + l.qty, 0);
 
   const filteredItems = useMemo(() => {
     const q = search.toLowerCase();
@@ -112,6 +115,14 @@ export function Bill() {
     });
   };
 
+  const removeFromCart = (item: Item) =>
+    setLines((prev) => {
+      const idx = prev.findIndex((bi) => bi.itemId === item.id);
+      if (idx < 0) return prev;
+      if (prev[idx].qty <= 1) return prev.filter((_, i) => i !== idx);
+      return prev.map((bi, i) => (i === idx ? { ...bi, qty: bi.qty - 1 } : bi));
+    });
+
   const inc = (idx: number) =>
     setLines((prev) => prev.map((bi, i) => (i === idx ? { ...bi, qty: bi.qty + 1 } : bi)));
 
@@ -153,6 +164,7 @@ export function Bill() {
       setPhoneErr("");
       setNameErr("");
       setExpiryConfirmed(false);
+      setCartOpen(false);
       setReceipt(bill);
     } catch (e) {
       toast(e instanceof Error ? e.message : "Could not generate bill");
@@ -165,16 +177,54 @@ export function Bill() {
 
   return (
     <>
-      <div className="grid gap-4 lg:grid-cols-[1fr_372px]">
+      <div className={`grid gap-4 lg:grid-cols-[1fr_372px] lg:pb-0 ${lines.length > 0 ? "pb-24" : ""}`}>
         {/* Products */}
         <div className="min-w-0">
-          <input
-            type="text"
-            placeholder="Search products to add…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="mb-3 w-full rounded-xl border border-line bg-warm-white px-3.5 py-3 text-sm outline-none"
-          />
+          <div className="mb-3 flex items-center gap-2">
+            <div className="relative min-w-0 flex-1">
+              <input
+                type="text"
+                placeholder="Search products to add…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full rounded-xl border border-line bg-warm-white py-3 pl-3.5 pr-10 text-sm outline-none"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch("")}
+                  aria-label="Clear search"
+                  className="absolute right-2.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-ink-light hover:bg-cream hover:text-ink-muted"
+                >
+                  <X size={15} />
+                </button>
+              )}
+            </div>
+            <div className="flex shrink-0 gap-1.5 rounded-[10px] bg-cream-dark p-[3px]">
+              <button
+                type="button"
+                onClick={() => setView("grid")}
+                aria-label="Grid view"
+                aria-pressed={view === "grid"}
+                className={`flex h-9 w-9 cursor-pointer items-center justify-center rounded-[7px] border-none ${
+                  view === "grid" ? "bg-brown text-warm-white" : "bg-transparent text-ink-muted"
+                }`}
+              >
+                <LayoutGrid size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setView("list")}
+                aria-label="List view"
+                aria-pressed={view === "list"}
+                className={`flex h-9 w-9 cursor-pointer items-center justify-center rounded-[7px] border-none ${
+                  view === "list" ? "bg-brown text-warm-white" : "bg-transparent text-ink-muted"
+                }`}
+              >
+                <List size={16} />
+              </button>
+            </div>
+          </div>
           <div className="mb-3.5 flex gap-2 overflow-x-auto pb-0.5">
             {["All", ...categories].map((c) => (
               <button
@@ -190,48 +240,210 @@ export function Bill() {
               </button>
             ))}
           </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-[repeat(auto-fill,minmax(158px,1fr))]">
-            {filteredItems.map((item) => {
-              const inCart = cartQtyById.get(item.id) || 0;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => addToCart(item)}
-                  className={`relative flex flex-col gap-[7px] rounded-2xl p-3.5 text-left transition-all ${
-                    inCart
-                      ? "border-[1.5px] border-brown bg-warm-white shadow-[0_3px_12px_rgba(124,74,30,.14)]"
-                      : "border border-line bg-warm-white shadow-[0_1px_3px_rgba(100,60,20,.05)]"
-                  }`}
-                >
-                  {inCart > 0 && (
-                    <span className="absolute right-[9px] top-[9px] flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-brown px-[5px] text-xs font-extrabold text-warm-white">
-                      {inCart}
-                    </span>
-                  )}
-                  <div className="text-[34px] leading-none">{item.emoji || "📦"}</div>
-                  <div className="text-[13.5px] font-bold leading-tight">{item.name}</div>
-                  <div className="num text-[13px] font-extrabold text-brown">
-                    {currency}
-                    {item.price.toFixed(2)}
+          {view === "grid" ? (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-[repeat(auto-fill,minmax(158px,1fr))]">
+              {filteredItems.map((item) => {
+                const inCart = cartQtyById.get(item.id) || 0;
+                return (
+                  <div key={item.id} className="relative">
+                    <button
+                      onClick={() => addToCart(item)}
+                      className={`flex w-full flex-col gap-[7px] rounded-2xl border-[1.5px] p-3.5 pr-[52px] text-left transition-all lg:pr-3.5 ${
+                        inCart
+                          ? "border-brown bg-warm-white shadow-[0_3px_12px_rgba(124,74,30,.14)]"
+                          : "border-line bg-warm-white shadow-[0_1px_3px_rgba(100,60,20,.05)]"
+                      }`}
+                    >
+                      <div className="text-[34px] leading-none">{item.emoji || "📦"}</div>
+                      <div className="line-clamp-2 min-h-[34px] text-[13.5px] font-bold leading-tight">
+                        {item.name}
+                      </div>
+                      <div className="num text-[13px] font-extrabold text-brown">
+                        {currency}
+                        {item.price.toFixed(2)}
+                      </div>
+                    </button>
+                    {inCart > 0 && (
+                      <span className="pointer-events-none absolute right-[9px] top-[9px] hidden h-[22px] min-w-[22px] items-center justify-center rounded-full bg-brown px-[5px] text-xs font-extrabold text-warm-white lg:flex">
+                        {inCart}
+                      </span>
+                    )}
+                    {inCart > 0 && (
+                      <div className="absolute right-2 top-1/2 flex -translate-y-1/2 flex-col items-center gap-0.5 rounded-full bg-cream-dark p-1 shadow-[0_2px_8px_rgba(100,60,20,0.14)] lg:hidden">
+                        <button
+                          onClick={() => addToCart(item)}
+                          aria-label={`Add one ${item.name}`}
+                          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border-none bg-warm-white text-lg font-extrabold leading-none text-brown transition-colors active:bg-cream"
+                        >
+                          +
+                        </button>
+                        <span className="num min-w-[20px] py-0.5 text-center text-sm font-extrabold">
+                          {inCart}
+                        </span>
+                        <button
+                          onClick={() => removeFromCart(item)}
+                          aria-label={`Remove one ${item.name}`}
+                          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border-none bg-warm-white text-lg font-extrabold leading-none text-brown transition-colors active:bg-cream"
+                        >
+                          −
+                        </button>
+                      </div>
+                    )}
                   </div>
-                </button>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          ) : (
+            <>
+              {/* Desktop table */}
+              <div className="hidden overflow-hidden rounded-[18px] border border-line bg-warm-white shadow-[0_2px_12px_rgba(100,60,20,0.05)] lg:block">
+                <div className="grid grid-cols-[2.5fr_1fr_auto] gap-3 bg-[#f8ecd8] px-5 py-[13px] text-[11.5px] font-bold uppercase tracking-[0.04em] text-[#8a6a3c]">
+                  <div>Product</div>
+                  <div className="text-right">Price</div>
+                  <div className="min-w-[92px] text-right">In cart</div>
+                </div>
+                {filteredItems.map((item) => {
+                  const inCart = cartQtyById.get(item.id) || 0;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => addToCart(item)}
+                      className="grid w-full grid-cols-[2.5fr_1fr_auto] items-center gap-3 border-t border-line-soft px-5 py-[13px] text-left transition-colors hover:bg-cream"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <span className="text-[22px]">{item.emoji || "📦"}</span>
+                        <span className="truncate text-sm font-bold">{item.name}</span>
+                      </div>
+                      <div className="num text-right text-[13.5px] font-bold text-brown">
+                        {currency}
+                        {item.price.toFixed(2)}
+                      </div>
+                      <div className="flex min-w-[92px] justify-end">
+                        {inCart > 0 ? (
+                          <span className="num text-[13.5px] font-extrabold text-brown">{inCart}</span>
+                        ) : (
+                          <span className="text-ink-light">—</span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Phone cards */}
+              <div className="flex flex-col gap-2.5 lg:hidden">
+                {filteredItems.map((item) => {
+                  const inCart = cartQtyById.get(item.id) || 0;
+                  return (
+                    <div
+                      key={item.id}
+                      className={`flex items-center gap-3 rounded-[15px] border bg-warm-white px-[15px] py-[13px] ${
+                        inCart ? "border-[1.5px] border-brown" : "border-line"
+                      }`}
+                    >
+                      <button
+                        onClick={() => addToCart(item)}
+                        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                      >
+                        <span className="text-[26px]">{item.emoji || "📦"}</span>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-bold">{item.name}</div>
+                          <div className="num text-xs font-semibold text-ink-muted">
+                            {currency}
+                            {item.price.toFixed(2)}
+                          </div>
+                        </div>
+                      </button>
+                      {inCart > 0 && (
+                        <div className="flex shrink-0 items-center gap-1.5 rounded-[9px] bg-cream-dark p-[3px]">
+                          <button
+                            onClick={() => removeFromCart(item)}
+                            aria-label={`Remove one ${item.name}`}
+                            className="flex h-[28px] w-[28px] cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-lg font-extrabold text-brown"
+                          >
+                            −
+                          </button>
+                          <span className="num min-w-[20px] text-center text-sm font-extrabold">
+                            {inCart}
+                          </span>
+                          <button
+                            onClick={() => addToCart(item)}
+                            aria-label={`Add one ${item.name}`}
+                            className="flex h-[28px] w-[28px] cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-lg font-extrabold text-brown"
+                          >
+                            +
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </div>
 
-        {/* Order panel */}
-        <div className="sticky top-3.5 self-start overflow-hidden rounded-[18px] border border-line bg-warm-white shadow-[0_4px_18px_rgba(100,60,20,0.08)]">
+        {/* Mobile floating summary bar — tap to open the order sheet */}
+        {lines.length > 0 && !cartOpen && (
+          <button
+            type="button"
+            onClick={() => setCartOpen(true)}
+            className="fixed inset-x-4 bottom-[104px] z-[110] flex items-center justify-between gap-3 rounded-full bg-brown py-2.5 pl-3 pr-5 text-warm-white shadow-[0_10px_28px_rgba(124,74,30,0.45)] transition-transform active:scale-[0.98] lg:hidden"
+          >
+            <span className="flex items-center gap-3">
+              <span className="relative flex h-9 w-9 items-center justify-center rounded-full bg-warm-white/15">
+                <ShoppingBasket size={18} />
+                <span className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-warm-white px-[4px] text-[11px] font-extrabold text-brown shadow-sm">
+                  {cartCount}
+                </span>
+              </span>
+              <span className="flex flex-col items-start leading-tight">
+                <span className="text-[13px] font-extrabold">View order</span>
+                <span className="text-[11px] font-semibold text-warm-white/70">
+                  {cartCount} item{cartCount === 1 ? "" : "s"}
+                </span>
+              </span>
+            </span>
+            <span className="num text-[15px] font-extrabold">
+              {currency}
+              {total.toFixed(2)}
+            </span>
+          </button>
+        )}
+
+        {/* Mobile backdrop when the sheet is open */}
+        {cartOpen && (
+          <div
+            className="fixed inset-0 z-[200] bg-black/40 lg:hidden"
+            onClick={() => setCartOpen(false)}
+          />
+        )}
+
+        {/* Order panel — right sidebar on desktop, bottom sheet on mobile */}
+        <div
+          className={`fixed inset-x-0 bottom-0 z-[210] max-h-[85vh] overflow-y-auto rounded-t-[20px] border border-line bg-warm-white shadow-[0_-8px_30px_rgba(100,60,20,0.18)] transition-transform duration-300 lg:sticky lg:top-3.5 lg:z-auto lg:max-h-none lg:translate-y-0 lg:self-start lg:overflow-hidden lg:rounded-[18px] lg:shadow-[0_4px_18px_rgba(100,60,20,0.08)] ${
+            cartOpen ? "translate-y-0" : "translate-y-full lg:translate-y-0"
+          }`}
+        >
           <div className="flex items-center justify-between border-b border-line-soft px-[18px] py-4">
             <h3 className="text-base font-extrabold">Current order</h3>
-            {lines.length > 0 && (
+            <div className="flex items-center gap-3">
+              {lines.length > 0 && (
+                <button
+                  onClick={clearCart}
+                  className="flex cursor-pointer items-center rounded-lg border-none bg-danger-bg px-3 py-1.5 text-xs font-bold text-danger transition-transform active:scale-95"
+                >
+                  Clear
+                </button>
+              )}
               <button
-                onClick={clearCart}
-                className="cursor-pointer border-none bg-transparent text-xs font-bold text-danger"
+                onClick={() => setCartOpen(false)}
+                aria-label="Close order"
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-line bg-warm-white text-ink-muted lg:hidden"
               >
-                Clear
+                <X size={16} />
               </button>
-            )}
+            </div>
           </div>
           <div className="flex flex-col gap-2 border-b border-line-soft px-[18px] py-3.5">
             <div className="relative">

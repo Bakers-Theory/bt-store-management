@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Search, Users } from "lucide-react";
+import { Search, Users, X } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { fetchCustomers } from "@/lib/supabase-data";
 import { initials } from "@/lib/format";
@@ -68,10 +68,20 @@ export function Customers() {
         <input
           type="text"
           placeholder="Search by name or phone…"
-          className="w-full pl-9"
+          className="w-full pl-9 pr-9"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+        {search && (
+          <button
+            type="button"
+            onClick={() => setSearch("")}
+            aria-label="Clear search"
+            className="absolute right-2.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-ink-light hover:bg-cream hover:text-ink-muted"
+          >
+            <X size={15} />
+          </button>
+        )}
       </div>
 
       {!loaded ? (
