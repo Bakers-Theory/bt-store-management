@@ -270,6 +270,7 @@ export async function fetchBaseData(): Promise<BaseData> {
 export interface FullStoreData extends BaseData {
   bills: Bill[];
   logs: Log[];
+  customers: Customer[];
 }
 
 /**
@@ -280,7 +281,7 @@ export interface FullStoreData extends BaseData {
 export async function fetchReportData(): Promise<FullStoreData> {
   const supabase = createClient();
   const base = await fetchBaseData();
-  const [billsRes, billItemsRes, logsRes, costRes] = await Promise.all([
+  const [billsRes, billItemsRes, logsRes, costRes, custRows] = await Promise.all([
     supabase.from("bills_v").select("*").order("created_at"),
     // Explicit columns — cost_price is revoked from the client role (see 0002).
     supabase.from("bill_items").select("id,bill_id,item_id,name,emoji,unit,qty,price"),
@@ -288,6 +289,7 @@ export async function fetchReportData(): Promise<FullStoreData> {
     // Historical per-line cost (analytics-gated SECURITY DEFINER; see 0005), so
     // the report's COGS/profit match the dashboard. Empty for non-analytics users.
     supabase.rpc("bill_lines_with_cost"),
+    rpc<CustomerRow[]>("customers_with_stats", {}),
   ]);
 
   const costById = new Map<string, number>();
@@ -308,6 +310,7 @@ export async function fetchReportData(): Promise<FullStoreData> {
       mapBill(b, linesByBill.get(b.id) ?? []),
     ),
     logs: ((logsRes.data ?? []) as LogRow[]).map(mapLog),
+    customers: (custRows ?? []).map(mapCustomer),
   };
 }
 

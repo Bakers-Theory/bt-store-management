@@ -6,7 +6,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { navItems } from "@/lib/permissions";
 import { useAuth, useCurrentUser } from "@/components/system/AuthProvider";
 import { useBakeryStore } from "@/lib/store";
-import { Croissant, Loader2 } from "lucide-react";
+import { BarChart3, Croissant, Loader2 } from "lucide-react";
 
 const ICONS: Record<string, React.ReactNode> = {
   dashboard: (
@@ -51,6 +51,7 @@ const ICONS: Record<string, React.ReactNode> = {
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>
   ),
+  reports: <BarChart3 size={20} strokeWidth={1.8} />,
 };
 
 function initials(name: string): string {
@@ -67,7 +68,13 @@ export function Sidebar() {
   const logo = useBakeryStore((s) => s.bakery.logo);
   const { signOut } = useAuth();
 
-  const items = [...navItems(user), { key: "settings", href: "/settings", icon: "⚙", label: "Settings" }];
+  const items = [
+    ...navItems(user),
+    ...(user?.role === "Owner"
+      ? [{ key: "reports", href: "/reports", icon: "📈", label: "Reports" }]
+      : []),
+    { key: "settings", href: "/settings", icon: "⚙", label: "Settings" },
+  ];
 
   const [loggingOut, setLoggingOut] = useState(false);
 

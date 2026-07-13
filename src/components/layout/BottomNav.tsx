@@ -12,6 +12,7 @@ import { useCurrentUser } from "@/components/system/AuthProvider";
 const PRIMARY_KEYS = ["dashboard", "stock", "history"];
 
 const SETTINGS_ITEM: NavItem = { key: "settings", href: "/settings", icon: "⚙️", label: "Settings" };
+const REPORTS_ITEM: NavItem = { key: "reports", href: "/reports", icon: "📈", label: "Reports" };
 
 const ICONS: Record<string, React.ReactNode> = {
   dashboard: (
@@ -49,6 +50,14 @@ const ICONS: Record<string, React.ReactNode> = {
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>
   ),
+  reports: (
+    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 3v18h18" />
+      <path d="M18 17V9" />
+      <path d="M13 17V5" />
+      <path d="M8 17v-3" />
+    </svg>
+  ),
 };
 
 const BILL_ICON = (
@@ -79,7 +88,11 @@ export function BottomNav() {
   const primary = items.filter((it) => it.key !== "bill" && PRIMARY_KEYS.includes(it.key));
   // Everything that isn't the FAB or a primary tab lives in the sheet, plus
   // Settings (which has no route in navItems but is always reachable here).
-  const sheetItems = [...items.filter((it) => it.key !== "bill" && !PRIMARY_KEYS.includes(it.key)), SETTINGS_ITEM];
+  const sheetItems = [
+    ...items.filter((it) => it.key !== "bill" && !PRIMARY_KEYS.includes(it.key)),
+    ...(user?.role === "Owner" ? [REPORTS_ITEM] : []),
+    SETTINGS_ITEM,
+  ];
   const moreActive = sheetItems.some((it) => it.href === pathname);
 
   const linkClass = (active: boolean) =>

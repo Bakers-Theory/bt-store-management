@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { buildReportSheets } from "./excel";
-import type { Bakery, Bill, Item } from "./types";
+import {
+  inRange, formatDMY, ymdToDMY, isoDateLocal, reportFileName, headerRows,
+  buildProductsReport, buildStockReport, buildCustomersReport,
+  buildBillsReport, buildSalesReport, buildStockLogReport,
+  buildAnalyticsReport, buildFullReport, buildReport, buildExpiryReport,
+} from "./excel";
+import type { Bakery, Bill, Customer, Item } from "./types";
 
 const DEFAULT_BAKERY: Bakery = {
   name: "My Bakery",
@@ -30,101 +35,197 @@ const bill = (over: Partial<Bill>): Bill => ({
   date: "2026-06-01T10:00:00.000Z", status: "active", ...over,
 });
 
-const now = new Date("2026-07-02T00:00:00.000Z");
+describe("date & filename helpers", () => {
+  const range = { from: "2026-07-01", to: "2026-07-31" };
 
-describe("buildReportSheets", () => {
-  it("excludes cancelled bills from revenue but lists them in the sales sheet", () => {
-    const data = {
-      bakery: DEFAULT_BAKERY,
-      items: [item],
-      bills: [bill({ id: "b1" }), bill({ id: "b2", billNo: 1002, status: "cancelled" })],
-      logs: [],
-    };
-    const { summary, sales, topItems } = buildReportSheets(data, now);
-
-    const revenue = summary.find((r) => r.Metric === "Total Revenue (All Time)");
-    expect(revenue?.Value).toBe("80.00"); // only the one active bill
-
-    const cancelled = summary.find((r) => r.Metric === "Cancelled Bills");
-    expect(cancelled?.Value).toBe(1);
-
-    expect(sales).toHaveLength(2); // both listed
-    expect(sales.map((r) => r.Status).sort()).toEqual(["Active", "Cancelled"]);
-
-    // Top items counts only the active bill: 2 units sold
-    expect(topItems[0]["Units Sold"]).toBe(2);
+  it("inRange: inclusive bounds and open ends", () => {
+    expect(inRange("2026-07-01T05:00:00.000Z", range)).toBe(true); // lower boundary
+    expect(inRange("2026-07-31T23:00:00.000Z", range)).toBe(true); // upper boundary
+    expect(inRange("2026-06-30T23:00:00.000Z", range)).toBe(false);
+    expect(inRange("2026-08-01T00:00:00.000Z", range)).toBe(false);
+    expect(inRange("2020-01-01T00:00:00.000Z", { from: null, to: null })).toBe(true);
+    expect(inRange("2026-06-15T00:00:00.000Z", { from: "2026-07-01", to: null })).toBe(false);
+    expect(inRange("2026-09-15T00:00:00.000Z", { from: null, to: "2026-07-31" })).toBe(false);
   });
 
-  it("uses the line's recorded costPrice for COGS/profit", () => {
-    const data = { bakery: DEFAULT_BAKERY, items: [item], bills: [bill({ id: "b1" })], logs: [] };
-    const { summary } = buildReportSheets(data, now);
-    // revenue 80, cogs = 2 * 20 = 40, profit = 40
-    expect(summary.find((r) => r.Metric === "Total Gross Profit")?.Value).toBe("40.00");
+  it("ymdToDMY reorders without timezone drift", () => {
+    expect(ymdToDMY("2026-07-01")).toBe("01-07-2026");
   });
 
-  it("emits placeholder rows when there is no data", () => {
-    const data = { bakery: DEFAULT_BAKERY, items: [], bills: [], logs: [] };
-    const { growth, topItems, stockLog, categoryPL, stockHealth, recommendations } = buildReportSheets(data, now);
-    expect(growth[0].Month).toBe("No sales data yet");
-    expect(topItems[0].Item).toBe("No sales yet");
-    expect(stockLog[0].Date).toBe("No activity yet");
-    expect(categoryPL[0].Category).toBe("No sales yet");
-    expect(stockHealth[0]["Item Name"]).toBe("No items yet");
-    expect(recommendations[0].Insight).toBe("Not enough data yet");
+  it("isoDateLocal formats a local YYYY-MM-DD", () => {
+    expect(isoDateLocal(new Date(2026, 6, 5))).toBe("2026-07-05");
   });
 
-  it("groups revenue, COGS and profit by category (active bills only)", () => {
-    const data = {
-      bakery: DEFAULT_BAKERY,
-      items: [item],
-      bills: [bill({ id: "b1" }), bill({ id: "b2", billNo: 1002, status: "cancelled" })],
-      logs: [],
-    };
-    const { categoryPL } = buildReportSheets(data, now);
-    // one active bill: 2 x Bread @40 => revenue 80, cogs 2*20=40, profit 40
-    const row = categoryPL.find((r) => r.Category === "Breads");
-    expect(row?.["Revenue (₹)"]).toBe(80);
-    expect(row?.["COGS (₹)"]).toBe(40);
-    expect(row?.["Gross Profit (₹)"]).toBe(40);
-    expect(row?.["Margin %"]).toBe("50.0%");
-    expect(row?.["Revenue Share %"]).toBe("100.0%");
+  it("reportFileName covers range, one-sided, all, and snapshot", () => {
+    const bk = { name: "Sweet Treats!" } as never;
+    const nowD = new Date("2026-07-13T00:00:00.000Z");
+    expect(reportFileName(bk, "sales", range, nowD)).toBe("Sweet_Treats__Sales_01-07-2026_to_31-07-2026.xlsx");
+    expect(reportFileName(bk, "bills", { from: "2026-07-01", to: null }, nowD)).toBe("Sweet_Treats__Bills_from_01-07-2026.xlsx");
+    expect(reportFileName(bk, "bills", { from: null, to: "2026-07-31" }, nowD)).toBe("Sweet_Treats__Bills_upto_31-07-2026.xlsx");
+    expect(reportFileName(bk, "analytics", { from: null, to: null }, nowD)).toBe("Sweet_Treats__Analytics_all.xlsx");
+    expect(reportFileName(bk, "products", { from: null, to: null }, nowD)).toBe("Sweet_Treats__Products_snapshot.xlsx");
   });
 
-  it("flags dead stock and computes days of cover", () => {
-    const soldItem: Item = { ...item, id: "i1", qty: 20 };
-    const unsold: Item = { ...item, id: "i2", name: "Cake", qty: 3, category: "Cakes" };
-    const data = {
-      bakery: { ...DEFAULT_BAKERY, lowStockAlert: 2 },
-      items: [soldItem, unsold],
-      // two active bills a day apart => 2-day span, 4 units of Bread sold => 2/day => 10 days cover
-      bills: [
-        bill({ id: "b1", date: "2026-06-01T10:00:00.000Z" }),
-        bill({ id: "b2", billNo: 1002, date: "2026-06-02T10:00:00.000Z" }),
-      ],
-      logs: [],
-    };
-    const { stockHealth } = buildReportSheets(data, now);
-    const bread = stockHealth.find((r) => r["Item Name"] === "Bread");
-    expect(bread?.["Units Sold"]).toBe(4);
-    expect(bread?.["Avg Sold / Day"]).toBe(2);
-    expect(bread?.["Days of Cover"]).toBe(10);
-    expect(bread?.Verdict).toBe("Healthy");
-    const cake = stockHealth.find((r) => r["Item Name"] === "Cake");
-    expect(cake?.Verdict).toBe("Dead stock");
-    expect(cake?.["Days of Cover"]).toBe("∞");
+  it("headerRows shows the right period line", () => {
+    const bk = { name: "My Bakery" } as never;
+    const nowD = new Date("2026-07-13T10:00:00.000Z");
+    expect(headerRows(bk, "Sales", range, nowD, false)[2][0]).toBe("Period: 01-07-2026 to 31-07-2026");
+    expect(headerRows(bk, "Sales", { from: null, to: null }, nowD, false)[2][0]).toBe("All records");
+    expect(headerRows(bk, "Products", { from: null, to: null }, nowD, true)[2][0])
+      .toBe("Snapshot as of " + formatDMY(nowD));
+  });
+});
+
+describe("snapshot builders", () => {
+  const nowD = new Date("2026-07-13T00:00:00.000Z");
+  const expItem: Item = {
+    ...item, id: "i2", name: "Cake", tracksExpiry: true, earliestExpiry: "2026-07-01",
+    qty: 6, batches: [
+      { qty: 2, expiryDate: "2026-07-01" }, // expired (before 2026-07-13)
+      { qty: 4, expiryDate: "2026-07-20" },
+    ],
+  };
+  const data = { bakery: DEFAULT_BAKERY, items: [item, expItem], bills: [], logs: [], customers: [] };
+
+  it("Products report includes expiry columns", () => {
+    const rows = buildProductsReport(data, nowD)[0].rows;
+    const cake = rows.find((r) => r["Item Name"] === "Cake")!;
+    expect(cake["Tracks Expiry"]).toBe("Yes");
+    expect(cake["Earliest Expiry"]).toBe("01-07-2026");
   });
 
-  it("recommends reordering low-stock items that are still selling", () => {
-    // qty 5 <= lowStockAlert 5, and it sold => Reorder now
-    const data = {
-      bakery: { ...DEFAULT_BAKERY, lowStockAlert: 5 },
-      items: [item],
-      bills: [bill({ id: "b1" })],
-      logs: [],
-    };
-    const { recommendations } = buildReportSheets(data, now);
-    const reorder = recommendations.find((r) => r.Insight.includes("Reorder") && r.Priority === "High");
-    expect(reorder).toBeDefined();
-    expect(reorder?.Detail).toContain("Bread");
+  it("Stock report computes expired units and batch string", () => {
+    const rows = buildStockReport(data, nowD)[0].rows;
+    const cake = rows.find((r) => r["Item Name"] === "Cake")!;
+    expect(cake["Batch Count"]).toBe(2);
+    expect(cake["Expired Units"]).toBe(2);
+    expect(String(cake["Batches"])).toContain("01-07-2026");
+  });
+
+  it("snapshot builders emit placeholders when empty and format customers", () => {
+    const empty = { ...data, items: [], customers: [] };
+    expect(buildProductsReport(empty, nowD)[0].rows[0]["Item Name"]).toBe("No products yet");
+    const custs: Customer[] = [{
+      id: "c1", phone: "999", name: "Ann", firstSeen: "2026-01-01T00:00:00.000Z",
+      visitCount: 3, totalSpend: 500, lastPurchase: null,
+    }];
+    const cRows = buildCustomersReport({ ...data, customers: custs }, nowD)[0].rows;
+    expect(cRows[0]["Name"]).toBe("Ann");
+    expect(cRows[0]["Last Purchase"]).toBe("—");
+  });
+});
+
+describe("event builders (date-filtered)", () => {
+  const nowD = new Date("2026-08-01T00:00:00.000Z");
+  const july = { from: "2026-07-01", to: "2026-07-31" };
+  const data = {
+    bakery: DEFAULT_BAKERY, items: [item], customers: [], logs: [
+      { id: "l1", type: "in" as const, date: "2026-07-05T10:00:00.000Z", itemName: "Bread", qty: 10 },
+      { id: "l2", type: "in" as const, date: "2026-06-05T10:00:00.000Z", itemName: "Bread", qty: 5 },
+    ],
+    bills: [
+      bill({ id: "b1", date: "2026-07-10T10:00:00.000Z" }),
+      bill({ id: "b2", billNo: 1002, date: "2026-07-31T23:00:00.000Z" }), // boundary, included
+      bill({ id: "b3", billNo: 1003, date: "2026-06-15T10:00:00.000Z" }), // excluded
+    ],
+  };
+
+  it("Bills report keeps only in-range bills (boundary inclusive)", () => {
+    const rows = buildBillsReport(data, july, nowD)[0].rows;
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r["Bill No"]).sort()).toEqual([1001, 1002]);
+  });
+
+  it("Sales report aggregates in-range active bills by month", () => {
+    const rows = buildSalesReport(data, july, nowD)[0].rows;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].Month).toBe("2026-07");
+    expect(rows[0]["Bills Count"]).toBe(2);
+  });
+
+  it("Stock Log report filters by date and emits placeholder when empty", () => {
+    expect(buildStockLogReport(data, july, nowD)[0].rows).toHaveLength(1);
+    expect(buildStockLogReport({ ...data, logs: [] }, july, nowD)[0].rows[0].Date).toBe("No activity in range");
+  });
+});
+
+describe("analytics builder", () => {
+  const nowD = new Date("2026-08-01T00:00:00.000Z");
+  const july = { from: "2026-07-01", to: "2026-07-31" };
+  const data = {
+    bakery: DEFAULT_BAKERY, items: [item], logs: [], customers: [],
+    bills: [
+      bill({ id: "b1", date: "2026-07-10T10:00:00.000Z" }),      // in range
+      bill({ id: "b2", billNo: 1002, date: "2026-06-10T10:00:00.000Z" }), // out of range
+    ],
+  };
+
+  it("produces the four analytics sheets from in-range bills only", () => {
+    const sheets = buildAnalyticsReport(data, july, nowD);
+    expect(sheets.map((s) => s.name)).toEqual([
+      "Top Selling Items", "Category P&L", "Stock Health", "Recommendations",
+    ]);
+    const top = sheets[0].rows;
+    expect(top[0]["Units Sold"]).toBe(2); // only the July bill's 2 units
+  });
+});
+
+describe("full report", () => {
+  const nowD = new Date("2026-08-01T00:00:00.000Z");
+  const open = { from: null, to: null };
+  const data = {
+    bakery: DEFAULT_BAKERY, items: [item], logs: [], customers: [],
+    bills: [bill({ id: "b1" }), bill({ id: "b2", billNo: 1002, status: "cancelled" as const })],
+  };
+
+  it("includes a Summary sheet plus every report section", () => {
+    const names = buildFullReport(data, open, nowD).map((s) => s.name);
+    expect(names).toEqual([
+      "Summary", "Sales", "Bills", "Products", "Stock", "Expiry & Wastage", "Stock Log", "Customers",
+      "Top Selling Items", "Category P&L", "Stock Health", "Recommendations",
+    ]);
+  });
+
+  it("Summary counts active vs cancelled bills", () => {
+    const summary = buildFullReport(data, open, nowD)[0].rows;
+    expect(summary.find((r) => r.Metric === "Cancelled Bills")?.Value).toBe(1);
+    expect(summary.find((r) => r.Metric === "Total Revenue")?.Value).toBe("80.00");
+  });
+
+  it("buildReport dispatches by type with correct metadata", () => {
+    const r = buildReport("products", data, open, nowD);
+    expect(r.reportName).toBe("Products");
+    expect(r.isSnapshot).toBe(true);
+    expect(r.sheets[0].name).toBe("Products");
+  });
+});
+
+describe("expiry & wastage builder", () => {
+  // now = 2026-07-13; expiringSoonDays default 3 => soon window through 2026-07-16
+  const nowD = new Date(2026, 6, 13);
+  const cake: Item = {
+    ...item, id: "i2", name: "Cake", costPrice: 30, qty: 9, batches: [
+      { qty: 2, expiryDate: "2026-07-01" }, // expired
+      { qty: 3, expiryDate: "2026-07-15" }, // expiring soon (<= 2026-07-16)
+      { qty: 4, expiryDate: "2026-08-20" }, // fine
+    ],
+  };
+  const bread: Item = { ...item, id: "i3", name: "Bun", batches: [{ qty: 5, expiryDate: "2026-12-01" }] };
+  const data = { bakery: DEFAULT_BAKERY, items: [cake, bread], bills: [], logs: [], customers: [] };
+
+  it("lists only at-risk items with expired/soon units and value", () => {
+    const rows = buildExpiryReport(data, nowD)[0].rows;
+    expect(rows).toHaveLength(1); // Bun has no at-risk stock
+    const c = rows[0];
+    expect(c["Item Name"]).toBe("Cake");
+    expect(c["Expired Units"]).toBe(2);
+    expect(c["Expiring Soon Units"]).toBe(3);
+    expect(c["Expired Value at Cost (₹)"]).toBe(60);       // 2 * 30
+    expect(c["Expiring Soon Value at Cost (₹)"]).toBe(90); // 3 * 30
+  });
+
+  it("emits a placeholder when nothing is at risk", () => {
+    const rows = buildExpiryReport({ ...data, items: [bread] }, nowD)[0].rows;
+    expect(rows[0]["Item Name"]).toBe("No expiring or expired stock");
   });
 });
