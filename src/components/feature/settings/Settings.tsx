@@ -2,12 +2,10 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Croissant, Download, Loader2, Trash2, X } from "lucide-react";
+import { Croissant, Loader2, Trash2, X } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { useUIStore } from "@/lib/ui-store";
-import { exportExcelReport } from "@/lib/excel";
-import { fetchReportData } from "@/lib/supabase-data";
 import { MyAccount } from "./MyAccount";
 import { UserManagement } from "./UserManagement";
 import { ChangePasswordCard } from "./ChangePasswordCard";
@@ -40,7 +38,6 @@ export function Settings() {
   const [tab, setTab] = useState<"store" | "staff">("store");
   const [phoneErr, setPhoneErr] = useState("");
   const [savingSettings, setSavingSettings] = useState(false);
-  const [exporting, setExporting] = useState(false);
   const [clearing, setClearing] = useState(false);
 
   // Non-owners get the account view.
@@ -85,16 +82,6 @@ export function Settings() {
       toast("Settings saved");
     } finally {
       setSavingSettings(false);
-    }
-  };
-
-  const doExport = async () => {
-    setExporting(true);
-    try {
-      const r = await exportExcelReport(await fetchReportData());
-      toast(r.ok ? "Excel report downloaded" : r.error ?? "Export failed");
-    } finally {
-      setExporting(false);
     }
   };
 
@@ -272,34 +259,10 @@ export function Settings() {
       <div className="grid items-start gap-4 lg:grid-cols-2">
         {/* Staff & permissions */}
         <UserManagement />
-        <ChangePasswordCard />
-      </div>
+        <div className="flex flex-col gap-4">
+          <ChangePasswordCard />
 
-      {/* Data & reports — separate, outlined section */}
-      <div className="mt-4 rounded-[20px] border border-line-strong p-4 lg:p-5">
-        <div className="mb-3 px-1 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-light">
-          Data &amp; reports
-        </div>
-        <div className="grid items-start gap-4 lg:grid-cols-2">
-          <div className="rounded-[18px] border border-line bg-warm-white p-[22px] shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
-            <h3 className="mb-1.5 text-[15.5px] font-extrabold">Reports</h3>
-            <p className="mb-3 text-xs text-ink-muted">
-              Download a full Excel workbook with your inventory, sales, stock log and business growth analysis.
-            </p>
-            <button
-              className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border-none bg-success p-3 text-sm font-bold text-warm-white disabled:cursor-not-allowed disabled:opacity-60"
-              onClick={doExport}
-              disabled={exporting}
-            >
-              {exporting ? (
-                <Loader2 size={16} className="animate-spin" />
-              ) : (
-                <Download size={16} />
-              )}{" "}
-              {exporting ? "Preparing…" : "Download Excel report"}
-            </button>
-          </div>
-
+          {/* Danger zone */}
           <div className="rounded-[18px] border border-line bg-warm-white p-[22px] shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
             <h3 className="mb-1.5 text-[15.5px] font-extrabold text-danger">Danger zone</h3>
             <p className="mb-3 text-xs text-ink-muted">
