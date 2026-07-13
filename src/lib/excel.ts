@@ -1,4 +1,4 @@
-import type { Bakery, Bill, BillLine, Item, Log } from "./types";
+import type { Bakery, Bill, BillLine, Customer, Item, Log } from "./types";
 import { isActiveBill } from "./format";
 import {
   categoryPL as categoryPLData,
@@ -11,6 +11,7 @@ export interface ReportData {
   items: Item[];
   bills: Bill[];
   logs: Log[];
+  customers: Customer[];
 }
 
 export interface ReportResult {
@@ -18,87 +19,105 @@ export interface ReportResult {
   error?: string;
 }
 
-/**
- * Assemble the 6-sheet workbook data. Pure (no xlsx dependency) so it can be
- * unit-tested. `now` is injectable for deterministic tests.
- */
-export function buildReportSheets(data: ReportData, now: Date) {
-  const { bakery, items, bills, logs } = data;
-  const cur = bakery.currency;
+export type DateRange = { from: string | null; to: string | null };
 
-  // cost price for a bill line — prefer price recorded at sale time, else current item
-  const costOf = (bi: BillLine) =>
-    bi.costPrice != null
-      ? bi.costPrice
-      : items.find((i) => i.id === bi.itemId)?.costPrice || 0;
+export type ReportType =
+  | "sales" | "bills" | "products" | "stock"
+  | "stockLog" | "customers" | "analytics" | "full";
 
-  const activeBills = bills.filter(isActiveBill);
+export interface Sheet {
+  name: string;
+  rows: Record<string, string | number>[];
+}
 
-  // ── 1. Summary ──
-  const totalRevenue = activeBills.reduce((s, b) => s + b.total, 0);
-  const totalCOGS = activeBills.reduce(
-    (s, b) => s + b.items.reduce((si, bi) => si + bi.qty * costOf(bi), 0),
-    0,
-  );
-  const totalProfit = totalRevenue - totalCOGS;
-  const totalBills = activeBills.length;
-  const cancelledCount = bills.length - activeBills.length;
-  const totalStockValue = items.reduce((s, i) => s + i.qty * i.price, 0);
-  const totalStockCost = items.reduce((s, i) => s + i.qty * (i.costPrice || 0), 0);
-  const lowStockCount = items.filter((i) => i.qty <= bakery.lowStockAlert).length;
-  const firstBillDate = activeBills.length
-    ? new Date(Math.min(...activeBills.map((b) => +new Date(b.date))))
-    : null;
-  const lastBillDate = activeBills.length
-    ? new Date(Math.max(...activeBills.map((b) => +new Date(b.date))))
-    : null;
+export const REPORT_META: Record<ReportType, { name: string; slug: string; snapshot: boolean }> = {
+  sales:     { name: "Sales",       slug: "Sales",       snapshot: false },
+  bills:     { name: "Bills",       slug: "Bills",       snapshot: false },
+  products:  { name: "Products",    slug: "Products",    snapshot: true },
+  stock:     { name: "Stock",       slug: "Stock",       snapshot: true },
+  stockLog:  { name: "Stock Log",   slug: "Stock_Log",   snapshot: false },
+  customers: { name: "Customers",   slug: "Customers",   snapshot: true },
+  analytics: { name: "Analytics",   slug: "Analytics",   snapshot: false },
+  full:      { name: "Full Report", slug: "Full_Report", snapshot: false },
+};
 
-  const summary = [
-    { Metric: "Bakery Name", Value: bakery.name },
-    { Metric: "Report Generated On", Value: now.toLocaleString("en-IN") },
-    {
-      Metric: "Reporting Period",
-      Value: firstBillDate
-        ? `${firstBillDate.toLocaleDateString("en-IN")} to ${lastBillDate!.toLocaleDateString("en-IN")}`
-        : "No sales yet",
-    },
-    { Metric: "Total Revenue (All Time)", Value: totalRevenue.toFixed(2) },
-    { Metric: "Total Cost of Goods Sold", Value: totalCOGS.toFixed(2) },
-    { Metric: "Total Gross Profit", Value: totalProfit.toFixed(2) },
-    { Metric: "Gross Margin %", Value: totalRevenue ? ((totalProfit / totalRevenue) * 100).toFixed(1) + "%" : "N/A" },
-    { Metric: "Total Bills Generated (Active)", Value: totalBills },
-    { Metric: "Cancelled Bills", Value: cancelledCount },
-    { Metric: "Average Bill Value", Value: totalBills ? (totalRevenue / totalBills).toFixed(2) : 0 },
-    { Metric: "Total Items in Inventory", Value: items.length },
-    { Metric: "Current Stock Value (at Selling Price)", Value: totalStockValue.toFixed(2) },
-    { Metric: "Current Stock Value (at Bought Price)", Value: totalStockCost.toFixed(2) },
-    { Metric: "Low Stock Items", Value: lowStockCount },
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/** True if the date portion of `dateStr` falls within the inclusive range. */
+export function inRange(dateStr: string, range: DateRange): boolean {
+  const d = dateStr.slice(0, 10); // "YYYY-MM-DD" — ISO date strings sort lexically
+  if (range.from && d < range.from) return false;
+  if (range.to && d > range.to) return false;
+  return true;
+}
+
+/** Local-time "DD-MM-YYYY". */
+export function formatDMY(d: Date): string {
+  return `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()}`;
+}
+
+/** "YYYY-MM-DD" -> "DD-MM-YYYY" without constructing a Date (no TZ drift). */
+export function ymdToDMY(ymd: string): string {
+  const [y, m, d] = ymd.split("-");
+  return `${d}-${m}-${y}`;
+}
+
+/** Local-time "YYYY-MM-DD". */
+export function isoDateLocal(d: Date): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+function rangeSuffix(range: DateRange, snapshot: boolean): string {
+  if (range.from && range.to) return `${ymdToDMY(range.from)}_to_${ymdToDMY(range.to)}`;
+  if (range.from) return `from_${ymdToDMY(range.from)}`;
+  if (range.to) return `upto_${ymdToDMY(range.to)}`;
+  return snapshot ? "snapshot" : "all";
+}
+
+export function reportFileName(bakery: Bakery, type: ReportType, range: DateRange, _now: Date): string {
+  const safe = (bakery.name || "Bakery").replace(/[^a-z0-9]/gi, "_");
+  const meta = REPORT_META[type];
+  const suffix = rangeSuffix(range, meta.snapshot);
+  return `${safe}_${meta.slug}_${suffix}.xlsx`;
+}
+
+function periodLine(range: DateRange, now: Date, isSnapshot: boolean): string {
+  if (isSnapshot) return "Snapshot as of " + formatDMY(now);
+  if (range.from && range.to) return `Period: ${ymdToDMY(range.from)} to ${ymdToDMY(range.to)}`;
+  if (range.from) return `Period: ${ymdToDMY(range.from)} onwards`;
+  if (range.to) return `Period: up to ${ymdToDMY(range.to)}`;
+  return "All records";
+}
+
+/** Label rows written above each sheet's data table. */
+export function headerRows(
+  bakery: Bakery, reportName: string, range: DateRange, now: Date, isSnapshot: boolean,
+): string[][] {
+  return [
+    [bakery.name || "Bakery"],
+    [`${reportName} Report`],
+    [periodLine(range, now, isSnapshot)],
+    [`Generated: ${now.toLocaleString("en-IN")}`],
   ];
+}
 
-  // ── 2. Inventory ──
-  const inventory = items.map((i) => {
-    const cost = i.costPrice || 0;
-    const marginPerUnit = i.price - cost;
-    return {
-      "Item Name": i.name,
-      Category: i.category || "General",
-      Unit: i.unit,
-      "Quantity in Stock": i.qty,
-      [`Bought Price (${cur})`]: cost,
-      [`Selling Price (${cur})`]: i.price,
-      [`Profit / Unit (${cur})`]: +marginPerUnit.toFixed(2),
-      "Margin %": cost ? ((marginPerUnit / i.price) * 100).toFixed(1) + "%" : i.price ? "100%" : "N/A",
-      [`Stock Value at Cost (${cur})`]: +(i.qty * cost).toFixed(2),
-      [`Stock Value at Selling Price (${cur})`]: +(i.qty * i.price).toFixed(2),
-      Status: i.qty <= bakery.lowStockAlert ? "Low Stock" : "OK",
-    };
-  });
+// cost price for a bill line — prefer price recorded at sale time, else current item
+function costOf(items: Item[], bi: BillLine): number {
+  return bi.costPrice != null
+    ? bi.costPrice
+    : items.find((i) => i.id === bi.itemId)?.costPrice || 0;
+}
 
-  // ── 3. Sales Report (all bills, incl. cancelled — see Status column) ──
-  const sales = [...bills]
+// ─── Event report builders (date-filtered) ───────────────────────────────────
+
+export function buildBillsReport(data: ReportData, range: DateRange, _now: Date): Sheet[] {
+  const { items, bills, bakery } = data;
+  const cur = bakery.currency;
+  const rows: Record<string, string | number>[] = bills
+    .filter((b) => inRange(b.date, range))
     .sort((a, b) => +new Date(a.date) - +new Date(b.date))
     .map((b) => {
-      const cogs = b.items.reduce((s, bi) => s + bi.qty * costOf(bi), 0);
+      const cogs = b.items.reduce((s, bi) => s + bi.qty * costOf(items, bi), 0);
       return {
         "Bill No": b.billNo,
         Status: b.status === "cancelled" ? "Cancelled" : "Active",
@@ -113,26 +132,30 @@ export function buildReportSheets(data: ReportData, now: Date) {
         [`Est. Profit (${cur})`]: b.status === "cancelled" ? 0 : +(b.subtotal - cogs).toFixed(2),
       };
     });
+  if (rows.length === 0) rows.push({ "Bill No": "No bills in range" });
+  return [{ name: "Bills", rows }];
+}
 
-  // ── 4. Business Growth Analysis (month over month, active bills only) ──
+export function buildSalesReport(data: ReportData, range: DateRange, _now: Date): Sheet[] {
+  const { items, bills, bakery } = data;
+  const cur = bakery.currency;
+  const activeBills = bills.filter(isActiveBill).filter((b) => inRange(b.date, range));
+
   const monthly: Record<string, { revenue: number; bills: number; itemsSold: number; cogs: number }> = {};
   activeBills.forEach((b) => {
-    const d = new Date(b.date);
-    const key = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+    const key = b.date.slice(0, 7); // "YYYY-MM" — matches inRange's date basis (no TZ drift)
     if (!monthly[key]) monthly[key] = { revenue: 0, bills: 0, itemsSold: 0, cogs: 0 };
     monthly[key].revenue += b.total;
     monthly[key].bills += 1;
     monthly[key].itemsSold += b.items.reduce((s, i) => s + i.qty, 0);
-    monthly[key].cogs += b.items.reduce((s, bi) => s + bi.qty * costOf(bi), 0);
+    monthly[key].cogs += b.items.reduce((s, bi) => s + bi.qty * costOf(items, bi), 0);
   });
   const months = Object.keys(monthly).sort();
-  const growth: Record<string, string | number>[] = months.map((m, idx) => {
+  const rows: Record<string, string | number>[] = months.map((m, idx) => {
     const c = monthly[m];
     const prev = idx > 0 ? monthly[months[idx - 1]] : null;
-    const growthPct =
-      prev && prev.revenue > 0
-        ? (((c.revenue - prev.revenue) / prev.revenue) * 100).toFixed(1) + "%"
-        : "N/A";
+    const growthPct = prev && prev.revenue > 0
+      ? (((c.revenue - prev.revenue) / prev.revenue) * 100).toFixed(1) + "%" : "N/A";
     const profit = c.revenue - c.cogs;
     return {
       Month: m,
@@ -145,18 +168,115 @@ export function buildReportSheets(data: ReportData, now: Date) {
       "MoM Growth %": growthPct,
     };
   });
-  if (growth.length === 0) {
-    growth.push({ Month: "No sales data yet", Revenue: 0, "Bills Count": 0, "Items Sold": 0, "Avg Bill Value": 0, "Est. Profit": 0, "Profit Margin %": "N/A", "MoM Growth %": "N/A" });
-  }
+  if (rows.length === 0) rows.push({ Month: "No sales in range" });
+  return [{ name: "Sales", rows }];
+}
 
-  // ── 5. Top Selling Items (active bills only) ──
+export function buildStockLogReport(data: ReportData, range: DateRange, _now: Date): Sheet[] {
+  const { logs, bakery } = data;
+  const cur = bakery.currency;
+  const rows: Record<string, string | number>[] = logs
+    .filter((l) => inRange(l.date, range))
+    .sort((a, b) => +new Date(a.date) - +new Date(b.date))
+    .map((l) => ({
+      Date: new Date(l.date).toLocaleString("en-IN"),
+      Type: l.type === "in" ? "Stock In" : l.type === "out" ? "Stock Out" : l.type === "bill" ? "Bill / Sale" : l.type,
+      User: l.user ?? "",
+      "Item / Bill": l.type === "bill" ? `Bill #${l.billNo}` : l.itemName ?? "",
+      Qty: l.qty || "",
+      Details: l.type === "bill"
+        ? l.items ?? ""
+        : (l.supplier ? `Supplier: ${l.supplier}` : l.reason || "") + (l.notes ? ` — ${l.notes}` : ""),
+      [`Amount (${cur})`]: l.total || "",
+    }));
+  if (rows.length === 0) rows.push({ Date: "No activity in range" });
+  return [{ name: "Stock Log", rows }];
+}
+
+// ─── Snapshot report builders (range-independent) ───────────────────────────
+
+export function buildProductsReport(data: ReportData, _now: Date): Sheet[] {
+  const { items, bakery } = data;
+  const cur = bakery.currency;
+  const rows: Record<string, string | number>[] = items.map((i) => {
+    const cost = i.costPrice || 0;
+    const marginPerUnit = i.price - cost;
+    return {
+      "Item Name": i.name,
+      Category: i.category || "General",
+      Unit: i.unit,
+      [`Bought Price (${cur})`]: cost,
+      [`Selling Price (${cur})`]: i.price,
+      [`Profit / Unit (${cur})`]: +marginPerUnit.toFixed(2),
+      "Margin %": cost ? ((marginPerUnit / i.price) * 100).toFixed(1) + "%" : i.price ? "100%" : "N/A",
+      "Tracks Expiry": i.tracksExpiry ? "Yes" : "No",
+      "Earliest Expiry": i.earliestExpiry ? ymdToDMY(i.earliestExpiry) : "—",
+      Status: i.qty <= bakery.lowStockAlert ? "Low Stock" : "OK",
+    };
+  });
+  if (rows.length === 0) rows.push({ "Item Name": "No products yet" });
+  return [{ name: "Products", rows }];
+}
+
+export function buildStockReport(data: ReportData, now: Date): Sheet[] {
+  const { items, bakery } = data;
+  const cur = bakery.currency;
+  const today = isoDateLocal(now);
+  const rows: Record<string, string | number>[] = items.map((i) => {
+    const cost = i.costPrice || 0;
+    const expiredUnits = i.batches
+      .filter((b) => b.expiryDate && b.expiryDate < today)
+      .reduce((s, b) => s + b.qty, 0);
+    const batchStr = i.batches
+      .map((b) => `${b.qty} × ${b.expiryDate ? ymdToDMY(b.expiryDate) : "no expiry"}`)
+      .join("; ");
+    return {
+      "Item Name": i.name,
+      Category: i.category || "General",
+      "Quantity in Stock": i.qty,
+      [`Stock Value at Cost (${cur})`]: +(i.qty * cost).toFixed(2),
+      [`Stock Value at Selling Price (${cur})`]: +(i.qty * i.price).toFixed(2),
+      Status: i.qty <= bakery.lowStockAlert ? "Low Stock" : "OK",
+      "Batch Count": i.batches.length,
+      "Expired Units": expiredUnits,
+      Batches: batchStr,
+    };
+  });
+  if (rows.length === 0) rows.push({ "Item Name": "No products yet" });
+  return [{ name: "Stock", rows }];
+}
+
+export function buildCustomersReport(data: ReportData, _now: Date): Sheet[] {
+  const { customers, bakery } = data;
+  const cur = bakery.currency;
+  const rows: Record<string, string | number>[] = customers.map((c) => ({
+    Phone: c.phone,
+    Name: c.name || "—",
+    "First Seen": new Date(c.firstSeen).toLocaleDateString("en-IN"),
+    "Visit Count": c.visitCount,
+    [`Total Spend (${cur})`]: +c.totalSpend.toFixed(2),
+    "Last Purchase": c.lastPurchase ? new Date(c.lastPurchase).toLocaleDateString("en-IN") : "—",
+  }));
+  if (rows.length === 0) rows.push({ Phone: "No customers yet" });
+  return [{ name: "Customers", rows }];
+}
+
+// ─── Analytics report builder (date-filtered) ────────────────────────────────
+
+export function buildAnalyticsReport(data: ReportData, range: DateRange, _now: Date): Sheet[] {
+  const { items, bills, bakery } = data;
+  const cur = bakery.currency;
+  const rangedBills = bills.filter((b) => inRange(b.date, range));
+  const activeBills = rangedBills.filter(isActiveBill);
+
+  // Top Selling Items
   const itemSales: Record<string, { qty: number; revenue: number; cogs: number }> = {};
   activeBills.forEach((b) =>
     b.items.forEach((bi) => {
       if (!itemSales[bi.name]) itemSales[bi.name] = { qty: 0, revenue: 0, cogs: 0 };
       itemSales[bi.name].qty += bi.qty;
       itemSales[bi.name].revenue += bi.qty * bi.price;
-      itemSales[bi.name].cogs += bi.qty * costOf(bi);
+      itemSales[bi.name].cogs += bi.qty * costOf(items, bi);
     }),
   );
   const topItems: Record<string, string | number>[] = Object.entries(itemSales)
@@ -167,27 +287,10 @@ export function buildReportSheets(data: ReportData, now: Date) {
       [`Est. Profit (${cur})`]: +(d.revenue - d.cogs).toFixed(2),
     }))
     .sort((a, b) => (b[`Revenue (${cur})`] as number) - (a[`Revenue (${cur})`] as number));
-  if (topItems.length === 0) topItems.push({ Item: "No sales yet", "Units Sold": 0, Revenue: 0, "Est. Profit": 0 });
+  if (topItems.length === 0) topItems.push({ Item: "No sales in range", "Units Sold": 0 });
 
-  // ── 6. Stock Movement Log ──
-  const stockLog: Record<string, string | number>[] = [...logs]
-    .sort((a, b) => +new Date(a.date) - +new Date(b.date))
-    .map((l) => ({
-      Date: new Date(l.date).toLocaleString("en-IN"),
-      Type: l.type === "in" ? "Stock In" : l.type === "out" ? "Stock Out" : "Bill / Sale",
-      User: l.user ?? "",
-      "Item / Bill": l.type === "bill" ? `Bill #${l.billNo}` : l.itemName ?? "",
-      Qty: l.qty || "",
-      Details:
-        l.type === "bill"
-          ? l.items ?? ""
-          : (l.supplier ? `Supplier: ${l.supplier}` : l.reason || "") + (l.notes ? ` — ${l.notes}` : ""),
-      [`Amount (${cur})`]: l.total || "",
-    }));
-  if (stockLog.length === 0) stockLog.push({ Date: "No activity yet", Type: "", User: "", "Item / Bill": "", Qty: "", Details: "", Amount: "" });
-
-  // ── 7. Category P&L (per-category profit & loss, active bills only) ──
-  const categoryPL: Record<string, string | number>[] = categoryPLData(bills, items).map((c) => ({
+  // Category P&L
+  const categoryPL: Record<string, string | number>[] = categoryPLData(rangedBills, items).map((c) => ({
     Category: c.category,
     [`Revenue (${cur})`]: +c.revenue.toFixed(2),
     [`COGS (${cur})`]: +c.cogs.toFixed(2),
@@ -195,11 +298,10 @@ export function buildReportSheets(data: ReportData, now: Date) {
     "Margin %": c.marginPct !== null ? c.marginPct.toFixed(1) + "%" : "N/A",
     "Revenue Share %": c.sharePct !== null ? c.sharePct.toFixed(1) + "%" : "N/A",
   }));
-  if (categoryPL.length === 0)
-    categoryPL.push({ Category: "No sales yet", Revenue: 0, COGS: 0, "Gross Profit": 0, "Margin %": "N/A", "Revenue Share %": "N/A" });
+  if (categoryPL.length === 0) categoryPL.push({ Category: "No sales in range" });
 
-  // ── 8. Stock Health & Reorder (days-of-cover verdict per item) ──
-  const stockHealth: Record<string, string | number>[] = stockHealthData(bills, items, bakery.lowStockAlert).map((s) => ({
+  // Stock Health
+  const stockHealth: Record<string, string | number>[] = stockHealthData(rangedBills, items, bakery.lowStockAlert).map((s) => ({
     "Item Name": s.item.name,
     Category: s.item.category || "General",
     "Current Qty": s.item.qty,
@@ -208,40 +310,117 @@ export function buildReportSheets(data: ReportData, now: Date) {
     "Days of Cover": s.daysCover !== null ? +s.daysCover.toFixed(1) : "∞",
     Verdict: s.verdict,
   }));
-  if (stockHealth.length === 0)
-    stockHealth.push({ "Item Name": "No items yet", Category: "", "Current Qty": 0, "Units Sold": 0, "Avg Sold / Day": 0, "Days of Cover": "", Verdict: "" });
+  if (stockHealth.length === 0) stockHealth.push({ "Item Name": "No items yet" });
 
-  // ── 9. Recommendations (plain-language business boosters) ──
-  const recommendations = recommendationsData(bills, items, bakery.lowStockAlert, cur).map((r) => ({
+  // Recommendations
+  const recommendations: Record<string, string | number>[] = recommendationsData(rangedBills, items, bakery.lowStockAlert, cur).map((r) => ({
     Priority: r.priority,
     Insight: r.insight,
     Detail: r.detail,
   }));
+  if (recommendations.length === 0) recommendations.push({ Priority: "", Insight: "Not enough data yet", Detail: "" });
 
-  return { summary, inventory, sales, growth, topItems, stockLog, categoryPL, stockHealth, recommendations };
+  return [
+    { name: "Top Selling Items", rows: topItems },
+    { name: "Category P&L", rows: categoryPL },
+    { name: "Stock Health", rows: stockHealth },
+    { name: "Recommendations", rows: recommendations },
+  ];
 }
 
-/** Build and download the Excel workbook. Loads `xlsx` on demand. */
-export async function exportExcelReport(data: ReportData): Promise<ReportResult> {
-  if (data.items.length === 0 && data.bills.length === 0) {
+
+// ─── Summary + Full report ───────────────────────────────────────────────────
+
+function buildSummary(data: ReportData, range: DateRange, now: Date): Sheet {
+  const { items, bills, bakery } = data;
+  const rangedBills = bills.filter((b) => inRange(b.date, range));
+  const activeBills = rangedBills.filter(isActiveBill);
+  const totalRevenue = activeBills.reduce((s, b) => s + b.total, 0);
+  const totalCOGS = activeBills.reduce(
+    (s, b) => s + b.items.reduce((si, bi) => si + bi.qty * costOf(items, bi), 0), 0);
+  const totalProfit = totalRevenue - totalCOGS;
+  const totalBills = activeBills.length;
+  const cancelledCount = rangedBills.length - totalBills;
+  const totalStockValue = items.reduce((s, i) => s + i.qty * i.price, 0);
+  const totalStockCost = items.reduce((s, i) => s + i.qty * (i.costPrice || 0), 0);
+  const lowStockCount = items.filter((i) => i.qty <= bakery.lowStockAlert).length;
+
+  const rows: Record<string, string | number>[] = [
+    { Metric: "Bakery Name", Value: bakery.name },
+    { Metric: "Report Generated On", Value: now.toLocaleString("en-IN") },
+    { Metric: "Total Revenue", Value: totalRevenue.toFixed(2) },
+    { Metric: "Total Cost of Goods Sold", Value: totalCOGS.toFixed(2) },
+    { Metric: "Total Gross Profit", Value: totalProfit.toFixed(2) },
+    { Metric: "Gross Margin %", Value: totalRevenue ? ((totalProfit / totalRevenue) * 100).toFixed(1) + "%" : "N/A" },
+    { Metric: "Total Bills (Active)", Value: totalBills },
+    { Metric: "Cancelled Bills", Value: cancelledCount },
+    { Metric: "Average Bill Value", Value: totalBills ? (totalRevenue / totalBills).toFixed(2) : 0 },
+    { Metric: "Total Items in Inventory", Value: items.length },
+    { Metric: "Current Stock Value (at Selling Price)", Value: totalStockValue.toFixed(2) },
+    { Metric: "Current Stock Value (at Bought Price)", Value: totalStockCost.toFixed(2) },
+    { Metric: "Low Stock Items", Value: lowStockCount },
+  ];
+  return { name: "Summary", rows };
+}
+
+export function buildFullReport(data: ReportData, range: DateRange, now: Date): Sheet[] {
+  return [
+    buildSummary(data, range, now),
+    ...buildSalesReport(data, range, now),
+    ...buildBillsReport(data, range, now),
+    ...buildProductsReport(data, now),
+    ...buildStockReport(data, now),
+    ...buildStockLogReport(data, range, now),
+    ...buildCustomersReport(data, now),
+    ...buildAnalyticsReport(data, range, now),
+  ];
+}
+
+export function buildReport(
+  type: ReportType, data: ReportData, range: DateRange, now: Date,
+): { sheets: Sheet[]; reportName: string; isSnapshot: boolean } {
+  const meta = REPORT_META[type];
+  const sheets =
+    type === "sales" ? buildSalesReport(data, range, now)
+    : type === "bills" ? buildBillsReport(data, range, now)
+    : type === "products" ? buildProductsReport(data, now)
+    : type === "stock" ? buildStockReport(data, now)
+    : type === "stockLog" ? buildStockLogReport(data, range, now)
+    : type === "customers" ? buildCustomersReport(data, now)
+    : type === "analytics" ? buildAnalyticsReport(data, range, now)
+    : buildFullReport(data, range, now);
+  return { sheets, reportName: meta.name, isSnapshot: meta.snapshot };
+}
+
+// ─── Excel writer ─────────────────────────────────────────────────────────────
+
+/** xlsx sheet names must be ≤31 chars and exclude : \ / ? * [ ] */
+function safeSheetName(name: string): string {
+  return name.replace(/[:\\/?*[\]]/g, " ").slice(0, 31);
+}
+
+/** Build and download an Excel file for one report type. Loads `xlsx` on demand. */
+export async function exportReport(
+  type: ReportType, data: ReportData, range: DateRange,
+): Promise<ReportResult> {
+  if (data.items.length === 0 && data.bills.length === 0 && data.customers.length === 0) {
     return { ok: false, error: "No data yet to export" };
   }
-  const XLSX = await import("xlsx");
   const now = new Date();
-  const sheets = buildReportSheets(data, now);
+  const { sheets, reportName, isSnapshot } = buildReport(type, data, range, now);
+  const XLSX = await import("xlsx");
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheets.summary), "Summary");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheets.inventory), "Inventory");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheets.sales), "Sales Report");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheets.growth), "Growth Analysis");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheets.topItems), "Top Selling Items");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheets.stockLog), "Stock Log");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheets.categoryPL), "Category P&L");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheets.stockHealth), "Stock Health");
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheets.recommendations), "Recommendations");
-
-  const safeName = (data.bakery.name || "Bakery").replace(/[^a-z0-9]/gi, "_");
-  const fileName = `${safeName}_Report_${now.toISOString().slice(0, 10)}.xlsx`;
-  XLSX.writeFile(wb, fileName);
+  for (const s of sheets) {
+    const header = headerRows(data.bakery, reportName, range, now, isSnapshot);
+    const ws = XLSX.utils.aoa_to_sheet([...header, []]); // header block + blank spacer row
+    if (s.rows.length) XLSX.utils.sheet_add_json(ws, s.rows, { origin: -1 });
+    XLSX.utils.book_append_sheet(wb, ws, safeSheetName(s.name));
+  }
+  XLSX.writeFile(wb, reportFileName(data.bakery, type, range, now));
   return { ok: true };
+}
+
+/** Back-compat: the combined workbook used by Settings and Dashboard. */
+export async function exportExcelReport(data: ReportData): Promise<ReportResult> {
+  return exportReport("full", data, { from: null, to: null });
 }
