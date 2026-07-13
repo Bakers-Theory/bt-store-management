@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Search, Plus, PackagePlus, PackageMinus, Package, Pencil, Trash2, X } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
@@ -41,12 +41,24 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
   const categories = useBakeryStore((s) => s.lists.categories);
   const toast = useUIStore((s) => s.toast);
   const requireOwnerAuth = useUIStore((s) => s.requireOwnerAuth);
+  const isOpen = useBakeryStore((s) => s.bakery.isOpen);
+  const refreshSettings = useBakeryStore((s) => s.refreshSettings);
 
   const [modal, setModal] = useState<ModalState>(
-    initialTab === "in" ? { type: "stockin" } : initialTab === "out" ? { type: "stockout" } : null,
+    initialTab === "in" && isOpen
+      ? { type: "stockin" }
+      : initialTab === "out" && isOpen
+        ? { type: "stockout" }
+        : null,
   );
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
+
+  // Best-effort: refresh store status so the view-only lock reflects reality.
+  // Inventory changes are enforced server-side regardless.
+  useEffect(() => {
+    refreshSettings();
+  }, [refreshSettings]);
 
   const filtered = items.filter(
     (i) =>
@@ -70,6 +82,12 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
 
   return (
     <>
+      {!isOpen && (
+        <div className="mb-3 flex items-center gap-2 rounded-xl border border-danger/30 bg-danger-bg px-4 py-3 text-[13px] font-bold text-danger">
+          <span>🔒</span>
+          Store is closed — inventory is view-only. Reopen the store to add or adjust stock.
+        </div>
+      )}
       {/* Stat tiles */}
       <div className="mb-[18px] grid grid-cols-2 gap-3.5 lg:grid-cols-4">
         <div className="rounded-2xl border border-line bg-warm-white px-[18px] py-[15px]">
@@ -117,24 +135,28 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
             </button>
           )}
         </div>
-        <button
-          className="btn-primary flex items-center gap-1.5 whitespace-nowrap text-[13.5px]"
-          onClick={() => setModal({ type: "add" })}
-        >
-          <Plus size={16} /> Add item
-        </button>
-        <button
-          className="btn-secondary flex items-center gap-1.5 whitespace-nowrap text-[13.5px]"
-          onClick={() => setModal({ type: "stockin" })}
-        >
-          <PackagePlus size={16} /> Add stock
-        </button>
-        <button
-          className="btn-secondary flex items-center gap-1.5 whitespace-nowrap text-[13.5px]"
-          onClick={() => setModal({ type: "stockout" })}
-        >
-          <PackageMinus size={16} /> Stock out
-        </button>
+        {isOpen && (
+          <>
+            <button
+              className="btn-primary flex items-center gap-1.5 whitespace-nowrap text-[13.5px]"
+              onClick={() => setModal({ type: "add" })}
+            >
+              <Plus size={16} /> Add item
+            </button>
+            <button
+              className="btn-secondary flex items-center gap-1.5 whitespace-nowrap text-[13.5px]"
+              onClick={() => setModal({ type: "stockin" })}
+            >
+              <PackagePlus size={16} /> Add stock
+            </button>
+            <button
+              className="btn-secondary flex items-center gap-1.5 whitespace-nowrap text-[13.5px]"
+              onClick={() => setModal({ type: "stockout" })}
+            >
+              <PackageMinus size={16} /> Stock out
+            </button>
+          </>
+        )}
       </div>
 
       {/* Category chips */}
@@ -205,20 +227,24 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
                     </span>
                   </div>
                   <div className="flex justify-end gap-1.5">
-                    <button
-                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-line bg-warm-white text-sm"
-                      onClick={() => setModal({ type: "edit", id: item.id })}
-                      aria-label={`Edit ${item.name}`}
-                    >
-                      <Pencil size={16} />
-                    </button>
-                    <button
-                      className="flex h-7 w-7 items-center justify-center rounded-lg border-none bg-danger-bg text-sm text-danger"
-                      onClick={() => remove(item.id, item.name)}
-                      aria-label={`Delete ${item.name}`}
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    {isOpen && (
+                      <>
+                        <button
+                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-line bg-warm-white text-sm"
+                          onClick={() => setModal({ type: "edit", id: item.id })}
+                          aria-label={`Edit ${item.name}`}
+                        >
+                          <Pencil size={16} />
+                        </button>
+                        <button
+                          className="flex h-7 w-7 items-center justify-center rounded-lg border-none bg-danger-bg text-sm text-danger"
+                          onClick={() => remove(item.id, item.name)}
+                          aria-label={`Delete ${item.name}`}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               );
@@ -253,20 +279,24 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
                     {st.label}
                   </span>
                   <div className="flex shrink-0 gap-1.5">
-                    <button
-                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-line bg-warm-white text-sm"
-                      onClick={() => setModal({ type: "edit", id: item.id })}
-                      aria-label={`Edit ${item.name}`}
-                    >
-                      <Pencil size={16} />
-                    </button>
-                    <button
-                      className="flex h-7 w-7 items-center justify-center rounded-lg border-none bg-danger-bg text-sm text-danger"
-                      onClick={() => remove(item.id, item.name)}
-                      aria-label={`Delete ${item.name}`}
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    {isOpen && (
+                      <>
+                        <button
+                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-line bg-warm-white text-sm"
+                          onClick={() => setModal({ type: "edit", id: item.id })}
+                          aria-label={`Edit ${item.name}`}
+                        >
+                          <Pencil size={16} />
+                        </button>
+                        <button
+                          className="flex h-7 w-7 items-center justify-center rounded-lg border-none bg-danger-bg text-sm text-danger"
+                          onClick={() => remove(item.id, item.name)}
+                          aria-label={`Delete ${item.name}`}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               );
