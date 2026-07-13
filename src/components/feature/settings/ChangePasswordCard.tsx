@@ -24,11 +24,14 @@ export function ChangePasswordCard() {
     setBusy(true);
     const supabase = createClient();
     const { error } = await supabase.auth.updateUser({ password });
-    setBusy(false);
     if (error) {
+      setBusy(false);
       setErr(error.message);
       return;
     }
+    // Best-effort audit entry; never block the success path on it.
+    await supabase.rpc("log_password_change");
+    setBusy(false);
     toast("Password updated");
     setPassword("");
     setErr("");

@@ -17,6 +17,9 @@ export interface Bakery {
   taxRate: number;
   lowStockAlert: number;
   expiringSoonDays: number;
+  isOpen: boolean;
+  statusChangedAt: string | null; // ISO, null until the first toggle
+  statusChangedBy: string; // name of the user who last changed status ("" if never)
 }
 
 export interface Item {
@@ -84,7 +87,19 @@ export interface Bill {
   cancelledBy?: string;
 }
 
-export type LogType = "in" | "out" | "bill" | "cancel" | "delete";
+export type LogType =
+  | "in"
+  | "out"
+  | "bill"
+  | "cancel"
+  | "delete"
+  | "open"
+  | "close"
+  | "settings"
+  | "staff_add"
+  | "staff_edit"
+  | "staff_remove"
+  | "password";
 
 export interface Log {
   id: string;

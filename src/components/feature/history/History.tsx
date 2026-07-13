@@ -9,8 +9,14 @@ import {
   PackagePlus,
   Receipt as ReceiptIcon,
   ReceiptText,
+  KeyRound,
   Search,
+  Settings,
+  Store,
   Trash2,
+  UserCog,
+  UserMinus,
+  UserPlus,
   X,
 } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
@@ -18,7 +24,7 @@ import { useCurrentUser } from "@/components/system/AuthProvider";
 import { useUIStore } from "@/lib/ui-store";
 import { hasPermission } from "@/lib/permissions";
 import { formatDateFull, initials } from "@/lib/format";
-import { fetchBillsPage, fetchLogsPage } from "@/lib/supabase-data";
+import { fetchAdminLogsPage, fetchBillsPage, fetchLogsPage } from "@/lib/supabase-data";
 import { tabCls } from "@/components/ui/tabClass";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ViewBillModal } from "@/components/feature/bill/ViewBillModal";
@@ -86,10 +92,22 @@ const chipCls = (active: boolean) =>
   }`;
 
 const logIcon = (t: Log["type"]) =>
-  t === "in" ? PackagePlus : t === "out" ? PackageMinus : t === "cancel" ? Ban : t === "delete" ? Trash2 : ReceiptIcon;
+  t === "in" ? PackagePlus
+    : t === "out" ? PackageMinus
+    : t === "cancel" ? Ban
+    : t === "delete" ? Trash2
+    : t === "open" || t === "close" ? Store
+    : t === "settings" ? Settings
+    : t === "staff_add" ? UserPlus
+    : t === "staff_edit" ? UserCog
+    : t === "staff_remove" ? UserMinus
+    : t === "password" ? KeyRound
+    : ReceiptIcon;
 
 const logTone = (t: Log["type"]): "success" | "danger" | "brown" =>
-  t === "in" ? "success" : t === "out" || t === "cancel" || t === "delete" ? "danger" : "brown";
+  t === "in" || t === "open" || t === "staff_add" ? "success"
+    : t === "out" || t === "cancel" || t === "delete" || t === "close" || t === "staff_remove" ? "danger"
+    : "brown";
 
 const toneClasses: Record<"success" | "danger" | "brown", { bg: string; text: string }> = {
   success: { bg: "bg-success-bg", text: "text-success" },
@@ -97,16 +115,21 @@ const toneClasses: Record<"success" | "danger" | "brown", { bg: string; text: st
   brown: { bg: "bg-cream-dark", text: "text-brown" },
 };
 
-const logTypeLabel = (t: Log["type"]) =>
-  t === "in"
-    ? "Stock in"
-    : t === "out"
-      ? "Stock out"
-      : t === "cancel"
-        ? "Bill cancelled"
-        : t === "delete"
-          ? "Bill deleted"
-          : "Bill generated";
+const LOG_LABELS: Record<Log["type"], string> = {
+  in: "Stock in",
+  out: "Stock out",
+  bill: "Bill generated",
+  cancel: "Bill cancelled",
+  delete: "Bill deleted",
+  open: "Store opened",
+  close: "Store closed",
+  settings: "Store settings updated",
+  staff_add: "Staff added",
+  staff_edit: "Staff updated",
+  staff_remove: "Staff removed",
+  password: "Password changed",
+};
+const logTypeLabel = (t: Log["type"]) => LOG_LABELS[t];
 
 const logMeta = (l: Log) => {
   const parts: string[] = [];
@@ -129,7 +152,8 @@ export function History() {
 
   const canSales = hasPermission(user, "sales");
   const canInv = hasPermission(user, "inventory");
-  const [tab, setTab] = useState<"bills" | "logs">(canSales ? "bills" : "logs");
+  const isOwner = user?.role === "Owner";
+  const [tab, setTab] = useState<"bills" | "logs" | "store">(canSales ? "bills" : "logs");
   const [viewBill, setViewBill] = useState<Bill | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
@@ -140,11 +164,15 @@ export function History() {
   const [billsMore, setBillsMore] = useState(cached?.billsMore ?? false);
   const [logs, setLogs] = useState<Log[]>(cached?.logs ?? []);
   const [logsMore, setLogsMore] = useState(cached?.logsMore ?? false);
+  const [adminLogs, setAdminLogs] = useState<Log[]>([]);
+  const [adminLogsMore, setAdminLogsMore] = useState(false);
+  const [adminLoaded, setAdminLoaded] = useState(false);
   const [loaded, setLoaded] = useState(cached != null);
   // Per-bill in-flight cancel/delete, and the two "Load more" buttons.
   const [busyBill, setBusyBill] = useState<Set<string>>(new Set());
   const [loadingBills, setLoadingBills] = useState(false);
   const [loadingLogs, setLoadingLogs] = useState(false);
+  const [loadingAdminLogs, setLoadingAdminLogs] = useState(false);
 
   const setBillBusy = (id: string, on: boolean) =>
     setBusyBill((prev) => {
@@ -184,13 +212,23 @@ export function History() {
             }
           }),
         );
+      if (isOwner)
+        jobs.push(
+          fetchAdminLogsPage(0, PAGE_SIZE).then((p) => {
+            if (alive) {
+              setAdminLogs(p.logs);
+              setAdminLogsMore(p.hasMore);
+              setAdminLoaded(true);
+            }
+          }),
+        );
       await Promise.all(jobs);
       if (alive) setLoaded(true);
     })();
     return () => {
       alive = false;
     };
-  }, [canSales, canInv]);
+  }, [canSales, canInv, isOwner]);
 
   const loadMoreBills = async () => {
     setLoadingBills(true);
@@ -211,6 +249,17 @@ export function History() {
       setLogsMore(p.hasMore);
     } finally {
       setLoadingLogs(false);
+    }
+  };
+
+  const loadMoreAdminLogs = async () => {
+    setLoadingAdminLogs(true);
+    try {
+      const p = await fetchAdminLogsPage(adminLogs.length, PAGE_SIZE);
+      setAdminLogs((prev) => [...prev, ...p.logs]);
+      setAdminLogsMore(p.hasMore);
+    } finally {
+      setLoadingAdminLogs(false);
     }
   };
 
@@ -287,6 +336,9 @@ export function History() {
         )}
         {canInv && (
           <button className={tabCls(tab === "logs")} onClick={() => setTab("logs")}>Stock Log</button>
+        )}
+        {isOwner && (
+          <button className={tabCls(tab === "store")} onClick={() => setTab("store")}>Store</button>
         )}
       </div>
 
@@ -425,6 +477,7 @@ export function History() {
             {logs.map((l) => {
               const tone = toneClasses[logTone(l.type)];
               const isStock = l.type === "in" || l.type === "out";
+              const isStore = l.type === "open" || l.type === "close";
               const sign = l.type === "in" ? "+" : "−";
               const Icon = logIcon(l.type);
               return (
@@ -434,7 +487,11 @@ export function History() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-bold text-ink">
-                      {isStock ? `${itemEmoji(l.itemId)} ${l.itemName}` : `Bill #${l.billNo}`}
+                      {isStock
+                        ? `${itemEmoji(l.itemId)} ${l.itemName}`
+                        : isStore
+                          ? "Store"
+                          : `Bill #${l.billNo}`}
                     </div>
                     <div className="truncate text-xs text-ink-light">
                       {logTypeLabel(l.type)}
@@ -463,6 +520,56 @@ export function History() {
               >
                 {loadingLogs && <Loader2 size={14} className="animate-spin" />}
                 {loadingLogs ? "Loading…" : "Load more"}
+              </button>
+            </div>
+          )}
+          </>
+        )
+      )}
+
+      {tab === "store" && (
+        !adminLoaded ? (
+          <LogsSkeleton />
+        ) : adminLogs.length === 0 ? (
+          <div className="px-5 py-10 text-center text-ink-muted">
+            <div className="mb-3 flex justify-center">
+              <Store size={48} />
+            </div>
+            <p className="text-sm">No store or staff activity yet</p>
+          </div>
+        ) : (
+          <>
+          <div className="overflow-hidden rounded-[18px] border border-line bg-warm-white shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
+            {adminLogs.map((l) => {
+              const tone = toneClasses[logTone(l.type)];
+              const Icon = logIcon(l.type);
+              return (
+                <div key={l.id} className="flex items-center gap-3.5 border-t border-line-soft px-5 py-3.5 first:border-t-0">
+                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] ${tone.bg} ${tone.text}`}>
+                    <Icon size={18} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-bold text-ink">{logTypeLabel(l.type)}</div>
+                    {logMeta(l) && (
+                      <div className="truncate text-xs text-ink-light">{logMeta(l)}</div>
+                    )}
+                  </div>
+                  <div className="shrink-0 text-right text-[11.5px] text-ink-light">
+                    {formatDateFull(l.date)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {adminLogsMore && (
+            <div className="mt-3 text-center">
+              <button
+                className="btn-secondary inline-flex items-center justify-center gap-2 text-[13px] disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={loadMoreAdminLogs}
+                disabled={loadingAdminLogs}
+              >
+                {loadingAdminLogs && <Loader2 size={14} className="animate-spin" />}
+                {loadingAdminLogs ? "Loading…" : "Load more"}
               </button>
             </div>
           )}

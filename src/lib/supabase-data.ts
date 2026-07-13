@@ -81,6 +81,9 @@ interface SettingsRow {
   tax_rate: number;
   low_stock_alert: number;
   expiring_soon_days: number;
+  is_open: boolean;
+  status_changed_at: string | null;
+  status_changed_by: string;
 }
 interface BatchRow {
   id: string;
@@ -173,6 +176,9 @@ const mapBakery = (r: SettingsRow): Bakery => ({
   taxRate: r.tax_rate,
   lowStockAlert: r.low_stock_alert,
   expiringSoonDays: r.expiring_soon_days,
+  isOpen: r.is_open,
+  statusChangedAt: r.status_changed_at,
+  statusChangedBy: r.status_changed_by,
 });
 
 const mapBatch = (r: BatchRow): Batch => ({
@@ -436,11 +442,27 @@ export interface LogsPage {
   hasMore: boolean;
 }
 
-/** One page of activity-log entries (newest first). */
+/** One page of stock/bill movement log entries (newest first). Store & staff
+ *  audit events are excluded here — they live in the Owner-only Store tab. */
 export async function fetchLogsPage(offset: number, limit: number): Promise<LogsPage> {
   const supabase = createClient();
   const { data } = await supabase
     .from("activity_log_v")
+    .select("*")
+    .in("type", ["in", "out", "bill", "cancel", "delete"])
+    .order("created_at", { ascending: false })
+    .range(offset, offset + limit - 1);
+  const rows = (data ?? []) as LogRow[];
+  return { logs: rows.map(mapLog), hasMore: rows.length === limit };
+}
+
+/** One page of administrative audit entries (store settings, staff, passwords,
+ *  open/close) for the Owner-only Store tab. Returns nothing for non-owners
+ *  (the view is gated on is_owner()). */
+export async function fetchAdminLogsPage(offset: number, limit: number): Promise<LogsPage> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("activity_log_admin_v")
     .select("*")
     .order("created_at", { ascending: false })
     .range(offset, offset + limit - 1);
@@ -543,6 +565,8 @@ export const rpcSaveSettings = (p: {
   gst: string; currency: string; taxRate: number; lowStockAlert: number;
   expiringSoonDays: number;
 }) => rpc<void>("save_settings", { p });
+export const rpcSetStoreStatus = (open: boolean, by: string) =>
+  rpc<void>("set_store_status", { p_open: open, p_by: by });
 export const rpcUpdateLogo = (url: string | null) => rpc<void>("update_logo", { p_url: url });
 export const rpcClearAllData = () => rpc<void>("clear_all_data", {});
 

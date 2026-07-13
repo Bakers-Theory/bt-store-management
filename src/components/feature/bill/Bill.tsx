@@ -22,6 +22,8 @@ export function Bill() {
   const toast = useUIStore((s) => s.toast);
   const requestPrint = useUIStore((s) => s.requestPrint);
   const currentUser = useCurrentUser();
+  const isOpen = useBakeryStore((s) => s.bakery.isOpen);
+  const refreshSettings = useBakeryStore((s) => s.refreshSettings);
 
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
@@ -68,6 +70,12 @@ export function Bill() {
           expiryStatus(it.earliestExpiry, it.tracksExpiry, expiringSoonDays, new Date()) === "expired",
       );
   }, [lines, items, expiringSoonDays]);
+
+  // Best-effort: pull the latest store status so a biller sees an accurate
+  // Open/Closed state. Bill creation is enforced server-side regardless.
+  useEffect(() => {
+    refreshSettings();
+  }, [refreshSettings]);
 
   // Autofill on repeat billing: once a full 10-digit phone is entered, look the
   // customer up (debounced, best-effort). On a hit, prefill an empty name field
@@ -136,6 +144,10 @@ export function Bill() {
   const clearCart = () => setLines([]);
 
   const generate = async () => {
+    if (!isOpen) {
+      toast("Store is closed — new bills cannot be created");
+      return;
+    }
     if (lines.length === 0) {
       toast("Add items to the order first");
       return;
@@ -174,6 +186,21 @@ export function Bill() {
   };
 
   const done = () => setReceipt(null);
+
+  if (!isOpen) {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-2xl border border-line bg-warm-white px-6 py-16 text-center shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
+        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-danger-bg text-3xl">
+          🔒
+        </div>
+        <h2 className="text-lg font-extrabold text-ink">Store is closed</h2>
+        <p className="mt-2 max-w-sm text-sm text-ink-muted">
+          New bills can&apos;t be created while the store is closed. An admin can reopen the
+          store from the status toggle to resume billing.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -632,6 +659,7 @@ export function Bill() {
                   onClick={generate}
                   disabled={
                     generating ||
+                    !isOpen ||
                     customer.name.trim() === "" ||
                     (customer.phone.length > 0 && customer.phone.length !== 10)
                   }

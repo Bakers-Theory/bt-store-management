@@ -13,6 +13,9 @@ const DEFAULT_BAKERY: Bakery = {
   taxRate: 0,
   lowStockAlert: 5,
   expiringSoonDays: 3,
+  isOpen: true,
+  statusChangedAt: null,
+  statusChangedBy: "",
 };
 
 const item: Item = {
