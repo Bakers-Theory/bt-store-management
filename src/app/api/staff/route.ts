@@ -31,7 +31,8 @@ const bad = (msg: string) => NextResponse.json({ error: msg }, { status: 400 });
 
 // Create staff
 export async function POST(req: Request) {
-  if (!(await requireOwner())) return forbidden();
+  const ownerId = await requireOwner();
+  if (!ownerId) return forbidden();
   const { userId, name, password, permissions } = (await req.json()) as {
     userId: string;
     name: string;
@@ -62,12 +63,18 @@ export async function POST(req: Request) {
       : error.message;
     return bad(msg);
   }
+  await admin.from("activity_log").insert({
+    type: "staff_add",
+    actor: ownerId,
+    notes: `Added staff ${name.trim()} (${userId.trim()})`,
+  });
   return NextResponse.json({ ok: true });
 }
 
 // Edit staff (name / permissions / optional password reset)
 export async function PATCH(req: Request) {
-  if (!(await requireOwner())) return forbidden();
+  const ownerId = await requireOwner();
+  if (!ownerId) return forbidden();
   const { id, name, permissions, password } = (await req.json()) as {
     id: string;
     name: string;
@@ -77,6 +84,13 @@ export async function PATCH(req: Request) {
   if (!id || !name?.trim()) return bad("Name is required.");
 
   const admin = createAdminClient();
+  // Snapshot the current profile so the audit entry can describe what changed.
+  const { data: before } = await admin
+    .from("profiles")
+    .select("name,perm_sales,perm_inventory,perm_analytics")
+    .eq("id", id)
+    .single();
+
   const { error: profErr } = await admin
     .from("profiles")
     .update({
@@ -89,25 +103,56 @@ export async function PATCH(req: Request) {
     .eq("role", "Staff"); // never edit the Owner via this route
   if (profErr) return bad(profErr.message);
 
+  // Audit: log the field-level diff (skipped when nothing actually changed).
+  if (before) {
+    const changes: string[] = [];
+    if (before.name !== name.trim()) changes.push(`name → ${name.trim()}`);
+    const perm = (label: string, was: boolean, now: boolean) => {
+      if (was !== now) changes.push(`${now ? "+" : "−"}${label}`);
+    };
+    perm("Sales", before.perm_sales, !!permissions?.sales);
+    perm("Inventory", before.perm_inventory, !!permissions?.inventory);
+    perm("Analytics", before.perm_analytics, !!permissions?.analytics);
+    if (changes.length) {
+      await admin.from("activity_log").insert({
+        type: "staff_edit",
+        actor: ownerId,
+        notes: `Updated ${before.name}: ${changes.join(", ")}`,
+      });
+    }
+  }
+
   if (password) {
     const { error: pwErr } = await admin.auth.admin.updateUserById(id, { password });
     if (pwErr) return bad(pwErr.message);
+    await admin.from("activity_log").insert({
+      type: "password",
+      actor: ownerId,
+      notes: `Reset password for ${before?.name ?? name.trim()}`,
+    });
   }
   return NextResponse.json({ ok: true });
 }
 
 // Delete staff
 export async function DELETE(req: Request) {
-  if (!(await requireOwner())) return forbidden();
+  const ownerId = await requireOwner();
+  if (!ownerId) return forbidden();
   const { id } = (await req.json()) as { id: string };
   if (!id) return bad("Missing user id.");
 
   const admin = createAdminClient();
   // Guard: never delete the Owner.
-  const { data: prof } = await admin.from("profiles").select("role").eq("id", id).single();
+  const { data: prof } = await admin.from("profiles").select("role,name").eq("id", id).single();
   if (prof?.role === "Owner") return bad("The Owner account cannot be deleted.");
 
   const { error } = await admin.auth.admin.deleteUser(id);
   if (error) return bad(error.message);
+  // Log after deletion succeeds; actor is the Owner, so it survives the cascade.
+  await admin.from("activity_log").insert({
+    type: "staff_remove",
+    actor: ownerId,
+    notes: `Removed staff ${prof?.name ?? ""}`.trim(),
+  });
   return NextResponse.json({ ok: true });
 }
