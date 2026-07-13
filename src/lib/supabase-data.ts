@@ -81,6 +81,9 @@ interface SettingsRow {
   tax_rate: number;
   low_stock_alert: number;
   expiring_soon_days: number;
+  is_open: boolean;
+  status_changed_at: string | null;
+  status_changed_by: string;
 }
 interface BatchRow {
   id: string;
@@ -173,6 +176,9 @@ const mapBakery = (r: SettingsRow): Bakery => ({
   taxRate: r.tax_rate,
   lowStockAlert: r.low_stock_alert,
   expiringSoonDays: r.expiring_soon_days,
+  isOpen: r.is_open,
+  statusChangedAt: r.status_changed_at,
+  statusChangedBy: r.status_changed_by,
 });
 
 const mapBatch = (r: BatchRow): Batch => ({
@@ -543,6 +549,8 @@ export const rpcSaveSettings = (p: {
   gst: string; currency: string; taxRate: number; lowStockAlert: number;
   expiringSoonDays: number;
 }) => rpc<void>("save_settings", { p });
+export const rpcSetStoreStatus = (open: boolean, by: string) =>
+  rpc<void>("set_store_status", { p_open: open, p_by: by });
 export const rpcUpdateLogo = (url: string | null) => rpc<void>("update_logo", { p_url: url });
 export const rpcClearAllData = () => rpc<void>("clear_all_data", {});
 

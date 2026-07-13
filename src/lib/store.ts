@@ -16,6 +16,7 @@ import {
   rpcDeleteListValue,
   rpcGenerateBill,
   rpcSaveSettings,
+  rpcSetStoreStatus,
   rpcStockIn,
   rpcStockOut,
   rpcUpdateBatchExpiry,
@@ -99,6 +100,8 @@ interface StoreState {
   deleteBill: (id: string, byName: string) => Promise<Result>;
 
   saveSettings: (input: SettingsInput) => Promise<void>;
+  setStoreStatus: (open: boolean, byName: string) => Promise<void>;
+  refreshSettings: () => Promise<void>;
   uploadLogo: (dataUrl: string) => Promise<void>;
   removeLogo: () => Promise<void>;
   clearAllData: () => Promise<void>;
@@ -124,6 +127,9 @@ const PLACEHOLDER_BAKERY: Bakery = {
   taxRate: 0,
   lowStockAlert: 5,
   expiringSoonDays: 3,
+  isOpen: true,
+  statusChangedAt: null,
+  statusChangedBy: "",
 };
 
 const EMPTY_LISTS: StoreLists = { categories: [], emojis: [], units: [], reasons: [] };
@@ -298,6 +304,13 @@ export const useBakeryStore = create<StoreState>()((set, get) => {
       await rpcSaveSettings(input);
       await refreshSettings();
     },
+
+    setStoreStatus: async (open, byName) => {
+      await rpcSetStoreStatus(open, byName);
+      await refreshSettings();
+    },
+
+    refreshSettings,
 
     uploadLogo: async (dataUrl) => {
       await rpcUpdateLogo(dataUrl);
