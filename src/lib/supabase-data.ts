@@ -442,11 +442,27 @@ export interface LogsPage {
   hasMore: boolean;
 }
 
-/** One page of activity-log entries (newest first). */
+/** One page of stock/bill movement log entries (newest first). Store & staff
+ *  audit events are excluded here — they live in the Owner-only Store tab. */
 export async function fetchLogsPage(offset: number, limit: number): Promise<LogsPage> {
   const supabase = createClient();
   const { data } = await supabase
     .from("activity_log_v")
+    .select("*")
+    .in("type", ["in", "out", "bill", "cancel", "delete"])
+    .order("created_at", { ascending: false })
+    .range(offset, offset + limit - 1);
+  const rows = (data ?? []) as LogRow[];
+  return { logs: rows.map(mapLog), hasMore: rows.length === limit };
+}
+
+/** One page of administrative audit entries (store settings, staff, passwords,
+ *  open/close) for the Owner-only Store tab. Returns nothing for non-owners
+ *  (the view is gated on is_owner()). */
+export async function fetchAdminLogsPage(offset: number, limit: number): Promise<LogsPage> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("activity_log_admin_v")
     .select("*")
     .order("created_at", { ascending: false })
     .range(offset, offset + limit - 1);

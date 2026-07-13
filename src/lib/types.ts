@@ -87,7 +87,19 @@ export interface Bill {
   cancelledBy?: string;
 }
 
-export type LogType = "in" | "out" | "bill" | "cancel" | "delete" | "open" | "close";
+export type LogType =
+  | "in"
+  | "out"
+  | "bill"
+  | "cancel"
+  | "delete"
+  | "open"
+  | "close"
+  | "settings"
+  | "staff_add"
+  | "staff_edit"
+  | "staff_remove"
+  | "password";
 
 export interface Log {
   id: string;
