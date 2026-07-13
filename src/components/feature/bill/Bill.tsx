@@ -737,7 +737,7 @@ export function Bill() {
             </button>
           </div>
           <div className="mt-2.5 text-center text-xs text-ink-muted">
-            Print to a 3&quot; (76mm) thermal printer
+            Print to a 3&quot; (80mm) thermal printer
           </div>
         </Modal>
       )}

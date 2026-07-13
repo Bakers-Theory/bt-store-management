@@ -224,12 +224,16 @@
   .receipt {
     font-family: "Courier New", monospace;
     font-size: 13px;
+    font-weight: 600;
     background: #fff;
     padding: 16px;
     border-radius: 12px;
     border: 1px dashed var(--color-line-strong);
     max-width: 300px;
     margin: 0 auto;
+  }
+  .receipt .font-bold {
+    font-weight: 900;
   }
   .receipt-center {
     text-align: center;
@@ -245,16 +249,16 @@
     line-height: 1.6;
   }
   .receipt-logo {
-    width: 60px;
-    height: 60px;
+    width: 80px;
+    height: 80px;
     object-fit: cover;
     border-radius: 8px;
     margin: 0 auto 8px;
     display: block;
   }
   .receipt-logo-placeholder {
-    width: 60px;
-    height: 60px;
+    width: 80px;
+    height: 80px;
     background: var(--color-cream-dark);
     border-radius: 8px;
     margin: 0 auto 8px;
@@ -284,7 +288,7 @@
 /* Print — only the receipt inside .print-area is visible */
 @media print {
   @page {
-    size: 76mm auto;
+    size: 80mm auto;
     margin: 0;
   }
   body > *:not(.print-area) {
@@ -298,7 +302,7 @@
     position: static !important;
     left: auto !important;
     top: auto !important;
-    width: 76mm;
+    width: 80mm;
     background: #fff;
     font-family: "Courier New", monospace;
   }
@@ -314,7 +318,7 @@
   }
   .print-area .receipt-logo,
   .print-area .receipt-logo-placeholder {
-    width: 15mm;
-    height: 15mm;
+    width: 20mm;
+    height: 20mm;
   }
 }
