@@ -7,10 +7,39 @@ import { useUIStore } from "@/lib/ui-store";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { computeTotals } from "@/lib/bill";
 import { expiryStatus } from "@/lib/expiry";
+import { formatDate } from "@/lib/format";
 import { fetchCustomerByPhone } from "@/lib/supabase-data";
 import { Modal } from "@/components/ui/Modal";
 import { Receipt } from "./Receipt";
 import type { Bill as BillType, BillLine, Customer, Item, PaymentMethod } from "@/lib/types";
+
+// Sellable stock for an item: expired batches are never sold (bill generation
+// consumes fresh batches only), so the bill page ignores them. Returns the
+// non-expired quantity and the soonest non-expired expiry date (for display).
+function freshInfo(item: Item, windowDays: number, today: Date) {
+  const fresh = item.batches.filter(
+    (b) => expiryStatus(b.expiryDate, item.tracksExpiry, windowDays, today) !== "expired",
+  );
+  const qty = fresh.reduce((n, b) => n + b.qty, 0);
+  const dates = fresh.map((b) => b.expiryDate).filter((d): d is string => !!d);
+  const earliestExpiry = dates.length ? dates.reduce((a, b) => (a < b ? a : b)) : null;
+  return { qty, earliestExpiry };
+}
+
+function ExpiryBadge({
+  earliestExpiry, tracksExpiry, windowDays, className = "ml-1.5",
+}: {
+  earliestExpiry: string | null; tracksExpiry: boolean; windowDays: number; className?: string;
+}) {
+  const s = expiryStatus(earliestExpiry, tracksExpiry, windowDays, new Date());
+  if (s === "none" || s === "fresh") return null;
+  const cls = s === "expired" ? "bg-danger-bg text-danger" : "bg-warn-bg text-warn";
+  return (
+    <span className={`${className} rounded-full px-2 py-0.5 text-[10.5px] font-bold ${cls}`}>
+      {s === "expired" ? "Expired" : "Expiring"}
+    </span>
+  );
+}
 
 export function Bill() {
   const items = useBakeryStore((s) => s.items);
@@ -36,7 +65,6 @@ export function Bill() {
   const [nameErr, setNameErr] = useState("");
   const [returning, setReturning] = useState<Customer | null>(null);
   const [generating, setGenerating] = useState(false);
-  const [expiryConfirmed, setExpiryConfirmed] = useState(false);
   const [lines, setLines] = useState<BillLine[]>([]);
   const [receipt, setReceipt] = useState<BillType | null>(null);
 
@@ -44,32 +72,27 @@ export function Bill() {
   const { subtotal, discount: discountAmt, tax, total } = computeTotals(lines, taxRate, discountPct);
   const cartCount = lines.reduce((n, l) => n + l.qty, 0);
 
+  // Each row carries its fresh (non-expired) qty + earliest fresh expiry.
+  // Products with no fresh stock (out of stock, or only expired batches) are
+  // dropped — they can't be sold.
   const filteredItems = useMemo(() => {
     const q = search.toLowerCase();
-    return items.filter(
-      (i) =>
-        (category === "All" || i.category === category) &&
-        i.name.toLowerCase().includes(q),
-    );
-  }, [items, search, category]);
+    const today = new Date();
+    return items
+      .filter(
+        (i) =>
+          (category === "All" || i.category === category) &&
+          i.name.toLowerCase().includes(q),
+      )
+      .map((item) => ({ item, ...freshInfo(item, expiringSoonDays, today) }))
+      .filter((row) => row.qty > 0);
+  }, [items, search, category, expiringSoonDays]);
 
   const cartQtyById = useMemo(() => {
     const map = new Map<string, number>();
     for (const l of lines) map.set(l.itemId, l.qty);
     return map;
   }, [lines]);
-
-  // Cart lines whose item has expired in-stock batches (FIFO will hit them first).
-  const expiredInCart = useMemo(() => {
-    const byId = new Map(items.map((i) => [i.id, i]));
-    return lines
-      .map((l) => byId.get(l.itemId))
-      .filter(
-        (it): it is NonNullable<typeof it> =>
-          !!it &&
-          expiryStatus(it.earliestExpiry, it.tracksExpiry, expiringSoonDays, new Date()) === "expired",
-      );
-  }, [lines, items, expiringSoonDays]);
 
   // Best-effort: pull the latest store status so a biller sees an accurate
   // Open/Closed state. Bill creation is enforced server-side regardless.
@@ -161,11 +184,6 @@ export function Bill() {
       setPhoneErr("Phone number must be exactly 10 digits");
       return;
     }
-    if (expiredInCart.length > 0 && !expiryConfirmed) {
-      setExpiryConfirmed(true); // reveal the warning; require a second tap to proceed
-      toast("Some items have expired stock — review the warning, then tap again to sell");
-      return;
-    }
     setGenerating(true);
     try {
       const bill = await generateBill(customer, lines, payment, discountPct, currentUser?.name ?? "");
@@ -175,7 +193,6 @@ export function Bill() {
       setDiscount("");
       setPhoneErr("");
       setNameErr("");
-      setExpiryConfirmed(false);
       setCartOpen(false);
       setReceipt(bill);
     } catch (e) {
@@ -268,8 +285,8 @@ export function Bill() {
             ))}
           </div>
           {view === "grid" ? (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-[repeat(auto-fill,minmax(158px,1fr))]">
-              {filteredItems.map((item) => {
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
+              {filteredItems.map(({ item, qty: freshQty, earliestExpiry: freshExpiry }) => {
                 const inCart = cartQtyById.get(item.id) || 0;
                 return (
                   <div key={item.id} className="relative">
@@ -288,6 +305,18 @@ export function Bill() {
                       <div className="num text-[13px] font-extrabold text-brown">
                         {currency}
                         {item.price.toFixed(2)}
+                      </div>
+                      <div className="flex items-center gap-x-1.5 text-[11px] font-semibold text-ink-muted">
+                        <span className="num min-w-0 truncate">
+                          {freshQty} {item.unit}
+                          {item.tracksExpiry && freshExpiry && ` · ${formatDate(freshExpiry)}`}
+                        </span>
+                        <ExpiryBadge
+                          earliestExpiry={freshExpiry}
+                          tracksExpiry={item.tracksExpiry}
+                          windowDays={expiringSoonDays}
+                          className="shrink-0"
+                        />
                       </div>
                     </button>
                     {inCart > 0 && (
@@ -329,7 +358,7 @@ export function Bill() {
                   <div className="text-right">Price</div>
                   <div className="min-w-[92px] text-right">In cart</div>
                 </div>
-                {filteredItems.map((item) => {
+                {filteredItems.map(({ item, qty: freshQty, earliestExpiry: freshExpiry }) => {
                   const inCart = cartQtyById.get(item.id) || 0;
                   return (
                     <button
@@ -339,7 +368,21 @@ export function Bill() {
                     >
                       <div className="flex min-w-0 items-center gap-3">
                         <span className="text-[22px]">{item.emoji || "📦"}</span>
-                        <span className="truncate text-sm font-bold">{item.name}</span>
+                        <div className="min-w-0">
+                          <div className="flex items-center">
+                            <span className="truncate text-sm font-bold">{item.name}</span>
+                            <ExpiryBadge
+                              earliestExpiry={freshExpiry}
+                              tracksExpiry={item.tracksExpiry}
+                              windowDays={expiringSoonDays}
+                            />
+                          </div>
+                          <div className="num text-[11.5px] font-semibold text-ink-muted">
+                            {freshQty} {item.unit}
+                            {item.tracksExpiry && freshExpiry &&
+                              ` · Exp ${formatDate(freshExpiry)}`}
+                          </div>
+                        </div>
                       </div>
                       <div className="num text-right text-[13.5px] font-bold text-brown">
                         {currency}
@@ -359,7 +402,7 @@ export function Bill() {
 
               {/* Phone cards */}
               <div className="flex flex-col gap-2.5 lg:hidden">
-                {filteredItems.map((item) => {
+                {filteredItems.map(({ item, qty: freshQty, earliestExpiry: freshExpiry }) => {
                   const inCart = cartQtyById.get(item.id) || 0;
                   return (
                     <div
@@ -374,10 +417,19 @@ export function Bill() {
                       >
                         <span className="text-[26px]">{item.emoji || "📦"}</span>
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-bold">{item.name}</div>
+                          <div className="truncate text-sm font-bold">
+                            {item.name}
+                            <ExpiryBadge
+                              earliestExpiry={freshExpiry}
+                              tracksExpiry={item.tracksExpiry}
+                              windowDays={expiringSoonDays}
+                            />
+                          </div>
                           <div className="num text-xs font-semibold text-ink-muted">
                             {currency}
-                            {item.price.toFixed(2)}
+                            {item.price.toFixed(2)} · {freshQty} {item.unit}
+                            {item.tracksExpiry && freshExpiry &&
+                              ` · ${formatDate(freshExpiry)}`}
                           </div>
                         </div>
                       </button>
@@ -526,14 +578,6 @@ export function Bill() {
           {phoneErr && (
             <div className="border-b border-line-soft px-[18px] py-2 text-[11px] font-semibold text-danger">
               {phoneErr}
-            </div>
-          )}
-          {expiredInCart.length > 0 && (
-            <div className="flex items-start gap-1.5 border-b border-line-soft bg-danger-bg px-[18px] py-2 text-[11px] font-bold text-danger">
-              <span>⚠</span>
-              <span>
-                Expired stock: {expiredInCart.map((i) => i.name).join(", ")}. Tap Generate again to sell anyway.
-              </span>
             </div>
           )}
           {returning && (

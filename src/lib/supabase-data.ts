@@ -17,6 +17,7 @@ interface ItemRow {
   qty: number;
   tracks_expiry: boolean;
   earliest_expiry: string | null;
+  batches: { qty: number | string; expiryDate: string | null }[] | null;
 }
 interface BillRow {
   id: string;
@@ -105,6 +106,7 @@ const mapItem = (r: ItemRow): Item => ({
   qty: r.qty,
   tracksExpiry: r.tracks_expiry,
   earliestExpiry: r.earliest_expiry,
+  batches: (r.batches ?? []).map((b) => ({ qty: Number(b.qty), expiryDate: b.expiryDate })),
 });
 
 const mapLine = (r: BillItemRow): BillLine => ({
@@ -553,7 +555,12 @@ interface GeneratedBillRow {
 export const rpcGenerateBill = (
   customer: { name: string; phone: string; payment: PaymentMethod; discount: number },
   lines: { itemId: string; qty: number }[],
-) => rpc<GeneratedBillRow>("generate_bill", { customer, lines });
+) => {
+  // Timezone drives which batches count as expired server-side — must match the
+  // client's day-granularity expiryStatus (same convention as dashboard_stats).
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  return rpc<GeneratedBillRow>("generate_bill", { customer, lines, p_tz: tz });
+};
 
 export const rpcCancelBill = (id: string, by: string) =>
   rpc<void>("cancel_bill", { p_id: id, p_by: by });
