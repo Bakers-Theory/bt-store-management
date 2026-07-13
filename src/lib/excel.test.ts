@@ -3,7 +3,7 @@ import {
   inRange, formatDMY, ymdToDMY, isoDateLocal, reportFileName, headerRows,
   buildProductsReport, buildStockReport, buildCustomersReport,
   buildBillsReport, buildSalesReport, buildStockLogReport,
-  buildAnalyticsReport, buildFullReport, buildReport,
+  buildAnalyticsReport, buildFullReport, buildReport, buildExpiryReport,
 } from "./excel";
 import type { Bakery, Bill, Customer, Item } from "./types";
 
@@ -181,7 +181,7 @@ describe("full report", () => {
   it("includes a Summary sheet plus every report section", () => {
     const names = buildFullReport(data, open, nowD).map((s) => s.name);
     expect(names).toEqual([
-      "Summary", "Sales", "Bills", "Products", "Stock", "Stock Log", "Customers",
+      "Summary", "Sales", "Bills", "Products", "Stock", "Expiry & Wastage", "Stock Log", "Customers",
       "Top Selling Items", "Category P&L", "Stock Health", "Recommendations",
     ]);
   });
@@ -197,5 +197,35 @@ describe("full report", () => {
     expect(r.reportName).toBe("Products");
     expect(r.isSnapshot).toBe(true);
     expect(r.sheets[0].name).toBe("Products");
+  });
+});
+
+describe("expiry & wastage builder", () => {
+  // now = 2026-07-13; expiringSoonDays default 3 => soon window through 2026-07-16
+  const nowD = new Date(2026, 6, 13);
+  const cake: Item = {
+    ...item, id: "i2", name: "Cake", costPrice: 30, qty: 9, batches: [
+      { qty: 2, expiryDate: "2026-07-01" }, // expired
+      { qty: 3, expiryDate: "2026-07-15" }, // expiring soon (<= 2026-07-16)
+      { qty: 4, expiryDate: "2026-08-20" }, // fine
+    ],
+  };
+  const bread: Item = { ...item, id: "i3", name: "Bun", batches: [{ qty: 5, expiryDate: "2026-12-01" }] };
+  const data = { bakery: DEFAULT_BAKERY, items: [cake, bread], bills: [], logs: [], customers: [] };
+
+  it("lists only at-risk items with expired/soon units and value", () => {
+    const rows = buildExpiryReport(data, nowD)[0].rows;
+    expect(rows).toHaveLength(1); // Bun has no at-risk stock
+    const c = rows[0];
+    expect(c["Item Name"]).toBe("Cake");
+    expect(c["Expired Units"]).toBe(2);
+    expect(c["Expiring Soon Units"]).toBe(3);
+    expect(c["Expired Value at Cost (₹)"]).toBe(60);       // 2 * 30
+    expect(c["Expiring Soon Value at Cost (₹)"]).toBe(90); // 3 * 30
+  });
+
+  it("emits a placeholder when nothing is at risk", () => {
+    const rows = buildExpiryReport({ ...data, items: [bread] }, nowD)[0].rows;
+    expect(rows[0]["Item Name"]).toBe("No expiring or expired stock");
   });
 });

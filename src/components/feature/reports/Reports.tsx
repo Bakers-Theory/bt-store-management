@@ -1,18 +1,43 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Download, Loader2 } from "lucide-react";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { useUIStore } from "@/lib/ui-store";
-import { exportReports, REPORT_META, type ReportType } from "@/lib/excel";
-import { fetchReportData } from "@/lib/supabase-data";
+import { exportReports, inRange, REPORT_META, type ReportType } from "@/lib/excel";
+import { fetchReportData, type FullStoreData } from "@/lib/supabase-data";
 import { NoAccess } from "@/components/feature/NoAccess";
 
 const inputCls =
   "w-full rounded-[11px] border border-line bg-cream px-[13px] py-[11px] text-sm outline-none focus:border-brown disabled:opacity-50";
 const labelCls = "mb-[5px] block text-xs font-bold text-[#8a6a3c]";
 
-const ALL_REPORTS: ReportType[] = ["sales", "bills", "products", "stock", "stockLog", "customers", "analytics"];
+const ALL_REPORTS: ReportType[] = [
+  "sales", "bills", "products", "stock", "stockLog", "customers", "analytics", "expiry",
+];
+
+/** Local-time YYYY-MM-DD for a date input value. */
+function ymd(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/** Named date-range presets, computed relative to today. */
+function presets(): { label: string; from: string; to: string }[] {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
+  const today = ymd(now);
+  const yesterday = ymd(new Date(y, m, d - 1));
+  return [
+    { label: "Today", from: today, to: today },
+    { label: "Yesterday", from: yesterday, to: yesterday },
+    { label: "Last 7 days", from: ymd(new Date(y, m, d - 6)), to: today },
+    { label: "Last 30 days", from: ymd(new Date(y, m, d - 29)), to: today },
+    { label: "This month", from: ymd(new Date(y, m, 1)), to: today },
+    { label: "Last month", from: ymd(new Date(y, m - 1, 1)), to: ymd(new Date(y, m, 0)) },
+    { label: "This year", from: ymd(new Date(y, 0, 1)), to: today },
+  ];
+}
 
 export function Reports() {
   const user = useCurrentUser();
@@ -22,6 +47,19 @@ export function Reports() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [data, setData] = useState<FullStoreData | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+
+  // Load once so we can preview record counts and reuse the payload on export.
+  useEffect(() => {
+    let alive = true;
+    fetchReportData()
+      .then((d) => alive && setData(d))
+      .catch(() => alive && setLoadFailed(true));
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   if (user && user.role !== "Owner") return <NoAccess />;
 
@@ -30,6 +68,10 @@ export function Reports() {
 
   const allChecked = selected.length === ALL_REPORTS.length;
   const toggleAll = () => setSelected(allChecked ? [] : [...ALL_REPORTS]);
+
+  const range = { from: from || null, to: to || null };
+  const billsInRange = data ? data.bills.filter((b) => inRange(b.date, range)).length : null;
+  const logsInRange = data ? data.logs.filter((l) => inRange(l.date, range)).length : null;
 
   const doExport = async () => {
     if (selected.length === 0) {
@@ -42,11 +84,9 @@ export function Reports() {
     }
     setExporting(true);
     try {
-      const range = { from: from || null, to: to || null };
-      // Export in the fixed report order regardless of click order.
-      const types = ALL_REPORTS.filter((t) => selected.includes(t));
-      const data = await fetchReportData();
-      const r = await exportReports(types, data, range);
+      const types = ALL_REPORTS.filter((t) => selected.includes(t)); // fixed order
+      const payload = data ?? (await fetchReportData());
+      const r = await exportReports(types, payload, range);
       toast(r.ok ? "Report downloaded" : r.error ?? "Export failed");
     } catch {
       toast("Export failed");
@@ -92,22 +132,52 @@ export function Reports() {
           })}
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls} htmlFor="from-date">From</label>
-            <input id="from-date" type="date" className={inputCls} value={from}
-              onChange={(e) => setFrom(e.target.value)} />
+        <div className="mt-4">
+          <span className={labelCls}>Date range</span>
+          <div className="mb-2.5 flex flex-wrap gap-1.5">
+            {presets().map((p) => (
+              <button
+                key={p.label}
+                type="button"
+                onClick={() => { setFrom(p.from); setTo(p.to); }}
+                className="rounded-full border border-line bg-cream px-2.5 py-1 text-xs font-semibold text-ink-muted hover:border-brown hover:text-brown"
+              >
+                {p.label}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => { setFrom(""); setTo(""); }}
+              className="rounded-full border border-line bg-cream px-2.5 py-1 text-xs font-semibold text-ink-muted hover:border-brown hover:text-brown"
+            >
+              All time
+            </button>
           </div>
-          <div>
-            <label className={labelCls} htmlFor="to-date">To</label>
-            <input id="to-date" type="date" className={inputCls} value={to}
-              onChange={(e) => setTo(e.target.value)} />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls} htmlFor="from-date">From</label>
+              <input id="from-date" type="date" className={inputCls} value={from}
+                onChange={(e) => setFrom(e.target.value)} />
+            </div>
+            <div>
+              <label className={labelCls} htmlFor="to-date">To</label>
+              <input id="to-date" type="date" className={inputCls} value={to}
+                onChange={(e) => setTo(e.target.value)} />
+            </div>
           </div>
         </div>
 
-        <p className="mt-2 text-xs text-ink-muted">
-          Dates apply to Sales, Bills, Stock Log and Analytics. Products, Stock and Customers always
-          export the full current snapshot. Leave dates empty to include all records.
+        <p className="mt-2.5 text-xs text-ink-muted">
+          {loadFailed
+            ? "Couldn't load a preview — export will still fetch fresh data."
+            : data
+              ? `In range: ${billsInRange} bill${billsInRange === 1 ? "" : "s"} · ${logsInRange} stock movement${logsInRange === 1 ? "" : "s"}. Snapshot: ${data.items.length} products · ${data.customers.length} customers.`
+              : "Loading record counts…"}
+        </p>
+
+        <p className="mt-1.5 text-xs text-ink-muted">
+          Dates apply to Sales, Bills, Stock Log and Analytics. Products, Stock, Customers and Expiry
+          always export the full current snapshot.
         </p>
 
         <button

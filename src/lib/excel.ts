@@ -23,7 +23,7 @@ export type DateRange = { from: string | null; to: string | null };
 
 export type ReportType =
   | "sales" | "bills" | "products" | "stock"
-  | "stockLog" | "customers" | "analytics" | "full";
+  | "stockLog" | "customers" | "analytics" | "expiry" | "full";
 
 export interface Sheet {
   name: string;
@@ -38,6 +38,7 @@ export const REPORT_META: Record<ReportType, { name: string; slug: string; snaps
   stockLog:  { name: "Stock Log",   slug: "Stock_Log",   snapshot: false },
   customers: { name: "Customers",   slug: "Customers",   snapshot: true },
   analytics: { name: "Analytics",   slug: "Analytics",   snapshot: false },
+  expiry:    { name: "Expiry & Wastage", slug: "Expiry_Wastage", snapshot: true },
   full:      { name: "Full Report", slug: "Full_Report", snapshot: false },
 };
 
@@ -261,6 +262,50 @@ export function buildCustomersReport(data: ReportData, _now: Date): Sheet[] {
   return [{ name: "Customers", rows }];
 }
 
+/**
+ * At-risk perishables snapshot: units already expired or expiring within the
+ * bakery's "expiring soon" window, and their value at cost. Only items with
+ * some at-risk stock are listed.
+ */
+export function buildExpiryReport(data: ReportData, now: Date): Sheet[] {
+  const { items, bakery } = data;
+  const cur = bakery.currency;
+  const today = isoDateLocal(now);
+  const soonCutoff = isoDateLocal(
+    new Date(now.getFullYear(), now.getMonth(), now.getDate() + bakery.expiringSoonDays),
+  );
+
+  const rows: Record<string, string | number>[] = [];
+  for (const i of items) {
+    const cost = i.costPrice || 0;
+    let expiredUnits = 0;
+    let soonUnits = 0;
+    for (const b of i.batches) {
+      if (!b.expiryDate) continue;
+      if (b.expiryDate < today) expiredUnits += b.qty;
+      else if (b.expiryDate <= soonCutoff) soonUnits += b.qty;
+    }
+    if (expiredUnits === 0 && soonUnits === 0) continue;
+    const atRisk = i.batches
+      .filter((b) => b.expiryDate && b.expiryDate <= soonCutoff)
+      .map((b) => `${b.qty} × ${ymdToDMY(b.expiryDate as string)}`)
+      .join("; ");
+    rows.push({
+      "Item Name": i.name,
+      Category: i.category || "General",
+      "Expired Units": expiredUnits,
+      "Expiring Soon Units": soonUnits,
+      [`Expired Value at Cost (${cur})`]: +(expiredUnits * cost).toFixed(2),
+      [`Expiring Soon Value at Cost (${cur})`]: +(soonUnits * cost).toFixed(2),
+      "Earliest Expiry": i.earliestExpiry ? ymdToDMY(i.earliestExpiry) : "—",
+      "At-risk Batches": atRisk,
+    });
+  }
+  rows.sort((a, b) => (b["Expired Units"] as number) - (a["Expired Units"] as number));
+  if (rows.length === 0) rows.push({ "Item Name": "No expiring or expired stock" });
+  return [{ name: "Expiry & Wastage", rows }];
+}
+
 // ─── Analytics report builder (date-filtered) ────────────────────────────────
 
 export function buildAnalyticsReport(data: ReportData, range: DateRange, _now: Date): Sheet[] {
@@ -370,6 +415,7 @@ export function buildFullReport(data: ReportData, range: DateRange, now: Date): 
     ...buildBillsReport(data, range, now),
     ...buildProductsReport(data, now),
     ...buildStockReport(data, now),
+    ...buildExpiryReport(data, now),
     ...buildStockLogReport(data, range, now),
     ...buildCustomersReport(data, now),
     ...buildAnalyticsReport(data, range, now),
@@ -388,6 +434,7 @@ export function buildReport(
     : type === "stockLog" ? buildStockLogReport(data, range, now)
     : type === "customers" ? buildCustomersReport(data, now)
     : type === "analytics" ? buildAnalyticsReport(data, range, now)
+    : type === "expiry" ? buildExpiryReport(data, now)
     : buildFullReport(data, range, now);
   return { sheets, reportName: meta.name, isSnapshot: meta.snapshot };
 }
@@ -428,14 +475,20 @@ export async function exportReports(
   const XLSX = await import("xlsx");
   const wb = XLSX.utils.book_new();
   const used = new Set<string>();
+
+  const addSheet = (sheet: Sheet, reportName: string, isSnapshot: boolean) => {
+    const header = headerRows(data.bakery, reportName, range, now, isSnapshot);
+    const ws = XLSX.utils.aoa_to_sheet([...header, []]); // header block + blank spacer row
+    if (sheet.rows.length) XLSX.utils.sheet_add_json(ws, sheet.rows, { origin: -1 });
+    XLSX.utils.book_append_sheet(wb, ws, uniqueSheetName(sheet.name, used));
+  };
+
+  // Multi-report exports get a KPI cover sheet up front.
+  if (types.length > 1) addSheet(buildSummary(data, range, now), "Summary", false);
+
   for (const type of types) {
     const { sheets, reportName, isSnapshot } = buildReport(type, data, range, now);
-    for (const s of sheets) {
-      const header = headerRows(data.bakery, reportName, range, now, isSnapshot);
-      const ws = XLSX.utils.aoa_to_sheet([...header, []]); // header block + blank spacer row
-      if (s.rows.length) XLSX.utils.sheet_add_json(ws, s.rows, { origin: -1 });
-      XLSX.utils.book_append_sheet(wb, ws, uniqueSheetName(s.name, used));
-    }
+    for (const s of sheets) addSheet(s, reportName, isSnapshot);
   }
   // Single selection keeps its own report filename; a mix uses a generic one.
   const safe = (data.bakery.name || "Bakery").replace(/[^a-z0-9]/gi, "_");
