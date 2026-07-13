@@ -399,25 +399,58 @@ function safeSheetName(name: string): string {
   return name.replace(/[:\\/?*[\]]/g, " ").slice(0, 31);
 }
 
-/** Build and download an Excel file for one report type. Loads `xlsx` on demand. */
-export async function exportReport(
-  type: ReportType, data: ReportData, range: DateRange,
+/** Ensure sheet names are unique within a workbook (xlsx rejects duplicates). */
+function uniqueSheetName(name: string, used: Set<string>): string {
+  let base = safeSheetName(name);
+  let candidate = base;
+  let n = 2;
+  while (used.has(candidate)) {
+    const suffix = ` (${n++})`;
+    candidate = base.slice(0, 31 - suffix.length) + suffix;
+  }
+  used.add(candidate);
+  return candidate;
+}
+
+/**
+ * Build and download one Excel workbook containing every selected report's
+ * sheets. Each sheet gets its own header block (period line reflects whether
+ * that report is a snapshot). Loads `xlsx` on demand.
+ */
+export async function exportReports(
+  types: ReportType[], data: ReportData, range: DateRange,
 ): Promise<ReportResult> {
+  if (types.length === 0) return { ok: false, error: "Select at least one report" };
   if (data.items.length === 0 && data.bills.length === 0 && data.customers.length === 0) {
     return { ok: false, error: "No data yet to export" };
   }
   const now = new Date();
-  const { sheets, reportName, isSnapshot } = buildReport(type, data, range, now);
   const XLSX = await import("xlsx");
   const wb = XLSX.utils.book_new();
-  for (const s of sheets) {
-    const header = headerRows(data.bakery, reportName, range, now, isSnapshot);
-    const ws = XLSX.utils.aoa_to_sheet([...header, []]); // header block + blank spacer row
-    if (s.rows.length) XLSX.utils.sheet_add_json(ws, s.rows, { origin: -1 });
-    XLSX.utils.book_append_sheet(wb, ws, safeSheetName(s.name));
+  const used = new Set<string>();
+  for (const type of types) {
+    const { sheets, reportName, isSnapshot } = buildReport(type, data, range, now);
+    for (const s of sheets) {
+      const header = headerRows(data.bakery, reportName, range, now, isSnapshot);
+      const ws = XLSX.utils.aoa_to_sheet([...header, []]); // header block + blank spacer row
+      if (s.rows.length) XLSX.utils.sheet_add_json(ws, s.rows, { origin: -1 });
+      XLSX.utils.book_append_sheet(wb, ws, uniqueSheetName(s.name, used));
+    }
   }
-  XLSX.writeFile(wb, reportFileName(data.bakery, type, range, now));
+  // Single selection keeps its own report filename; a mix uses a generic one.
+  const safe = (data.bakery.name || "Bakery").replace(/[^a-z0-9]/gi, "_");
+  const fileName = types.length === 1
+    ? reportFileName(data.bakery, types[0], range, now)
+    : `${safe}_Reports_${rangeSuffix(range, false)}.xlsx`;
+  XLSX.writeFile(wb, fileName);
   return { ok: true };
+}
+
+/** Build and download an Excel file for a single report type. */
+export async function exportReport(
+  type: ReportType, data: ReportData, range: DateRange,
+): Promise<ReportResult> {
+  return exportReports([type], data, range);
 }
 
 /** Back-compat: the combined workbook used by Settings and Dashboard. */
