@@ -88,6 +88,7 @@ export function Topbar() {
   const label = isOpen ? "Open" : "Closed";
 
   return (
+    <>
     <header className="sticky top-0 z-40 flex flex-shrink-0 items-center gap-3.5 border-b border-line bg-warm-white/90 px-4 py-3.5 backdrop-blur lg:px-[22px]">
       <div className="min-w-0 flex-1">
         <div className="text-xl font-extrabold leading-[1.1] text-ink">{title}</div>
@@ -140,9 +141,10 @@ export function Topbar() {
           </svg>
         )}
       </button>
+    </header>
 
-      {confirming && (
-        <Modal title={isOpen ? "Close the store?" : "Open the store?"} onClose={() => setConfirming(false)}>
+    {confirming && (
+      <Modal title={isOpen ? "Close the store?" : "Open the store?"} onClose={() => setConfirming(false)}>
           <p className="text-sm text-ink-muted">
             {isOpen
               ? "New bills cannot be created until you reopen the store. Existing bills, stock, and reports stay accessible."
@@ -167,7 +169,7 @@ export function Topbar() {
             </button>
           </div>
         </Modal>
-      )}
-    </header>
+    )}
+    </>
   );
 }

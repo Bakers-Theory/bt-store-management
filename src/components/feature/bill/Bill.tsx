@@ -187,14 +187,23 @@ export function Bill() {
 
   const done = () => setReceipt(null);
 
+  if (!isOpen) {
+    return (
+      <div className="flex flex-col items-center justify-center rounded-2xl border border-line bg-warm-white px-6 py-16 text-center shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
+        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-danger-bg text-3xl">
+          🔒
+        </div>
+        <h2 className="text-lg font-extrabold text-ink">Store is closed</h2>
+        <p className="mt-2 max-w-sm text-sm text-ink-muted">
+          New bills can&apos;t be created while the store is closed. An admin can reopen the
+          store from the status toggle to resume billing.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <>
-      {!isOpen && (
-        <div className="mb-3 flex items-center gap-2 rounded-xl border border-danger/30 bg-danger-bg px-4 py-3 text-[13px] font-bold text-danger">
-          <span>🔒</span>
-          Store is closed — new bills are disabled. Reopen the store to resume billing.
-        </div>
-      )}
       <div className={`grid gap-4 lg:grid-cols-[1fr_372px] lg:pb-0 ${lines.length > 0 ? "pb-24" : ""}`}>
         {/* Products */}
         <div className="min-w-0">
