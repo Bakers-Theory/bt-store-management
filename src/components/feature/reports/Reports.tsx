@@ -103,12 +103,25 @@ export function Reports() {
       </p>
 
       <div className="rounded-[18px] border border-line bg-warm-white p-[22px] shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
-        <div className="mb-2 flex items-center justify-between">
-          <span className={labelCls + " mb-0"}>Reports</span>
-          <button type="button" onClick={toggleAll} className="text-xs font-bold text-brown">
-            {allChecked ? "Clear all" : "Select all"}
-          </button>
-        </div>
+        <span className={labelCls}>Reports</span>
+
+        <label
+          className={`mb-2 flex cursor-pointer select-none items-center gap-2.5 rounded-[11px] border px-[13px] py-[11px] text-sm transition-colors ${
+            selected.length ? "border-brown bg-cream" : "border-line bg-warm-white active:bg-cream/50"
+          }`}
+        >
+          <input
+            type="checkbox"
+            className="h-4 w-4 accent-brown"
+            checked={allChecked}
+            ref={(el) => { if (el) el.indeterminate = selected.length > 0 && !allChecked; }}
+            onChange={toggleAll}
+          />
+          <span className="font-bold text-ink">Select all</span>
+          <span className="ml-auto text-xs font-semibold text-ink-muted">
+            {selected.length}/{ALL_REPORTS.length}
+          </span>
+        </label>
 
         <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
           {ALL_REPORTS.map((t) => {
@@ -116,8 +129,8 @@ export function Reports() {
             return (
               <label
                 key={t}
-                className={`flex cursor-pointer items-center gap-2.5 rounded-[11px] border px-[13px] py-[11px] text-sm transition-colors ${
-                  checked ? "border-brown bg-cream" : "border-line bg-warm-white hover:bg-cream/50"
+                className={`flex cursor-pointer select-none items-center gap-2.5 rounded-[11px] border px-[13px] py-[11px] text-sm transition-colors ${
+                  checked ? "border-brown bg-cream" : "border-line bg-warm-white hover:bg-cream/50 active:bg-cream/50"
                 }`}
               >
                 <input
