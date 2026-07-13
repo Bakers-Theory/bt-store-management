@@ -33,6 +33,9 @@ export interface Item {
   qty: number;
   tracksExpiry: boolean;
   earliestExpiry: string | null; // "YYYY-MM-DD" of soonest in-stock batch, or null
+  // In-stock batches (qty > 0), soonest-expiry-first. Includes expired batches;
+  // the bill page filters those out locally to sell/show only fresh stock.
+  batches: { qty: number; expiryDate: string | null }[];
 }
 
 export interface Batch {

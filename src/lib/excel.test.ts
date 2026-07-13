@@ -20,7 +20,7 @@ const DEFAULT_BAKERY: Bakery = {
 
 const item: Item = {
   id: "i1", name: "Bread", emoji: "🍞", category: "Breads", unit: "pcs",
-  price: 40, costPrice: 20, qty: 5, tracksExpiry: true, earliestExpiry: null,
+  price: 40, costPrice: 20, qty: 5, tracksExpiry: true, earliestExpiry: null, batches: [],
 };
 
 const bill = (over: Partial<Bill>): Bill => ({
