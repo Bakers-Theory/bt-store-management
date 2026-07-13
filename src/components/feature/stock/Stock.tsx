@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Search, Plus, PackagePlus, PackageMinus, Package, Pencil, Trash2, X } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
+import { useCurrentUser } from "@/components/system/AuthProvider";
 import { expiryStatus } from "@/lib/expiry";
 import { Modal } from "@/components/ui/Modal";
 import { ItemModal } from "./ItemModal";
@@ -43,11 +44,15 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
   const requireOwnerAuth = useUIStore((s) => s.requireOwnerAuth);
   const isOpen = useBakeryStore((s) => s.bakery.isOpen);
   const refreshSettings = useBakeryStore((s) => s.refreshSettings);
+  const user = useCurrentUser();
+  // The Owner manages stock regardless of store status; everyone else is
+  // locked out of inventory changes while the store is closed.
+  const locked = !isOpen && user?.role !== "Owner";
 
   const [modal, setModal] = useState<ModalState>(
-    initialTab === "in" && isOpen
+    initialTab === "in" && !locked
       ? { type: "stockin" }
-      : initialTab === "out" && isOpen
+      : initialTab === "out" && !locked
         ? { type: "stockout" }
         : null,
   );
@@ -82,7 +87,7 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
 
   return (
     <>
-      {!isOpen && (
+      {locked && (
         <div className="mb-3 flex items-center gap-2 rounded-xl border border-danger/30 bg-danger-bg px-4 py-3 text-[13px] font-bold text-danger">
           <span>🔒</span>
           Store is closed — inventory is view-only. Reopen the store to add or adjust stock.
@@ -135,7 +140,7 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
             </button>
           )}
         </div>
-        {isOpen && (
+        {!locked && (
           <>
             <button
               className="btn-primary flex items-center gap-1.5 whitespace-nowrap text-[13.5px]"
@@ -227,7 +232,7 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
                     </span>
                   </div>
                   <div className="flex justify-end gap-1.5">
-                    {isOpen && (
+                    {!locked && (
                       <>
                         <button
                           className="flex h-7 w-7 items-center justify-center rounded-lg border border-line bg-warm-white text-sm"
@@ -279,7 +284,7 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
                     {st.label}
                   </span>
                   <div className="flex shrink-0 gap-1.5">
-                    {isOpen && (
+                    {!locked && (
                       <>
                         <button
                           className="flex h-7 w-7 items-center justify-center rounded-lg border border-line bg-warm-white text-sm"
