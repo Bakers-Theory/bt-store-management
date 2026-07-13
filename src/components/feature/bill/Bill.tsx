@@ -22,6 +22,8 @@ export function Bill() {
   const toast = useUIStore((s) => s.toast);
   const requestPrint = useUIStore((s) => s.requestPrint);
   const currentUser = useCurrentUser();
+  const isOpen = useBakeryStore((s) => s.bakery.isOpen);
+  const refreshSettings = useBakeryStore((s) => s.refreshSettings);
 
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
@@ -68,6 +70,12 @@ export function Bill() {
           expiryStatus(it.earliestExpiry, it.tracksExpiry, expiringSoonDays, new Date()) === "expired",
       );
   }, [lines, items, expiringSoonDays]);
+
+  // Best-effort: pull the latest store status so a biller sees an accurate
+  // Open/Closed state. Bill creation is enforced server-side regardless.
+  useEffect(() => {
+    refreshSettings();
+  }, [refreshSettings]);
 
   // Autofill on repeat billing: once a full 10-digit phone is entered, look the
   // customer up (debounced, best-effort). On a hit, prefill an empty name field
@@ -136,6 +144,10 @@ export function Bill() {
   const clearCart = () => setLines([]);
 
   const generate = async () => {
+    if (!isOpen) {
+      toast("Store is closed — new bills cannot be created");
+      return;
+    }
     if (lines.length === 0) {
       toast("Add items to the order first");
       return;
@@ -177,6 +189,12 @@ export function Bill() {
 
   return (
     <>
+      {!isOpen && (
+        <div className="mb-3 flex items-center gap-2 rounded-xl border border-danger/30 bg-danger-bg px-4 py-3 text-[13px] font-bold text-danger">
+          <span>🔒</span>
+          Store is closed — new bills are disabled. Reopen the store to resume billing.
+        </div>
+      )}
       <div className={`grid gap-4 lg:grid-cols-[1fr_372px] lg:pb-0 ${lines.length > 0 ? "pb-24" : ""}`}>
         {/* Products */}
         <div className="min-w-0">
@@ -632,6 +650,7 @@ export function Bill() {
                   onClick={generate}
                   disabled={
                     generating ||
+                    !isOpen ||
                     customer.name.trim() === "" ||
                     (customer.phone.length > 0 && customer.phone.length !== 10)
                   }

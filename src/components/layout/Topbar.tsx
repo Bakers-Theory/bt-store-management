@@ -38,7 +38,6 @@ export function Topbar() {
   const router = useRouter();
   const pathname = usePathname();
   const user = useCurrentUser();
-  const logo = useBakeryStore((s) => s.bakery.logo);
   const isOpen = useBakeryStore((s) => s.bakery.isOpen);
   const statusChangedBy = useBakeryStore((s) => s.bakery.statusChangedBy);
   const statusChangedAt = useBakeryStore((s) => s.bakery.statusChangedAt);

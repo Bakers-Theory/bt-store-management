@@ -10,6 +10,7 @@ import {
   Receipt as ReceiptIcon,
   ReceiptText,
   Search,
+  Store,
   Trash2,
   X,
 } from "lucide-react";
@@ -86,10 +87,17 @@ const chipCls = (active: boolean) =>
   }`;
 
 const logIcon = (t: Log["type"]) =>
-  t === "in" ? PackagePlus : t === "out" ? PackageMinus : t === "cancel" ? Ban : t === "delete" ? Trash2 : ReceiptIcon;
+  t === "in" ? PackagePlus
+    : t === "out" ? PackageMinus
+    : t === "cancel" ? Ban
+    : t === "delete" ? Trash2
+    : t === "open" || t === "close" ? Store
+    : ReceiptIcon;
 
 const logTone = (t: Log["type"]): "success" | "danger" | "brown" =>
-  t === "in" ? "success" : t === "out" || t === "cancel" || t === "delete" ? "danger" : "brown";
+  t === "in" || t === "open" ? "success"
+    : t === "out" || t === "cancel" || t === "delete" || t === "close" ? "danger"
+    : "brown";
 
 const toneClasses: Record<"success" | "danger" | "brown", { bg: string; text: string }> = {
   success: { bg: "bg-success-bg", text: "text-success" },
@@ -106,7 +114,11 @@ const logTypeLabel = (t: Log["type"]) =>
         ? "Bill cancelled"
         : t === "delete"
           ? "Bill deleted"
-          : "Bill generated";
+          : t === "open"
+            ? "Store opened"
+            : t === "close"
+              ? "Store closed"
+              : "Bill generated";
 
 const logMeta = (l: Log) => {
   const parts: string[] = [];
@@ -425,6 +437,7 @@ export function History() {
             {logs.map((l) => {
               const tone = toneClasses[logTone(l.type)];
               const isStock = l.type === "in" || l.type === "out";
+              const isStore = l.type === "open" || l.type === "close";
               const sign = l.type === "in" ? "+" : "−";
               const Icon = logIcon(l.type);
               return (
@@ -434,7 +447,11 @@ export function History() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-bold text-ink">
-                      {isStock ? `${itemEmoji(l.itemId)} ${l.itemName}` : `Bill #${l.billNo}`}
+                      {isStock
+                        ? `${itemEmoji(l.itemId)} ${l.itemName}`
+                        : isStore
+                          ? "Store"
+                          : `Bill #${l.billNo}`}
                     </div>
                     <div className="truncate text-xs text-ink-light">
                       {logTypeLabel(l.type)}
