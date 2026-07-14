@@ -393,7 +393,7 @@ export function History() {
                     <div className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-[11px] bg-[#f4e7d2] text-[13px] font-bold text-brown">
                       {billerInitials(b.customerName)}
                     </div>
-                    <div className="min-w-0 flex-1">
+                    <div className="min-w-0 flex-1 basis-[calc(100%_-_3.5rem)] sm:basis-0">
                       <div className="truncate text-sm font-bold text-ink">{b.customerName || "Walk-in"}</div>
                       <div className="text-xs text-ink-light">
                         #{b.billNo} · {b.items.length} items · {formatDateFull(b.date)}
@@ -408,7 +408,7 @@ export function History() {
                     <div className={`num shrink-0 text-right text-[15px] font-extrabold ${cancelled ? "text-ink-muted line-through" : "text-ink"}`}>
                       {currency}{b.total.toFixed(2)}
                     </div>
-                    <div className="flex shrink-0 gap-1.5">
+                    <div className="ml-auto flex shrink-0 gap-1.5">
                       <button
                         className="btn-sm btn-secondary inline-flex items-center justify-center"
                         onClick={() => setViewBill(b)}

@@ -285,7 +285,7 @@ export function Bill() {
             ))}
           </div>
           {view === "grid" ? (
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(200px,1fr))]">
               {filteredItems.map(({ item, qty: freshQty, earliestExpiry: freshExpiry }) => {
                 const inCart = cartQtyById.get(item.id) || 0;
                 return (
