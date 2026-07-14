@@ -1,29 +1,68 @@
 import type { Bill, BillLine, Item } from "./types";
+import type { DateRange } from "./date-range";
 import { isActiveBill } from "./format";
 
-// ─── Weekly sales buckets ─────────────────────────────────────────────────────
-// The dashboard receives per-day active-sales totals from the server; this fills
-// the 7 fixed day buckets (oldest→newest, ending today) and labels them. Kept
-// client-side so the labels use the viewer's locale.
-export function weeklyBuckets(
+// ─── Adaptive sales buckets ───────────────────────────────────────────────────
+// Fills every bucket across an arbitrary range so the chart has no gaps. Daily
+// bars for spans up to 31 days (weekday labels for a week or less, else day+month),
+// weekly bars beyond that. For all-time (null bounds) the span is derived from the
+// data's own min/max dates; empty data yields no buckets. Labels use the viewer's
+// locale.
+export function bucketSeries(
   daily: { date: string; total: number }[],
-  now: Date
+  range: DateRange,
+  now: Date,
 ): { label: string; total: number }[] {
+  void now;
   const totalByKey = new Map<string, number>();
   for (const d of daily) {
-    // `date` is a local calendar date (YYYY-MM-DD) from the server; parse it as
-    // local midnight so it lines up with the buckets below.
     const key = new Date(`${d.date}T00:00:00`).toDateString();
     totalByKey.set(key, (totalByKey.get(key) ?? 0) + d.total);
   }
 
+  // Resolve each bound independently: explicit value wins; a null bound is
+  // derived from the data's own extent (all-time / open-ended). No data to
+  // derive a needed bound, or an inverted range, yields no buckets.
+  const parse = (s: string) => new Date(`${s}T00:00:00`);
+  const keys = daily.map((d) => parse(d.date).getTime());
+  const from = range.from ? parse(range.from) : keys.length ? new Date(Math.min(...keys)) : null;
+  const to = range.to ? parse(range.to) : keys.length ? new Date(Math.max(...keys)) : null;
+  if (!from || !to || +to < +from) return [];
+
+  const dayMs = 86400000;
+  const spanDays = Math.round((+to - +from) / dayMs) + 1;
+  const weekday = spanDays <= 7;
+  const dailyLabel = (d: Date) =>
+    weekday
+      ? d.toLocaleDateString("en-US", { weekday: "short" })
+      : d.toLocaleDateString("en-US", { day: "numeric", month: "short" });
+
   const buckets: { label: string; total: number }[] = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - i);
+
+  if (spanDays <= 31) {
+    for (let i = 0; i < spanDays; i++) {
+      const d = new Date(from);
+      d.setDate(d.getDate() + i);
+      buckets.push({ label: dailyLabel(d), total: totalByKey.get(d.toDateString()) ?? 0 });
+    }
+    return buckets;
+  }
+
+  // Weekly: group each day into its week bucket, labelled by the week-start date.
+  const weeks = Math.ceil(spanDays / 7);
+  for (let w = 0; w < weeks; w++) {
+    const start = new Date(from);
+    start.setDate(start.getDate() + w * 7);
+    let sum = 0;
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start);
+      d.setDate(d.getDate() + i);
+      if (d > to) break;
+      sum += totalByKey.get(d.toDateString()) ?? 0;
+    }
     buckets.push({
-      label: d.toLocaleDateString("en-US", { weekday: "short" }),
-      total: totalByKey.get(d.toDateString()) ?? 0,
+      label: start.toLocaleDateString("en-US", { day: "numeric", month: "short" }),
+      total: sum,
     });
   }
   return buckets;

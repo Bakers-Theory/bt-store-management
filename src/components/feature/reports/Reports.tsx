@@ -7,37 +7,13 @@ import { useUIStore } from "@/lib/ui-store";
 import { exportReports, inRange, REPORT_META, type ReportType } from "@/lib/excel";
 import { fetchReportData, type FullStoreData } from "@/lib/supabase-data";
 import { NoAccess } from "@/components/feature/NoAccess";
+import { DateRangePicker } from "@/components/ui/DateRangePicker";
 
-const inputCls =
-  "w-full rounded-[11px] border border-line bg-cream px-[13px] py-[11px] text-sm outline-none focus:border-brown disabled:opacity-50";
 const labelCls = "mb-[5px] block text-xs font-bold text-[#8a6a3c]";
 
 const ALL_REPORTS: ReportType[] = [
   "sales", "bills", "products", "stock", "stockLog", "customers", "analytics", "expiry",
 ];
-
-/** Local-time YYYY-MM-DD for a date input value. */
-function ymd(d: Date): string {
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
-
-/** Named date-range presets, computed relative to today. */
-function presets(): { label: string; from: string; to: string }[] {
-  const now = new Date();
-  const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
-  const today = ymd(now);
-  const yesterday = ymd(new Date(y, m, d - 1));
-  return [
-    { label: "Today", from: today, to: today },
-    { label: "Yesterday", from: yesterday, to: yesterday },
-    { label: "Last 7 days", from: ymd(new Date(y, m, d - 6)), to: today },
-    { label: "Last 30 days", from: ymd(new Date(y, m, d - 29)), to: today },
-    { label: "This month", from: ymd(new Date(y, m, 1)), to: today },
-    { label: "Last month", from: ymd(new Date(y, m - 1, 1)), to: ymd(new Date(y, m, 0)) },
-    { label: "This year", from: ymd(new Date(y, 0, 1)), to: today },
-  ];
-}
 
 export function Reports() {
   const user = useCurrentUser();
@@ -146,38 +122,10 @@ export function Reports() {
         </div>
 
         <div className="mt-4">
-          <span className={labelCls}>Date range</span>
-          <div className="mb-2.5 flex flex-wrap gap-1.5">
-            {presets().map((p) => (
-              <button
-                key={p.label}
-                type="button"
-                onClick={() => { setFrom(p.from); setTo(p.to); }}
-                className="rounded-full border border-line bg-cream px-2.5 py-1 text-xs font-semibold text-ink-muted hover:border-brown hover:text-brown"
-              >
-                {p.label}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() => { setFrom(""); setTo(""); }}
-              className="rounded-full border border-line bg-cream px-2.5 py-1 text-xs font-semibold text-ink-muted hover:border-brown hover:text-brown"
-            >
-              All time
-            </button>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={labelCls} htmlFor="from-date">From</label>
-              <input id="from-date" type="date" className={inputCls} value={from}
-                onChange={(e) => setFrom(e.target.value)} />
-            </div>
-            <div>
-              <label className={labelCls} htmlFor="to-date">To</label>
-              <input id="to-date" type="date" className={inputCls} value={to}
-                onChange={(e) => setTo(e.target.value)} />
-            </div>
-          </div>
+          <DateRangePicker
+            value={{ from: from || null, to: to || null }}
+            onChange={(r) => { setFrom(r.from ?? ""); setTo(r.to ?? ""); }}
+          />
         </div>
 
         <p className="mt-2.5 text-xs text-ink-muted">

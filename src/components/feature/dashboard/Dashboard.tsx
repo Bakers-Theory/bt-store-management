@@ -15,13 +15,15 @@ import {
   fetchCustomers,
   type DashboardStats,
 } from "@/lib/supabase-data";
-import { weeklyBuckets, categoryPLFrom, stockHealthFrom, recommendationsFrom } from "@/lib/analytics";
+import { bucketSeries, categoryPLFrom, stockHealthFrom, recommendationsFrom } from "@/lib/analytics";
+import { last7Days, type DateRange } from "@/lib/date-range";
 import { expiryStatus } from "@/lib/expiry";
 import { ItemModal } from "@/components/feature/stock/ItemModal";
 import { ViewBillModal } from "@/components/feature/bill/ViewBillModal";
 import { StockInForm } from "@/components/feature/stock/StockInForm";
 import { Modal } from "@/components/ui/Modal";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { DateRangePicker } from "@/components/ui/DateRangePicker";
 import { KpiCard } from "./KpiCard";
 import { RecentBillsCard } from "./RecentBillsCard";
 import { TopCustomersCard } from "./TopCustomersCard";
@@ -56,10 +58,14 @@ const priorityBadge: Record<string, string> = {
   Info: "badge-brown",
 };
 
-// Cache the last-fetched stats (keyed by user, so a user switch on the same tab
-// never shows the previous user's data) so navigating back to the dashboard
-// renders instantly while it revalidates in the background.
-let statsCache: { uid: string; data: DashboardStats } | null = null;
+// Cache the last-fetched stats keyed by user + range so a user switch or a range
+// change never shows stale data, and revisiting a range renders instantly.
+let statsCache: { key: string; data: DashboardStats } | null = null;
+// Remember the selected range across navigation within the session.
+let rangeMemo: DateRange | null = null;
+
+const rangeKey = (uid: string | undefined, r: DateRange) =>
+  `${uid ?? "?"}|${r.from ?? ""}|${r.to ?? ""}`;
 
 export function Dashboard() {
   const router = useRouter();
@@ -70,8 +76,11 @@ export function Dashboard() {
   const expiringSoonDays = useBakeryStore((s) => s.bakery.expiringSoonDays);
   const toast = useUIStore((s) => s.toast);
 
+  const [range, setRange] = useState<DateRange>(rangeMemo ?? last7Days());
   const [stats, setStats] = useState<DashboardStats | null>(
-    statsCache && statsCache.uid === user?.id ? statsCache.data : null,
+    statsCache && statsCache.key === rangeKey(user?.id, rangeMemo ?? last7Days())
+      ? statsCache.data
+      : null,
   );
   const [addOpen, setAddOpen] = useState(false);
   const [stockInOpen, setStockInOpen] = useState(false);
@@ -81,6 +90,8 @@ export function Dashboard() {
   const [statsError, setStatsError] = useState(false);
   const [statsRetryToken, setStatsRetryToken] = useState(0);
 
+  const invalidRange = !!(range.from && range.to && range.from > range.to);
+
   // Sales analytics are aggregated server-side (bounded payload) rather than by
   // downloading every bill. Served from cache instantly on revisit, then
   // revalidated; item-derived views below stay reactive to the store. A failed
@@ -88,11 +99,24 @@ export function Dashboard() {
   // skeleton spinning forever or silently keeping stale/no data.
   useEffect(() => {
     let alive = true;
+    rangeMemo = range;
+    if (invalidRange) {
+      return () => {
+        alive = false;
+      };
+    }
+    const key = rangeKey(user?.id, range);
+    // Serve cache instantly if it matches this exact user+range, else show skeleton.
+    if (statsCache && statsCache.key === key) {
+      setStats(statsCache.data);
+    } else {
+      setStats(null);
+    }
     setStatsError(false);
-    fetchDashboardStats()
+    fetchDashboardStats(range)
       .then((s) => {
         if (!alive) return;
-        if (user?.id) statsCache = { uid: user.id, data: s };
+        statsCache = { key, data: s };
         setStats(s);
       })
       .catch(() => {
@@ -101,7 +125,7 @@ export function Dashboard() {
     return () => {
       alive = false;
     };
-  }, [user?.id, statsRetryToken]);
+  }, [user?.id, range, statsRetryToken, invalidRange]);
 
   // Top customers by lifetime spend — analytics-gated, computed on read. Fetched
   // separately from the aggregate stats payload. On failure `custError` is set
@@ -154,17 +178,18 @@ export function Dashboard() {
     (i) => expiryStatus(i.earliestExpiry, i.tracksExpiry, expiringSoonDays, new Date()) === "expiring",
   ).length;
 
-  const todaySales = stats?.kpis.todaySales ?? 0;
-  const yesterdaySales = stats?.kpis.yesterdaySales ?? 0;
-  const billsToday = stats?.kpis.billsToday ?? 0;
-  const itemsSold = stats?.kpis.itemsSoldToday ?? 0;
+  const rangeSales = stats?.kpis.rangeSales ?? 0;
+  const prevSales = stats?.kpis.prevSales ?? 0;
+  const billsInRange = stats?.kpis.billsInRange ?? 0;
+  const itemsSold = stats?.kpis.itemsSold ?? 0;
   const salesDelta =
-    yesterdaySales > 0
-      ? Math.round(((todaySales - yesterdaySales) / yesterdaySales) * 100)
-      : todaySales > 0
+    prevSales > 0
+      ? Math.round(((rangeSales - prevSales) / prevSales) * 100)
+      : rangeSales > 0
         ? 100
         : 0;
-  const avgBill = billsToday > 0 ? todaySales / billsToday : 0;
+  const showDelta = stats !== null && prevSales > 0; // hidden for all-time / no prior period
+  const avgBill = billsInRange > 0 ? rangeSales / billsInRange : 0;
 
   const recent = stats?.recentBills ?? [];
   const topItemsData = stats?.topItems ?? [];
@@ -173,8 +198,8 @@ export function Dashboard() {
   // open/close, viewing a bill) don't recompute them or rebuild the array props
   // handed to the chart components.
   const chartData = useMemo(
-    () => (stats ? weeklyBuckets(stats.weekly, new Date()) : []),
-    [stats],
+    () => (stats ? bucketSeries(stats.weekly, range, new Date()) : []),
+    [stats, range],
   );
   const categoryData = useMemo(
     () => stats?.categories.map((c) => ({ category: c.category, revenue: c.revenue })) ?? [],
@@ -218,6 +243,13 @@ export function Dashboard() {
   );
   return (
     <>
+      <div className="card mb-3">
+        <DateRangePicker value={range} onChange={setRange} />
+        {invalidRange && (
+          <p className="mt-2 text-xs font-semibold text-danger">&quot;From&quot; date must be before &quot;To&quot; date.</p>
+        )}
+      </div>
+
       {statsError && !stats && (
         <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-[#f0c9c0] bg-danger-bg px-3.5 py-3 text-[13px] font-semibold text-danger">
           <span className="flex items-center gap-1.5">
@@ -251,9 +283,9 @@ export function Dashboard() {
       <div className="mb-5 grid grid-cols-2 gap-3.5 lg:grid-cols-4">
         <KpiCard
           variant="hero"
-          label="Today's Sales"
+          label="Sales"
           corner={
-            !loading && (
+            showDelta && (
               <span className="rounded-full bg-white/20 px-2 py-0.5 text-[11px] font-bold">
                 {salesDelta >= 0 ? "+" : ""}
                 {salesDelta}%
@@ -266,7 +298,7 @@ export function Dashboard() {
             ) : (
               <div className="num mt-2 text-[28px] font-extrabold tracking-tight">
                 {currency}
-                {todaySales.toFixed(0)}
+                {rangeSales.toFixed(0)}
               </div>
             )
           }
@@ -274,24 +306,26 @@ export function Dashboard() {
             <div className="mt-0.5 text-[11.5px] opacity-70">
               {loading ? (
                 <div aria-hidden className="mt-1 h-3 w-24 animate-pulse rounded bg-white/20" />
-              ) : (
+              ) : showDelta ? (
                 <>
                   vs {currency}
-                  {yesterdaySales.toFixed(0)} yesterday
+                  {prevSales.toFixed(0)} prev period
                 </>
+              ) : (
+                <>in selected range</>
               )}
             </div>
           }
         />
 
         <KpiCard
-          label="Bills Today"
+          label="Bills"
           value={
             loading ? (
               <Skeleton className="mt-2 h-8 w-16" />
             ) : (
               <div className="num mt-2 text-[28px] font-extrabold tracking-tight text-ink">
-                {billsToday}
+                {billsInRange}
               </div>
             )
           }
@@ -343,7 +377,7 @@ export function Dashboard() {
           {hasPermission(user, "analytics") ? (
             <div className="card">
               <div className="card-header">
-                <h3>Sales this week</h3>
+                <h3>{range.from === range.to && range.from ? "Sales" : "Sales over range"}</h3>
               </div>
               {loading ? <ChartFallback h={160} /> : <SalesChart data={chartData} currency={currency} />}
             </div>
