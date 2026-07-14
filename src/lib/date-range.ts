@@ -31,3 +31,16 @@ export function last7Days(): DateRange {
   const p = presets().find((x) => x.label === "Last 7 days")!;
   return { from: p.from, to: p.to };
 }
+
+/**
+ * Human-readable label for a range: the matching preset name, "All time" for
+ * open bounds, else a "from – to" span (with "…" for a missing side).
+ */
+export function rangeLabel(r: DateRange): string {
+  if (!r.from && !r.to) return "All time";
+  const match = presets().find((p) => p.from === r.from && p.to === r.to);
+  if (match) return match.label;
+  const fmt = (s: string | null) =>
+    s ? new Date(`${s}T00:00:00`).toLocaleDateString("en-US", { day: "numeric", month: "short" }) : "…";
+  return `${fmt(r.from)} – ${fmt(r.to)}`;
+}

@@ -23,7 +23,7 @@ import { ViewBillModal } from "@/components/feature/bill/ViewBillModal";
 import { StockInForm } from "@/components/feature/stock/StockInForm";
 import { Modal } from "@/components/ui/Modal";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { DateRangePicker } from "@/components/ui/DateRangePicker";
+import { DateRangeFilter } from "@/components/ui/DateRangePicker";
 import { KpiCard } from "./KpiCard";
 import { RecentBillsCard } from "./RecentBillsCard";
 import { TopCustomersCard } from "./TopCustomersCard";
@@ -243,10 +243,10 @@ export function Dashboard() {
   );
   return (
     <>
-      <div className="card mb-3">
-        <DateRangePicker value={range} onChange={setRange} />
+      <div className="mb-4 flex flex-col items-end gap-1">
+        <DateRangeFilter value={range} onChange={setRange} />
         {invalidRange && (
-          <p className="mt-2 text-xs font-semibold text-danger">&quot;From&quot; date must be before &quot;To&quot; date.</p>
+          <p className="text-xs font-semibold text-danger">&quot;From&quot; date must be before &quot;To&quot; date.</p>
         )}
       </div>
 
