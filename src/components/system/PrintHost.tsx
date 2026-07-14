@@ -19,7 +19,7 @@ export function PrintHost() {
       // The browser uses document.title as the suggested filename when the
       // print dialog saves to PDF. Set it to the invoice number, then restore.
       const prevTitle = document.title;
-      document.title = `Bill #${target.billNo}`;
+      document.title = `Invoice #${target.billNo}`;
       window.print();
       document.title = prevTitle;
       clearPrint();
