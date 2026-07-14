@@ -4,6 +4,7 @@ import { createClient } from "@/utils/supabase/client";
 import type { Bakery, Batch, Bill, BillLine, BillStatus, Customer, Item, Log, PaymentMethod, StoreLists, User } from "./types";
 import type { ProfileRow } from "./auth";
 import { profileToUser } from "./auth";
+import type { DateRange } from "./date-range";
 
 // ─── Row shapes (DB) ────────────────────────────────────────────────────────
 interface ItemRow {
@@ -317,7 +318,7 @@ export async function fetchReportData(): Promise<FullStoreData> {
 // ─── Dashboard aggregates (server-computed, bounded) ─────────────────────────
 export interface DashboardStats {
   today: string;
-  kpis: { todaySales: number; yesterdaySales: number; billsToday: number; itemsSoldToday: number };
+  kpis: { rangeSales: number; prevSales: number; billsInRange: number; itemsSold: number };
   /** Per-day active-sales totals for (up to) the last 7 local days. */
   weekly: { date: string; total: number }[];
   topItems: { name: string; qty: number }[];
@@ -334,10 +335,14 @@ export interface DashboardStats {
   }[];
 }
 
-/** Fetch the pre-aggregated dashboard payload for the client's local timezone. */
-export async function fetchDashboardStats(): Promise<DashboardStats> {
+/** Fetch the pre-aggregated dashboard payload for a date range (client tz). */
+export async function fetchDashboardStats(range: DateRange): Promise<DashboardStats> {
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-  return rpc<DashboardStats>("dashboard_stats", { p_tz: tz });
+  return rpc<DashboardStats>("dashboard_stats", {
+    p_tz: tz,
+    p_from: range.from,
+    p_to: range.to,
+  });
 }
 
 // ─── Paginated history ───────────────────────────────────────────────────────
