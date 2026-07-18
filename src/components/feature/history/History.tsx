@@ -34,6 +34,7 @@ import {
 } from "@/lib/supabase-data";
 import { tabCls } from "@/components/ui/tabClass";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { Modal } from "@/components/ui/Modal";
 import { DateRangeFilter } from "@/components/ui/DateRangePicker";
 import { ViewBillModal } from "@/components/feature/bill/ViewBillModal";
 import type { DateRange } from "@/lib/date-range";
@@ -257,6 +258,7 @@ export function History() {
   const isOwner = user?.role === "Owner";
   const [tab, setTab] = useState<"bills" | "logs" | "store">(canSales ? "bills" : "logs");
   const [viewBill, setViewBill] = useState<Bill | null>(null);
+  const [confirmCancel, setConfirmCancel] = useState<Bill | null>(null);
 
   // ─── Bills ────────────────────────────────────────────────────────────────
   const cachedBills = billsCache && billsCache.uid === user?.id ? billsCache : null;
@@ -474,12 +476,18 @@ export function History() {
   const emojiById = useMemo(() => new Map(items.map((i) => [i.id, i.emoji])), [items]);
   const itemEmoji = (itemId?: string) => (itemId && emojiById.get(itemId)) || "📦";
 
-  const doCancel = async (b: Bill) => {
+  const doCancel = (b: Bill) => {
     if (b.status === "cancelled") {
       toast("Already cancelled");
       return;
     }
-    if (!confirm(`Cancel Bill #${b.billNo}? Stock quantities will be restored.`)) return;
+    setConfirmCancel(b);
+  };
+
+  const confirmCancelNow = async () => {
+    const b = confirmCancel;
+    if (!b) return;
+    setConfirmCancel(null);
     setBillBusy(b.id, true);
     try {
       const r = await cancelBill(b.id, user?.name ?? "Unknown");
@@ -788,6 +796,26 @@ export function History() {
       )}
 
       {viewBill && <ViewBillModal bill={viewBill} onClose={() => setViewBill(null)} />}
+
+      {confirmCancel && (
+        <Modal title="Cancel bill" onClose={() => setConfirmCancel(null)}>
+          <p className="text-sm text-ink-muted">
+            Cancel <span className="font-bold text-ink">Bill #{confirmCancel.billNo}</span>? Stock
+            quantities will be restored.
+          </p>
+          <div className="mt-5 flex gap-2.5">
+            <button className="btn-secondary flex-1" onClick={() => setConfirmCancel(null)}>
+              Back
+            </button>
+            <button
+              className="inline-flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl border-none bg-warn p-3 text-sm font-bold text-white"
+              onClick={confirmCancelNow}
+            >
+              <Ban size={16} /> Cancel bill
+            </button>
+          </div>
+        </Modal>
+      )}
     </>
   );
 }

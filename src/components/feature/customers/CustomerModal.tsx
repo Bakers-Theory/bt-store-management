@@ -55,7 +55,7 @@ export function CustomerModal({
             <div className="text-[11px] font-semibold text-ink-muted">Total spend</div>
             <div className="num mt-1 text-lg font-extrabold text-ink">
               {currency}
-              {customer.totalSpend.toFixed(0)}
+              {customer.totalSpend.toFixed(2)}
             </div>
           </div>
           <div className="rounded-[14px] border border-line bg-cream p-3 text-center">
