@@ -58,6 +58,29 @@ const priorityBadge: Record<string, string> = {
   Info: "badge-brown",
 };
 
+// Up/down trend pill. `onHero` styles it for the brown hero card (solid fill +
+// white text); otherwise a tinted pill for the plain white KPI tiles.
+function DeltaBadge({ delta, onHero = false }: { delta: number; onHero?: boolean }) {
+  const cls = onHero
+    ? delta > 0
+      ? "bg-success text-white"
+      : delta < 0
+        ? "bg-danger text-white"
+        : "bg-white/20"
+    : delta > 0
+      ? "bg-success-bg text-success"
+      : delta < 0
+        ? "bg-danger-bg text-danger"
+        : "bg-cream-dark text-ink-muted";
+  return (
+    <span className={`flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-bold ${cls}`}>
+      {delta > 0 ? <ArrowUp size={11} /> : delta < 0 ? <ArrowDown size={11} /> : null}
+      {delta >= 0 ? "+" : ""}
+      {delta}%
+    </span>
+  );
+}
+
 // Cache the last-fetched stats keyed by user + range so a user switch or a range
 // change never shows stale data, and revisiting a range renders instantly.
 let statsCache: { key: string; data: DashboardStats } | null = null;
@@ -83,6 +106,7 @@ export function Dashboard() {
       : null,
   );
   const [addOpen, setAddOpen] = useState(false);
+  const [editItemId, setEditItemId] = useState<string | null>(null);
   const [stockInOpen, setStockInOpen] = useState(false);
   const [stockInItemId, setStockInItemId] = useState<string | undefined>(undefined);
   const [exporting, setExporting] = useState(false);
@@ -193,14 +217,19 @@ export function Dashboard() {
   const rangeSales = stats?.kpis.rangeSales ?? 0;
   const prevSales = stats?.kpis.prevSales ?? 0;
   const billsInRange = stats?.kpis.billsInRange ?? 0;
+  const prevBills = stats?.kpis.prevBills ?? 0;
   const itemsSold = stats?.kpis.itemsSold ?? 0;
-  const salesDelta =
-    prevSales > 0
-      ? Math.round(((rangeSales - prevSales) / prevSales) * 100)
-      : rangeSales > 0
-        ? 100
-        : 0;
+  const prevItemsSold = stats?.kpis.prevItemsSold ?? 0;
+  // % change vs the prior period (100% when there's a current value but no prior).
+  const pctDelta = (cur: number, prev: number) =>
+    prev > 0 ? Math.round(((cur - prev) / prev) * 100) : cur > 0 ? 100 : 0;
+  const salesDelta = pctDelta(rangeSales, prevSales);
+  const billsDelta = pctDelta(billsInRange, prevBills);
+  const itemsDelta = pctDelta(itemsSold, prevItemsSold);
+  // A delta is only meaningful against a real prior period (bounded range).
   const showDelta = stats !== null && prevSales > 0; // hidden for all-time / no prior period
+  const showBillsDelta = stats !== null && prevBills > 0;
+  const showItemsDelta = stats !== null && prevItemsSold > 0;
   const avgBill = billsInRange > 0 ? rangeSales / billsInRange : 0;
 
   // The prior period compared against: the equal-length window immediately
@@ -312,27 +341,7 @@ export function Dashboard() {
         <KpiCard
           variant="hero"
           label="Sales"
-          corner={
-            showDelta && (
-              <span
-                className={`flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-bold ${
-                  salesDelta > 0
-                    ? "bg-success text-white"
-                    : salesDelta < 0
-                      ? "bg-danger text-white"
-                      : "bg-white/20"
-                }`}
-              >
-                {salesDelta > 0 ? (
-                  <ArrowUp size={11} />
-                ) : salesDelta < 0 ? (
-                  <ArrowDown size={11} />
-                ) : null}
-                {salesDelta >= 0 ? "+" : ""}
-                {salesDelta}%
-              </span>
-            )
-          }
+          corner={showDelta && <DeltaBadge delta={salesDelta} onHero />}
           value={
             loading ? (
               <div aria-hidden className="mt-2 h-8 w-24 animate-pulse rounded-md bg-white/25" />
@@ -362,6 +371,7 @@ export function Dashboard() {
 
         <KpiCard
           label="Bills"
+          corner={!loading && showBillsDelta && <DeltaBadge delta={billsDelta} />}
           value={
             loading ? (
               <Skeleton className="mt-2 h-8 w-16" />
@@ -387,6 +397,7 @@ export function Dashboard() {
 
         <KpiCard
           label="Items Sold"
+          corner={!loading && showItemsDelta && <DeltaBadge delta={itemsDelta} />}
           value={
             loading ? (
               <Skeleton className="mt-2 h-8 w-16" />
@@ -556,20 +567,39 @@ export function Dashboard() {
                         </div>
                       </div>
                     ))
-                  : recs.map((r, idx) => (
-                      <div
-                        key={idx}
-                        className="flex items-start gap-2.5 border-t border-line-soft py-2.5 first:border-t-0"
-                      >
-                        <span className={`badge ${priorityBadge[r.priority]} flex-shrink-0`}>
-                          {r.priority}
-                        </span>
-                        <div className="min-w-0">
-                          <div className="text-[13px] font-bold text-ink">{r.insight}</div>
-                          <div className="text-[11.5px] text-ink-light">{r.detail}</div>
+                  : recs.map((r, idx) => {
+                      const act = r.action;
+                      return (
+                        <div
+                          key={idx}
+                          className="flex items-start gap-2.5 border-t border-line-soft py-2.5 first:border-t-0"
+                        >
+                          <span className={`badge ${priorityBadge[r.priority]} flex-shrink-0`}>
+                            {r.priority}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-[13px] font-bold text-ink">{r.insight}</div>
+                            <div className="text-[11.5px] text-ink-light">{r.detail}</div>
+                          </div>
+                          {act && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (act.kind === "restock") {
+                                  setStockInItemId(act.itemId);
+                                  setStockInOpen(true);
+                                } else {
+                                  setEditItemId(act.itemId);
+                                }
+                              }}
+                              className="shrink-0 self-center rounded-[9px] bg-line-soft px-3 py-1.5 text-[12px] font-bold text-brown"
+                            >
+                              {act.kind === "restock" ? "Reorder" : "Edit"}
+                            </button>
+                          )}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
               </div>
             </>
           )}
@@ -602,6 +632,7 @@ export function Dashboard() {
       </div>
 
       {addOpen && <ItemModal itemId={null} onClose={() => setAddOpen(false)} />}
+      {editItemId && <ItemModal itemId={editItemId} onClose={() => setEditItemId(null)} />}
       {viewBill && <ViewBillModal bill={viewBill} onClose={() => setViewBill(null)} />}
       {stockInOpen && (
         <Modal title="Add Stock" onClose={() => setStockInOpen(false)}>

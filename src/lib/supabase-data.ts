@@ -322,7 +322,14 @@ export async function fetchReportData(): Promise<FullStoreData> {
 // ─── Dashboard aggregates (server-computed, bounded) ─────────────────────────
 export interface DashboardStats {
   today: string;
-  kpis: { rangeSales: number; prevSales: number; billsInRange: number; itemsSold: number };
+  kpis: {
+    rangeSales: number;
+    prevSales: number;
+    billsInRange: number;
+    prevBills: number;
+    itemsSold: number;
+    prevItemsSold: number;
+  };
   /** Per-day active-sales totals for (up to) the last 7 local days. */
   weekly: { date: string; total: number }[];
   topItems: { name: string; qty: number }[];
