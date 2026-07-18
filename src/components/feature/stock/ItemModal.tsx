@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Lock, Save, Check, Info, Loader2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Lock, Save, Check, Info, Loader2, ImagePlus, Trash2 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
+import { ItemThumb } from "@/components/ui/ItemThumb";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { fetchItemBatches } from "@/lib/supabase-data";
+import { compressImage, uploadProductImage, deleteProductImage, MAX_UPLOAD_BYTES } from "@/lib/image";
+import { CropModal } from "./CropModal";
 import { expiryStatus, type ExpiryStatus } from "@/lib/expiry";
 import type { Batch } from "@/lib/types";
 
@@ -27,6 +30,10 @@ export function ItemModal({
   const editing = itemId ? items.find((i) => i.id === itemId) : undefined;
 
   const [emoji, setEmoji] = useState(editing?.emoji ?? "📦");
+  const [imageUrl, setImageUrl] = useState<string | null>(editing?.imageUrl ?? null);
+  const [imgBusy, setImgBusy] = useState(false);
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState(editing?.name ?? "");
   const [category, setCategory] = useState(editing?.category ?? cats[0] ?? "");
   const [unit, setUnit] = useState(editing?.unit ?? units[0] ?? "");
@@ -50,6 +57,48 @@ export function ItemModal({
   };
   useEffect(loadBatches, [itemId]);
 
+  const onImageFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file later
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast("Please choose an image file");
+      return;
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      toast("Image must be under 30 MB");
+      return;
+    }
+    setCropSrc(URL.createObjectURL(file)); // opens the crop step
+  };
+
+  const closeCrop = () => {
+    if (cropSrc) URL.revokeObjectURL(cropSrc);
+    setCropSrc(null);
+  };
+
+  const onCropped = async (blob: Blob) => {
+    setImgBusy(true);
+    try {
+      const compressed = await compressImage(blob);
+      const url = await uploadProductImage(compressed);
+      const prev = imageUrl;
+      setImageUrl(url);
+      if (prev) void deleteProductImage(prev); // clean up the replaced image
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Could not upload image");
+    } finally {
+      setImgBusy(false);
+      closeCrop();
+    }
+  };
+
+  const removeImage = () => {
+    const prev = imageUrl;
+    setImageUrl(null);
+    if (prev) void deleteProductImage(prev);
+  };
+
   const dup =
     !itemId && name.trim()
       ? items.find(
@@ -60,6 +109,7 @@ export function ItemModal({
   const canSave = editing
     ? name.trim().length > 0 &&
       (emoji !== editing.emoji ||
+        imageUrl !== editing.imageUrl ||
         name.trim() !== editing.name ||
         category !== editing.category ||
         unit !== editing.unit ||
@@ -80,6 +130,7 @@ export function ItemModal({
         {
           name: trimmed,
           emoji,
+          imageUrl,
           category,
           unit,
           price: parseFloat(price) || 0,
@@ -101,9 +152,47 @@ export function ItemModal({
   };
 
   return (
+    <>
     <Modal title={itemId ? "Edit Item" : "Add New Item"} onClose={onClose}>
       <div className="mb-3.5">
-        <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Icon</label>
+        <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Product image</label>
+        <div className="flex items-center gap-3">
+          <ItemThumb src={imageUrl} emoji={emoji} size={88} className="border border-line" />
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={imgBusy}
+              className="inline-flex items-center gap-1.5 rounded-[11px] border border-line bg-cream px-3 py-1.5 text-[13px] font-bold text-ink disabled:opacity-60"
+            >
+              {imgBusy ? <Loader2 size={15} className="animate-spin" /> : <ImagePlus size={15} />}
+              {imageUrl ? "Replace" : "Upload"}
+            </button>
+            {imageUrl && !imgBusy && (
+              <button
+                type="button"
+                onClick={removeImage}
+                className="inline-flex items-center gap-1.5 rounded-[11px] border border-danger/40 bg-danger-bg px-3 py-1.5 text-[13px] font-bold text-danger"
+              >
+                <Trash2 size={14} /> Remove
+              </button>
+            )}
+          </div>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            onChange={onImageFile}
+            className="hidden"
+          />
+        </div>
+        <p className="mt-1.5 text-[11px] text-ink-light">
+          Optimized to ~512px WebP on upload. No image? The icon below is used instead.
+        </p>
+      </div>
+
+      <div className="mb-3.5">
+        <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Icon (fallback)</label>
         <div className="flex flex-wrap gap-1.5">
           {emojis.map((e) => (
             <button
@@ -346,5 +435,9 @@ export function ItemModal({
         )}
       </button>
     </Modal>
+    {cropSrc && (
+      <CropModal src={cropSrc} onCancel={closeCrop} onCropped={onCropped} />
+    )}
+    </>
   );
 }

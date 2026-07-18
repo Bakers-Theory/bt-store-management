@@ -7,6 +7,7 @@ import { useUIStore } from "@/lib/ui-store";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { expiryStatus } from "@/lib/expiry";
 import { Modal } from "@/components/ui/Modal";
+import { ItemThumb } from "@/components/ui/ItemThumb";
 import { ItemModal } from "./ItemModal";
 import { StockInForm } from "./StockInForm";
 import { StockOutForm } from "./StockOutForm";
@@ -208,7 +209,7 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
                   className="grid grid-cols-[2.2fr_1fr_1fr_1fr_1fr_0.9fr] items-center gap-3 border-t border-line-soft px-5 py-[13px]"
                 >
                   <div className="flex min-w-0 items-center gap-3">
-                    <span className="text-[22px]">{item.emoji || "📦"}</span>
+                    <ItemThumb src={item.imageUrl} emoji={item.emoji} size={40} />
                     <span className="truncate text-sm font-bold">{item.name}</span>
                     <ExpiryBadge
                       earliestExpiry={item.earliestExpiry}
@@ -265,7 +266,7 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
                   key={item.id}
                   className="flex items-center gap-3 rounded-[15px] border border-line bg-warm-white px-[15px] py-[13px]"
                 >
-                  <span className="text-[26px]">{item.emoji || "📦"}</span>
+                  <ItemThumb src={item.imageUrl} emoji={item.emoji} size={48} />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-bold">
                       {item.name}

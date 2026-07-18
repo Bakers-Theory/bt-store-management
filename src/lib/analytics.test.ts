@@ -18,8 +18,8 @@ function bill(partial: Partial<Bill>): Bill {
   } as Bill;
 }
 
-const bread: Item = { id: "i1", name: "Bread", emoji: "🍞", category: "Breads", unit: "pcs", price: 40, costPrice: 20, qty: 5, tracksExpiry: true, earliestExpiry: null, batches: [] };
-const breadLine = { itemId: "i1", name: "Bread", emoji: "🍞", unit: "pcs", qty: 2, price: 40, costPrice: 20 };
+const bread: Item = { id: "i1", name: "Bread", emoji: "🍞", imageUrl: null, category: "Breads", unit: "pcs", price: 40, costPrice: 20, qty: 5, tracksExpiry: true, earliestExpiry: null, batches: [] };
+const breadLine = { itemId: "i1", name: "Bread", emoji: "🍞", imageUrl: null, unit: "pcs", qty: 2, price: 40, costPrice: 20 };
 
 describe("categoryPL", () => {
   it("computes revenue, cogs, profit, margin and share per category (active only)", () => {
