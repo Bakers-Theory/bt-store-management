@@ -5,6 +5,7 @@ import { Loader2, Plus, X } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { fetchListRows } from "@/lib/supabase-data";
+import { Skeleton } from "@/components/ui/Skeleton";
 
 interface Row {
   id: string;
@@ -25,6 +26,9 @@ export function ListManager() {
   const toast = useUIStore((s) => s.toast);
 
   const [rows, setRows] = useState<Row[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState(false);
+  const [retryToken, setRetryToken] = useState(0);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   // Keys of in-flight operations: `add:${kind}` for adds, the row id for removes.
   const [busy, setBusy] = useState<Set<string>>(new Set());
@@ -37,8 +41,35 @@ export function ListManager() {
       return next;
     });
 
-  const reload = () => void fetchListRows().then(setRows);
-  useEffect(reload, []);
+  // Post-mutation refresh (best-effort; keeps current rows on failure).
+  const reload = () => {
+    fetchListRows()
+      .then(setRows)
+      .catch(() => toast("Couldn't refresh options"));
+  };
+
+  // Initial load with a skeleton, then error + retry on failure.
+  useEffect(() => {
+    let alive = true;
+    setError(false);
+    setLoaded(false);
+    fetchListRows()
+      .then((r) => {
+        if (alive) {
+          setRows(r);
+          setLoaded(true);
+        }
+      })
+      .catch(() => {
+        if (alive) {
+          setError(true);
+          setLoaded(true);
+        }
+      });
+    return () => {
+      alive = false;
+    };
+  }, [retryToken]);
 
   const add = async (kind: string) => {
     const value = (drafts[kind] ?? "").trim();
@@ -80,6 +111,27 @@ export function ListManager() {
         adding items. A category or unit still used by an item can&apos;t be removed.
       </p>
 
+      {!loaded ? (
+        <div className="flex flex-col gap-4">
+          {SECTIONS.map((sec) => (
+            <div key={sec.kind} className="space-y-1.5">
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="h-9 w-full rounded-[11px]" />
+            </div>
+          ))}
+        </div>
+      ) : error ? (
+        <div className="py-6 text-center text-sm text-ink-muted">
+          <p className="mb-3">Couldn&apos;t load item options.</p>
+          <button
+            type="button"
+            onClick={() => setRetryToken((t) => t + 1)}
+            className="rounded-full bg-brown px-4 py-1.5 text-[13px] font-bold text-warm-white"
+          >
+            Retry
+          </button>
+        </div>
+      ) : (
       <div className="flex flex-col gap-4">
         {SECTIONS.map((sec) => (
           <div key={sec.kind}>
@@ -141,6 +193,7 @@ export function ListManager() {
           </div>
         ))}
       </div>
+      )}
     </div>
   );
 }

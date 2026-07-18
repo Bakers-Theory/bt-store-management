@@ -5,6 +5,7 @@ import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { fetchStaff } from "@/lib/supabase-data";
 import { useUIStore } from "@/lib/ui-store";
 import { Modal } from "@/components/ui/Modal";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { UserModal } from "./UserModal";
 import type { Permissions, User } from "@/lib/types";
 
@@ -23,6 +24,9 @@ function initials(name: string): string {
 export function UserManagement() {
   const toast = useUIStore((s) => s.toast);
   const [users, setUsers] = useState<User[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState(false);
+  const [retryToken, setRetryToken] = useState(0);
   const [modal, setModal] = useState<{ user: User | null } | null>(null);
   const [confirmUser, setConfirmUser] = useState<User | null>(null);
   const [deleting, setDeleting] = useState<Set<string>>(new Set());
@@ -35,13 +39,38 @@ export function UserManagement() {
       return next;
     });
 
+  // Post-mutation refresh (best-effort; keeps the current list on failure).
   const reload = useCallback(async () => {
-    setUsers(await fetchStaff());
-  }, []);
+    try {
+      setUsers(await fetchStaff());
+    } catch {
+      toast("Couldn't refresh staff list");
+    }
+  }, [toast]);
 
+  // Initial load with a skeleton, then an error + retry on failure instead of a
+  // silently blank card.
   useEffect(() => {
-    reload();
-  }, [reload]);
+    let alive = true;
+    setError(false);
+    setLoaded(false);
+    fetchStaff()
+      .then((rows) => {
+        if (alive) {
+          setUsers(rows);
+          setLoaded(true);
+        }
+      })
+      .catch(() => {
+        if (alive) {
+          setError(true);
+          setLoaded(true);
+        }
+      });
+    return () => {
+      alive = false;
+    };
+  }, [retryToken]);
 
   const remove = async (u: User) => {
     setConfirmUser(null);
@@ -139,7 +168,36 @@ export function UserManagement() {
         </button>
       </div>
 
-      <div className="flex flex-col gap-3">{users.map(staffCard)}</div>
+      <div className="flex flex-col gap-3">
+        {!loaded ? (
+          [0, 1].map((i) => (
+            <div key={i} className="rounded-[14px] border border-[#f0e2cc] p-3.5">
+              <div className="flex items-center gap-[11px]">
+                <Skeleton className="h-10 w-10 rounded-[11px]" />
+                <div className="flex-1 space-y-1.5">
+                  <Skeleton className="h-3.5 w-28" />
+                  <Skeleton className="h-3 w-20" />
+                </div>
+              </div>
+            </div>
+          ))
+        ) : error ? (
+          <div className="py-6 text-center text-sm text-ink-muted">
+            <p className="mb-3">Couldn&apos;t load staff.</p>
+            <button
+              type="button"
+              onClick={() => setRetryToken((t) => t + 1)}
+              className="rounded-full bg-brown px-4 py-1.5 text-[13px] font-bold text-warm-white"
+            >
+              Retry
+            </button>
+          </div>
+        ) : users.length === 0 ? (
+          <p className="py-6 text-center text-sm text-ink-muted">No staff added yet</p>
+        ) : (
+          users.map(staffCard)
+        )}
+      </div>
 
       {modal && (
         <UserModal

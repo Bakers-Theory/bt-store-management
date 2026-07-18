@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   Ban,
   ClipboardList,
   Loader2,
@@ -168,6 +169,8 @@ export function History() {
   const [adminLogsMore, setAdminLogsMore] = useState(false);
   const [adminLoaded, setAdminLoaded] = useState(false);
   const [loaded, setLoaded] = useState(cached != null);
+  const [histError, setHistError] = useState(false);
+  const [histRetryToken, setHistRetryToken] = useState(0);
   // Per-bill in-flight cancel/delete, and the two "Load more" buttons.
   const [busyBill, setBusyBill] = useState<Set<string>>(new Set());
   const [loadingBills, setLoadingBills] = useState(false);
@@ -188,8 +191,11 @@ export function History() {
   }, [user?.id, bills, billsMore, logs, logsMore]);
 
   // Revalidate the loaded window on mount (keeps any "load more" expansion).
+  // A failed fetch surfaces an error + retry rather than leaving the tab stuck
+  // on its skeleton forever.
   useEffect(() => {
     let alive = true;
+    setHistError(false);
     const billWindow = Math.max(histCache?.bills.length ?? 0, PAGE_SIZE);
     const logWindow = Math.max(histCache?.logs.length ?? 0, PAGE_SIZE);
     (async () => {
@@ -222,13 +228,28 @@ export function History() {
             }
           }),
         );
-      await Promise.all(jobs);
-      if (alive) setLoaded(true);
+      try {
+        await Promise.all(jobs);
+      } catch {
+        if (alive) setHistError(true);
+      } finally {
+        if (alive) {
+          setLoaded(true);
+          setAdminLoaded(true);
+        }
+      }
     })();
     return () => {
       alive = false;
     };
-  }, [canSales, canInv, isOwner]);
+  }, [canSales, canInv, isOwner, histRetryToken]);
+
+  const retryLoad = () => {
+    setLoaded(false);
+    setAdminLoaded(false);
+    setHistError(false);
+    setHistRetryToken((t) => t + 1);
+  };
 
   const loadMoreBills = async () => {
     setLoadingBills(true);
@@ -236,6 +257,8 @@ export function History() {
       const p = await fetchBillsPage(bills.length, PAGE_SIZE);
       setBills((prev) => [...prev, ...p.bills]);
       setBillsMore(p.hasMore);
+    } catch {
+      toast("Couldn't load more bills");
     } finally {
       setLoadingBills(false);
     }
@@ -247,6 +270,8 @@ export function History() {
       const p = await fetchLogsPage(logs.length, PAGE_SIZE);
       setLogs((prev) => [...prev, ...p.logs]);
       setLogsMore(p.hasMore);
+    } catch {
+      toast("Couldn't load more activity");
     } finally {
       setLoadingLogs(false);
     }
@@ -258,6 +283,8 @@ export function History() {
       const p = await fetchAdminLogsPage(adminLogs.length, PAGE_SIZE);
       setAdminLogs((prev) => [...prev, ...p.logs]);
       setAdminLogsMore(p.hasMore);
+    } catch {
+      toast("Couldn't load more activity");
     } finally {
       setLoadingAdminLogs(false);
     }
@@ -328,6 +355,22 @@ export function History() {
     });
   }, [bills, statusFilter, search]);
 
+  const errorState = (label: string) => (
+    <div className="px-5 py-10 text-center text-ink-muted">
+      <div className="mb-3 flex justify-center">
+        <AlertTriangle size={44} className="text-danger" />
+      </div>
+      <p className="mb-3 text-sm">{label}</p>
+      <button
+        type="button"
+        onClick={retryLoad}
+        className="rounded-full bg-brown px-4 py-1.5 text-[13px] font-bold text-warm-white"
+      >
+        Retry
+      </button>
+    </div>
+  );
+
   return (
     <>
       <div className="mb-4 flex w-fit gap-1.5 rounded-xl bg-[#f4e7d2] p-1">
@@ -376,6 +419,8 @@ export function History() {
 
           {!loaded ? (
             <BillsSkeleton />
+          ) : histError && bills.length === 0 ? (
+            errorState("Couldn't load bills.")
           ) : filteredBills.length === 0 ? (
             <div className="px-5 py-10 text-center text-ink-muted">
               <div className="mb-3 flex justify-center">
@@ -464,6 +509,8 @@ export function History() {
       {tab === "logs" && (
         !loaded ? (
           <LogsSkeleton />
+        ) : histError && logs.length === 0 ? (
+          errorState("Couldn't load activity.")
         ) : logs.length === 0 ? (
           <div className="px-5 py-10 text-center text-ink-muted">
             <div className="mb-3 flex justify-center">
@@ -530,6 +577,8 @@ export function History() {
       {tab === "store" && (
         !adminLoaded ? (
           <LogsSkeleton />
+        ) : histError && adminLogs.length === 0 ? (
+          errorState("Couldn't load store activity.")
         ) : adminLogs.length === 0 ? (
           <div className="px-5 py-10 text-center text-ink-muted">
             <div className="mb-3 flex justify-center">

@@ -76,6 +76,8 @@ interface StoreState {
   items: Item[];
   lists: StoreLists;
   _hasHydrated: boolean;
+  /** True when a cold load (no cached data) failed — surfaced as a retry banner. */
+  loadError: boolean;
 
   /**
    * Load the bounded base data (store settings + item catalogue) into the
@@ -196,6 +198,7 @@ export const useBakeryStore = create<StoreState>()(
     items: [],
     lists: EMPTY_LISTS,
     _hasHydrated: false,
+    loadError: false,
 
     load: async () => {
       // persist rehydrates synchronously from localStorage before this runs, so
@@ -206,14 +209,17 @@ export const useBakeryStore = create<StoreState>()(
       }
       try {
         const data = await fetchBaseData();
-        set({ ...data, _hasHydrated: true });
+        set({ ...data, _hasHydrated: true, loadError: false });
       } catch {
-        set({ _hasHydrated: true });
+        // Only flag an error when there's nothing cached to show — a failed
+        // background revalidation over good cached data stays silent.
+        const cold = get().items.length === 0 && get().bakery.name === "";
+        set({ _hasHydrated: true, loadError: cold });
       }
     },
 
     reset: () =>
-      set({ bakery: PLACEHOLDER_BAKERY, items: [], lists: EMPTY_LISTS, _hasHydrated: false }),
+      set({ bakery: PLACEHOLDER_BAKERY, items: [], lists: EMPTY_LISTS, _hasHydrated: false, loadError: false }),
 
     // ─── Items ─────────────────────────────────────────────────────────────
     saveItem: async (input, id) => {
