@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { PROFILE_COLUMNS, profileToUser, type ProfileRow } from "@/lib/auth";
+import { useBakeryStore } from "@/lib/store";
 import type { User } from "@/lib/types";
 
 interface AuthContextValue {
@@ -83,6 +84,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await supabase.auth.signOut();
         setUid(null);
         setUser(null);
+        // Drop the cached store so the next user on this device starts clean
+        // (never inherits the previous user's items, incl. private cost prices).
+        useBakeryStore.getState().reset();
+        useBakeryStore.persist.clearStorage();
       },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
