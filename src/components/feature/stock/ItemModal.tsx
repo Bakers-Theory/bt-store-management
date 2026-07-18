@@ -8,9 +8,15 @@ import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { fetchItemBatches } from "@/lib/supabase-data";
 import { compressImage, uploadProductImage, deleteProductImage, MAX_UPLOAD_BYTES } from "@/lib/image";
-import { CropModal } from "./CropModal";
+import dynamic from "next/dynamic";
 import { expiryStatus, type ExpiryStatus } from "@/lib/expiry";
 import type { Batch } from "@/lib/types";
+
+// The cropper pulls in react-easy-crop, only needed once a user picks an image
+// to crop. Load it on demand so it stays out of the Stock/Dashboard bundles.
+const CropModal = dynamic(() => import("./CropModal").then((m) => m.CropModal), {
+  ssr: false,
+});
 
 export function ItemModal({
   itemId,

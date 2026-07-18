@@ -1,11 +1,36 @@
 import { Croissant } from "lucide-react";
 
 /**
- * Placeholder shell shown while auth resolves and the Supabase-backed store
- * loads. Mirrors the real Sidebar/Topbar/dashboard layout so the chrome paints
- * immediately (early FCP) instead of a blank screen, then swaps to real content
- * once the store hydrates (LCP). The brand text (desktop sidebar) and logo image
- * (mobile topbar) guarantee a contentful paint on both breakpoints.
+ * The dashboard-shaped body placeholder (KPI row + chart blocks). Shown in the
+ * content area while the Supabase-backed store hydrates — either standalone
+ * (pre-auth, inside AppSkeleton) or beneath the real chrome once auth resolves
+ * but the store hasn't loaded yet (see AppLayout).
+ */
+export function ContentSkeleton() {
+  return (
+    <div className="mx-auto w-full max-w-[1400px]">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div
+            key={i}
+            className="h-[110px] animate-pulse rounded-2xl border border-line bg-warm-white"
+          />
+        ))}
+      </div>
+      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="h-[320px] animate-pulse rounded-2xl border border-line bg-warm-white lg:col-span-2" />
+        <div className="h-[320px] animate-pulse rounded-2xl border border-line bg-warm-white" />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Full-screen placeholder shown while auth resolves (before we know the user, so
+ * the real nav — which depends on role — can't render yet). Mirrors the real
+ * Sidebar/Topbar/dashboard layout so the chrome paints immediately (early FCP)
+ * instead of a blank screen. Once auth resolves, AppLayout swaps in the real
+ * chrome and this is replaced by ContentSkeleton under it until the store loads.
  */
 export function AppSkeleton() {
   return (
@@ -54,20 +79,7 @@ export function AppSkeleton() {
 
         {/* Content */}
         <main className="flex-1 overflow-y-auto p-4 lg:px-8 lg:py-6">
-          <div className="mx-auto w-full max-w-[1400px]">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="h-[110px] animate-pulse rounded-2xl border border-line bg-warm-white"
-                />
-              ))}
-            </div>
-            <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
-              <div className="h-[320px] animate-pulse rounded-2xl border border-line bg-warm-white lg:col-span-2" />
-              <div className="h-[320px] animate-pulse rounded-2xl border border-line bg-warm-white" />
-            </div>
-          </div>
+          <ContentSkeleton />
         </main>
       </div>
     </div>
