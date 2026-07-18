@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, LayoutGrid, List, Loader2, Phone, Printer, Receipt as ReceiptIcon, ShoppingBasket, User, UserCheck, X } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
@@ -61,6 +61,8 @@ export function Bill() {
   const [cartOpen, setCartOpen] = useState(false); // mobile bottom-sheet expansion
   const [customer, setCustomer] = useState({ name: "", phone: "" });
   const [payment, setPayment] = useState<PaymentMethod>("Cash");
+  const [cashReceived, setCashReceived] = useState("");
+  const [clearArmed, setClearArmed] = useState(false);
   const [discount, setDiscount] = useState("");
   const [phoneErr, setPhoneErr] = useState("");
   const [nameErr, setNameErr] = useState("");
@@ -69,9 +71,22 @@ export function Bill() {
   const [lines, setLines] = useState<BillLine[]>([]);
   const [receipt, setReceipt] = useState<BillType | null>(null);
 
+  const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const discountPct = Math.min(100, Math.max(0, parseFloat(discount) || 0));
   const { subtotal, discount: discountAmt, tax, total } = computeTotals(lines, taxRate, discountPct);
   const cartCount = lines.reduce((n, l) => n + l.qty, 0);
+  const changeDue = (parseFloat(cashReceived) || 0) - total;
+
+  // Why the Generate button is disabled — shown inline so it's never a silent
+  // dead-end (a disabled button can't fire its own click handler).
+  const disabledReason = !isOpen
+    ? "Store is closed — billing is paused"
+    : customer.name.trim() === ""
+      ? "Enter a customer name to generate the bill"
+      : customer.phone.length > 0 && customer.phone.length !== 10
+        ? "Phone number must be exactly 10 digits"
+        : "";
 
   // Each row carries its fresh (non-expired) qty + earliest fresh expiry.
   // Products with no fresh stock (out of stock, or only expired batches) are
@@ -188,7 +203,19 @@ export function Bill() {
       return prev.map((bi, i) => (i === idx ? { ...bi, qty: bi.qty - 1 } : bi));
     });
 
-  const clearCart = () => setLines([]);
+  // Two-step to prevent a mis-tap from wiping the whole order: the first tap
+  // arms the button ("Confirm?"), a second within 3s clears it.
+  const clearCart = () => {
+    if (clearTimer.current) clearTimeout(clearTimer.current);
+    if (!clearArmed) {
+      setClearArmed(true);
+      clearTimer.current = setTimeout(() => setClearArmed(false), 3000);
+      return;
+    }
+    setClearArmed(false);
+    setLines([]);
+    setCashReceived("");
+  };
 
   const generate = async () => {
     if (!isOpen) {
@@ -214,9 +241,11 @@ export function Bill() {
       setLines([]);
       setCustomer({ name: "", phone: "" });
       setPayment("Cash");
+      setCashReceived("");
       setDiscount("");
       setPhoneErr("");
       setNameErr("");
+      setClearArmed(false);
       setCartOpen(false);
       setReceipt(bill);
     } catch (e) {
@@ -540,9 +569,11 @@ export function Bill() {
               {lines.length > 0 && (
                 <button
                   onClick={clearCart}
-                  className="flex cursor-pointer items-center rounded-lg border-none bg-danger-bg px-3 py-1.5 text-xs font-bold text-danger transition-transform active:scale-95"
+                  className={`flex cursor-pointer items-center rounded-lg border-none px-3 py-1.5 text-xs font-bold transition-transform active:scale-95 ${
+                    clearArmed ? "bg-danger text-warm-white" : "bg-danger-bg text-danger"
+                  }`}
                 >
-                  Clear
+                  {clearArmed ? "Confirm clear?" : "Clear"}
                 </button>
               )}
               <button
@@ -718,7 +749,10 @@ export function Bill() {
                       <button
                         key={m}
                         type="button"
-                        onClick={() => setPayment(m)}
+                        onClick={() => {
+                          setPayment(m);
+                          if (m !== "Cash") setCashReceived("");
+                        }}
                         className={`cursor-pointer rounded-[7px] border-none px-3.5 py-1 text-[12.5px] font-bold ${
                           payment === m
                             ? "bg-brown text-warm-white"
@@ -730,6 +764,39 @@ export function Bill() {
                     ))}
                   </div>
                 </div>
+                {payment === "Cash" && (
+                  <>
+                    <div className="mt-2 flex items-center justify-between">
+                      <span className="text-[13px] font-semibold text-ink-muted">Cash received</span>
+                      <div className="relative w-[110px]">
+                        <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[13px] font-semibold text-ink-light">
+                          {currency}
+                        </span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          inputMode="decimal"
+                          placeholder="0.00"
+                          value={cashReceived}
+                          onChange={(e) => setCashReceived(e.target.value)}
+                          className="num w-full rounded-[8px] border border-line bg-warm-white py-1 pl-6 pr-2 text-right text-[13px] outline-none focus:border-brown"
+                        />
+                      </div>
+                    </div>
+                    {cashReceived !== "" && (
+                      <div className="mt-1.5 flex justify-between text-[13px] font-bold">
+                        <span className={changeDue < 0 ? "text-danger" : "text-ink"}>
+                          {changeDue < 0 ? "Short by" : "Change due"}
+                        </span>
+                        <span className={`num ${changeDue < 0 ? "text-danger" : "text-success"}`}>
+                          {currency}
+                          {Math.abs(changeDue).toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                  </>
+                )}
                 <button
                   onClick={generate}
                   disabled={
@@ -747,6 +814,11 @@ export function Bill() {
                   )}
                   {generating ? "Generating…" : `Generate bill · ${currency}${total.toFixed(2)}`}
                 </button>
+                {!generating && disabledReason && (
+                  <p className="mt-2 text-center text-[11.5px] font-semibold text-ink-muted">
+                    {disabledReason}
+                  </p>
+                )}
               </div>
             </>
           )}
