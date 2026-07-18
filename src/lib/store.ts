@@ -17,6 +17,7 @@ import {
   rpcDeleteListValue,
   rpcGenerateBill,
   rpcSaveSettings,
+  rpcSetItemImage,
   rpcSetStoreStatus,
   rpcStockIn,
   rpcStockOut,
@@ -89,6 +90,8 @@ interface StoreState {
   reset: () => void;
 
   saveItem: (input: ItemInput, id?: string) => Promise<SaveItemResult>;
+  /** Persist only an existing item's image (null clears it); patches the cache. */
+  setItemImage: (id: string, url: string | null) => Promise<void>;
   deleteItem: (id: string) => Promise<void>;
   stockIn: (itemId: string, qty: number, supplier: string, notes: string, expiry: string | null) => Promise<StockResult>;
   stockOut: (itemId: string, qty: number, reason: string, notes: string) => Promise<StockResult>;
@@ -224,6 +227,10 @@ export const useBakeryStore = create<StoreState>()(
         return { kind: "merged", name: r.name ?? input.name, qty: r.qty ?? input.qty, unit: r.unit ?? input.unit };
       }
       return { kind: "added" };
+    },
+
+    setItemImage: async (id, url) => {
+      patchItem(await rpcSetItemImage(id, url));
     },
 
     deleteItem: async (id) => {

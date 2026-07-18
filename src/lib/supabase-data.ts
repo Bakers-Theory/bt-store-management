@@ -535,6 +535,11 @@ export async function rpcUpdateItem(id: string, p: ItemInputDb): Promise<Item> {
 }
 export const rpcDeleteItem = (id: string) => rpc<void>("delete_item", { p_id: id });
 
+/** Persist just an item's image URL (null clears it), returning the patched row. */
+export async function rpcSetItemImage(id: string, url: string | null): Promise<Item> {
+  return mapItem(await rpc<ItemRow>("set_item_image", { p_id: id, p_url: url }));
+}
+
 export async function rpcStockIn(
   itemId: string, qty: number, supplier: string, notes: string, expiry: string | null,
 ): Promise<Item> {
