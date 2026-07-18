@@ -2,7 +2,11 @@ import { createClient } from "@/utils/supabase/client";
 
 export const MAX_IMAGE_DIM = 512;
 export const IMAGE_QUALITY = 0.8;
-export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+// Generous cap: we always downscale to 512px WebP before upload, so this only
+// guards against pathologically large files. iOS converts HEIC → full-res JPEG
+// when handing a photo to the browser, which can be 2–3× the size shown in
+// Photos, so a 10 MB cap rejected normal phone pictures.
+export const MAX_UPLOAD_BYTES = 30 * 1024 * 1024;
 const BUCKET = "product-images";
 
 /** Scale (w,h) so the longest side is at most `max`, preserving aspect ratio. */
@@ -70,7 +74,7 @@ export async function getCroppedBlob(src: string, area: CropArea): Promise<Blob>
  */
 export async function compressImage(file: Blob): Promise<Blob> {
   if (!file.type.startsWith("image/")) throw new Error("Please choose an image file");
-  if (file.size > MAX_UPLOAD_BYTES) throw new Error("Image must be under 10 MB");
+  if (file.size > MAX_UPLOAD_BYTES) throw new Error("Image must be under 30 MB");
 
   const img = await loadImage(file);
   const { w, h } = fitWithin(img.naturalWidth, img.naturalHeight, MAX_IMAGE_DIM);

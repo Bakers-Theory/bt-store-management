@@ -66,7 +66,7 @@ export function ItemModal({
       return;
     }
     if (file.size > MAX_UPLOAD_BYTES) {
-      toast("Image must be under 10 MB");
+      toast("Image must be under 30 MB");
       return;
     }
     setCropSrc(URL.createObjectURL(file)); // opens the crop step
