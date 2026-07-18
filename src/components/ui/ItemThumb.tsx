@@ -32,6 +32,8 @@ export function ItemThumb({
       <img
         src={src ?? undefined}
         alt=""
+        loading="lazy"
+        decoding="async"
         onError={() => setBroken(true)}
         className={`absolute inset-0 h-full w-full object-cover ${className}`}
       />
@@ -52,6 +54,8 @@ export function ItemThumb({
         alt=""
         width={size}
         height={size}
+        loading="lazy"
+        decoding="async"
         onError={() => setBroken(true)}
         style={{ width: size, height: size }}
         className={`flex-shrink-0 rounded-[10px] object-cover ${className}`}
