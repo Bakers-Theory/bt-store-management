@@ -355,14 +355,41 @@ export interface BillsPage {
   hasMore: boolean;
 }
 
-/** One page of bills (newest first) with their line items. */
-export async function fetchBillsPage(offset: number, limit: number): Promise<BillsPage> {
+export interface BillFilters {
+  q?: string; // numeric → exact bill_no; text → customer_name contains
+  status?: BillStatus;
+  from?: string | null; // local YYYY-MM-DD (inclusive)
+  to?: string | null; // local YYYY-MM-DD (inclusive)
+}
+
+// Local calendar-day bounds → UTC instants, so a timestamptz column filters by
+// the user's day, not the server's.
+const dayStartISO = (ymd: string) => new Date(`${ymd}T00:00:00`).toISOString();
+const dayEndISO = (ymd: string) => new Date(`${ymd}T23:59:59.999`).toISOString();
+
+/** One page of bills (newest first) with their line items, filtered server-side
+ *  so search / status / date reach the whole history, not just loaded rows. */
+export async function fetchBillsPage(
+  offset: number,
+  limit: number,
+  filters: BillFilters = {},
+): Promise<BillsPage> {
   const supabase = createClient();
-  const { data: billRows } = await supabase
-    .from("bills_v")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .range(offset, offset + limit - 1);
+  let query = supabase.from("bills_v").select("*").order("created_at", { ascending: false });
+  if (filters.status) query = query.eq("status", filters.status);
+  if (filters.from) query = query.gte("created_at", dayStartISO(filters.from));
+  if (filters.to) query = query.lte("created_at", dayEndISO(filters.to));
+  const q = filters.q?.trim();
+  if (q) {
+    if (/^\d+$/.test(q)) {
+      // Pure number → match the bill number exactly (typing "10" finds #10, not
+      // #10/#100/#101), still OR-matching names that contain the digits.
+      query = query.or(`bill_no.eq.${q},customer_name.ilike.*${q}*`);
+    } else {
+      query = query.ilike("customer_name", `%${q}%`);
+    }
+  }
+  const { data: billRows } = await query.range(offset, offset + limit - 1);
   const rows = (billRows ?? []) as BillRow[];
   if (rows.length === 0) return { bills: [], hasMore: false };
 
@@ -456,14 +483,36 @@ export interface LogsPage {
   hasMore: boolean;
 }
 
-/** One page of stock/bill movement log entries (newest first). Store & staff
- *  audit events are excluded here — they live in the Owner-only Store tab. */
-export async function fetchLogsPage(offset: number, limit: number): Promise<LogsPage> {
+export interface LogFilters {
+  q?: string; // matches item name / actor / notes
+  type?: Log["type"] | "all";
+  from?: string | null; // local YYYY-MM-DD (inclusive)
+  to?: string | null; // local YYYY-MM-DD (inclusive)
+}
+
+// Escape the PostgREST `.or()` grammar chars so a user query can't break it.
+const orSafe = (s: string) => s.replace(/[,()*]/g, " ").trim();
+
+const STOCK_LOG_TYPES: Log["type"][] = ["in", "out", "bill", "cancel", "delete"];
+
+/** One page of stock/bill movement log entries (newest first), filtered
+ *  server-side. Store & staff audit events live in the Owner-only Store tab. */
+export async function fetchLogsPage(
+  offset: number,
+  limit: number,
+  filters: LogFilters = {},
+): Promise<LogsPage> {
   const supabase = createClient();
-  const { data } = await supabase
-    .from("activity_log_v")
-    .select("*")
-    .in("type", ["in", "out", "bill", "cancel", "delete"])
+  let query = supabase.from("activity_log_v").select("*");
+  query =
+    filters.type && filters.type !== "all"
+      ? query.eq("type", filters.type)
+      : query.in("type", STOCK_LOG_TYPES);
+  if (filters.from) query = query.gte("created_at", dayStartISO(filters.from));
+  if (filters.to) query = query.lte("created_at", dayEndISO(filters.to));
+  const q = filters.q ? orSafe(filters.q) : "";
+  if (q) query = query.or(`item_name.ilike.*${q}*,actor_name.ilike.*${q}*,notes.ilike.*${q}*`);
+  const { data } = await query
     .order("created_at", { ascending: false })
     .range(offset, offset + limit - 1);
   const rows = (data ?? []) as LogRow[];
@@ -471,13 +520,21 @@ export async function fetchLogsPage(offset: number, limit: number): Promise<Logs
 }
 
 /** One page of administrative audit entries (store settings, staff, passwords,
- *  open/close) for the Owner-only Store tab. Returns nothing for non-owners
- *  (the view is gated on is_owner()). */
-export async function fetchAdminLogsPage(offset: number, limit: number): Promise<LogsPage> {
+ *  open/close) for the Owner-only Store tab, filtered server-side. Returns
+ *  nothing for non-owners (the view is gated on is_owner()). */
+export async function fetchAdminLogsPage(
+  offset: number,
+  limit: number,
+  filters: LogFilters = {},
+): Promise<LogsPage> {
   const supabase = createClient();
-  const { data } = await supabase
-    .from("activity_log_admin_v")
-    .select("*")
+  let query = supabase.from("activity_log_admin_v").select("*");
+  if (filters.type && filters.type !== "all") query = query.eq("type", filters.type);
+  if (filters.from) query = query.gte("created_at", dayStartISO(filters.from));
+  if (filters.to) query = query.lte("created_at", dayEndISO(filters.to));
+  const q = filters.q ? orSafe(filters.q) : "";
+  if (q) query = query.or(`actor_name.ilike.*${q}*,notes.ilike.*${q}*`);
+  const { data } = await query
     .order("created_at", { ascending: false })
     .range(offset, offset + limit - 1);
   const rows = (data ?? []) as LogRow[];

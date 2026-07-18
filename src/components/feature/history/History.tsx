@@ -25,15 +25,56 @@ import { useCurrentUser } from "@/components/system/AuthProvider";
 import { useUIStore } from "@/lib/ui-store";
 import { hasPermission } from "@/lib/permissions";
 import { formatDateFull, initials } from "@/lib/format";
-import { fetchAdminLogsPage, fetchBillsPage, fetchLogsPage } from "@/lib/supabase-data";
+import {
+  fetchAdminLogsPage,
+  fetchBillsPage,
+  fetchLogsPage,
+  type BillFilters,
+  type LogFilters,
+} from "@/lib/supabase-data";
 import { tabCls } from "@/components/ui/tabClass";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { DateRangeFilter } from "@/components/ui/DateRangePicker";
 import { ViewBillModal } from "@/components/feature/bill/ViewBillModal";
-import type { Bill, Log } from "@/lib/types";
+import type { DateRange } from "@/lib/date-range";
+import type { Bill, BillStatus, Log } from "@/lib/types";
 
 type StatusFilter = "All" | "Active" | "Cancelled";
+type LogTypeFilter = Log["type"] | "all";
 
 const PAGE_SIZE = 30;
+const EMPTY_RANGE: DateRange = { from: null, to: null };
+
+const STOCK_TYPE_OPTIONS: { value: LogTypeFilter; label: string }[] = [
+  { value: "all", label: "All types" },
+  { value: "in", label: "Stock in" },
+  { value: "out", label: "Stock out" },
+  { value: "bill", label: "Bill generated" },
+  { value: "cancel", label: "Bill cancelled" },
+  { value: "delete", label: "Bill deleted" },
+];
+
+const ADMIN_TYPE_OPTIONS: { value: LogTypeFilter; label: string }[] = [
+  { value: "all", label: "All types" },
+  { value: "open", label: "Store opened" },
+  { value: "close", label: "Store closed" },
+  { value: "settings", label: "Settings updated" },
+  { value: "staff_add", label: "Staff added" },
+  { value: "staff_edit", label: "Staff updated" },
+  { value: "staff_remove", label: "Staff removed" },
+  { value: "password", label: "Password changed" },
+];
+
+// Debounce a fast-changing value (search box) so each keystroke doesn't fire a
+// server query.
+function useDebounced<T>(value: T, ms: number): T {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setV(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return v;
+}
 
 const rowsSkeleton = (rows: React.ReactNode) => (
   <div className="overflow-hidden rounded-[18px] border border-line bg-warm-white shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
@@ -70,15 +111,10 @@ const LogsSkeleton = () =>
     )),
   );
 
-// Cache the loaded pages (keyed by user) so navigating back to History renders
-// instantly while the loaded window revalidates in the background.
-let histCache: {
-  uid: string;
-  bills: Bill[];
-  billsMore: boolean;
-  logs: Log[];
-  logsMore: boolean;
-} | null = null;
+// Cache the default (unfiltered) window per user so navigating back to History
+// paints instantly while it revalidates. Filtered views are never cached.
+let billsCache: { uid: string; bills: Bill[]; more: boolean } | null = null;
+let logsCache: { uid: string; logs: Log[]; more: boolean } | null = null;
 
 // "Walk-in" (the no-name placeholder) always renders as a single "W" rather
 // than initials-of-two-words; every other name defers to the shared helper.
@@ -91,6 +127,9 @@ const chipCls = (active: boolean) =>
   `cursor-pointer whitespace-nowrap rounded-full border px-[15px] py-[7px] text-[13px] font-bold transition-colors ${
     active ? "border-brown bg-brown text-warm-white" : "border-line bg-warm-white text-ink-muted"
   }`;
+
+const selectCls =
+  "!w-auto shrink-0 rounded-xl border border-line bg-warm-white px-3 py-[11px] text-[13.5px] font-semibold text-ink-muted focus:border-brown";
 
 const logIcon = (t: Log["type"]) =>
   t === "in" ? PackagePlus
@@ -142,6 +181,68 @@ const logMeta = (l: Log) => {
   return parts.join(" · ");
 };
 
+// Shared filter bar for the two activity-log tabs: text search + type select +
+// date range (on its own row so it never crowds the controls above).
+function LogFilterBar({
+  search,
+  onSearch,
+  type,
+  onType,
+  typeOptions,
+  range,
+  onRange,
+}: {
+  search: string;
+  onSearch: (v: string) => void;
+  type: LogTypeFilter;
+  onType: (v: LogTypeFilter) => void;
+  typeOptions: { value: LogTypeFilter; label: string }[];
+  range: DateRange;
+  onRange: (r: DateRange) => void;
+}) {
+  return (
+    <>
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <div className="relative min-w-[200px] flex-1">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-light" />
+          <input
+            type="text"
+            placeholder="Search item, staff or notes…"
+            className="w-full pl-9 pr-9"
+            value={search}
+            onChange={(e) => onSearch(e.target.value)}
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => onSearch("")}
+              aria-label="Clear search"
+              className="absolute right-2.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-ink-light hover:bg-cream hover:text-ink-muted"
+            >
+              <X size={15} />
+            </button>
+          )}
+        </div>
+        <select
+          value={type}
+          onChange={(e) => onType(e.target.value as LogTypeFilter)}
+          aria-label="Filter by type"
+          className={selectCls}
+        >
+          {typeOptions.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="mb-3.5">
+        <DateRangeFilter value={range} onChange={onRange} />
+      </div>
+    </>
+  );
+}
+
 export function History() {
   const user = useCurrentUser();
   const items = useBakeryStore((s) => s.items);
@@ -156,27 +257,78 @@ export function History() {
   const isOwner = user?.role === "Owner";
   const [tab, setTab] = useState<"bills" | "logs" | "store">(canSales ? "bills" : "logs");
   const [viewBill, setViewBill] = useState<Bill | null>(null);
+
+  // ─── Bills ────────────────────────────────────────────────────────────────
+  const cachedBills = billsCache && billsCache.uid === user?.id ? billsCache : null;
+  const [bills, setBills] = useState<Bill[]>(cachedBills?.bills ?? []);
+  const [billsMore, setBillsMore] = useState(cachedBills?.more ?? false);
+  const [billsLoaded, setBillsLoaded] = useState(cachedBills != null);
+  const [billsError, setBillsError] = useState(false);
+  const [billsRetry, setBillsRetry] = useState(0);
+  const [loadingBills, setLoadingBills] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
+  const [billRange, setBillRange] = useState<DateRange>(EMPTY_RANGE);
+  const debSearch = useDebounced(search, 300);
 
-  // Bills and logs are paginated (newest first) rather than loaded in full.
-  const cached = histCache && histCache.uid === user?.id ? histCache : null;
-  const [bills, setBills] = useState<Bill[]>(cached?.bills ?? []);
-  const [billsMore, setBillsMore] = useState(cached?.billsMore ?? false);
-  const [logs, setLogs] = useState<Log[]>(cached?.logs ?? []);
-  const [logsMore, setLogsMore] = useState(cached?.logsMore ?? false);
+  const billFilters = useMemo<BillFilters>(
+    () => ({
+      q: debSearch.trim() || undefined,
+      status: statusFilter === "All" ? undefined : (statusFilter.toLowerCase() as BillStatus),
+      from: billRange.from,
+      to: billRange.to,
+    }),
+    [debSearch, statusFilter, billRange.from, billRange.to],
+  );
+  const billsFiltered = !!(billFilters.q || billFilters.status || billFilters.from || billFilters.to);
+
+  // ─── Stock log ───────────────────────────────────────────────────────────
+  const cachedLogs = logsCache && logsCache.uid === user?.id ? logsCache : null;
+  const [logs, setLogs] = useState<Log[]>(cachedLogs?.logs ?? []);
+  const [logsMore, setLogsMore] = useState(cachedLogs?.more ?? false);
+  const [logsLoaded, setLogsLoaded] = useState(cachedLogs != null);
+  const [logsError, setLogsError] = useState(false);
+  const [logsRetry, setLogsRetry] = useState(0);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [logSearch, setLogSearch] = useState("");
+  const [logType, setLogType] = useState<LogTypeFilter>("all");
+  const [logRange, setLogRange] = useState<DateRange>(EMPTY_RANGE);
+  const debLogSearch = useDebounced(logSearch, 300);
+
+  const logFilters = useMemo<LogFilters>(
+    () => ({
+      q: debLogSearch.trim() || undefined,
+      type: logType,
+      from: logRange.from,
+      to: logRange.to,
+    }),
+    [debLogSearch, logType, logRange.from, logRange.to],
+  );
+  const logsFiltered = !!(logFilters.q || logType !== "all" || logRange.from || logRange.to);
+
+  // ─── Store (admin) log ─────────────────────────────────────────────────────
   const [adminLogs, setAdminLogs] = useState<Log[]>([]);
   const [adminLogsMore, setAdminLogsMore] = useState(false);
   const [adminLoaded, setAdminLoaded] = useState(false);
-  const [loaded, setLoaded] = useState(cached != null);
-  const [histError, setHistError] = useState(false);
-  const [histRetryToken, setHistRetryToken] = useState(0);
-  // Per-bill in-flight cancel/delete, and the two "Load more" buttons.
-  const [busyBill, setBusyBill] = useState<Set<string>>(new Set());
-  const [loadingBills, setLoadingBills] = useState(false);
-  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [adminError, setAdminError] = useState(false);
+  const [adminRetry, setAdminRetry] = useState(0);
   const [loadingAdminLogs, setLoadingAdminLogs] = useState(false);
+  const [adminSearch, setAdminSearch] = useState("");
+  const [adminType, setAdminType] = useState<LogTypeFilter>("all");
+  const [adminRange, setAdminRange] = useState<DateRange>(EMPTY_RANGE);
+  const debAdminSearch = useDebounced(adminSearch, 300);
 
+  const adminFilters = useMemo<LogFilters>(
+    () => ({
+      q: debAdminSearch.trim() || undefined,
+      type: adminType,
+      from: adminRange.from,
+      to: adminRange.to,
+    }),
+    [debAdminSearch, adminType, adminRange.from, adminRange.to],
+  );
+
+  const [busyBill, setBusyBill] = useState<Set<string>>(new Set());
   const setBillBusy = (id: string, on: boolean) =>
     setBusyBill((prev) => {
       const next = new Set(prev);
@@ -185,76 +337,88 @@ export function History() {
       return next;
     });
 
-  // Persist the loaded window so a later visit renders it immediately.
+  // Load bills (page 0) whenever the filters change. `billsLoaded` only gates
+  // the first-ever paint — filter reloads keep the current list visible until
+  // the new data lands, and never flash the skeleton over cached rows.
   useEffect(() => {
-    if (user?.id) histCache = { uid: user.id, bills, billsMore, logs, logsMore };
-  }, [user?.id, bills, billsMore, logs, logsMore]);
-
-  // Revalidate the loaded window on mount (keeps any "load more" expansion).
-  // A failed fetch surfaces an error + retry rather than leaving the tab stuck
-  // on its skeleton forever.
-  useEffect(() => {
+    if (!canSales) return;
     let alive = true;
-    setHistError(false);
-    const billWindow = Math.max(histCache?.bills.length ?? 0, PAGE_SIZE);
-    const logWindow = Math.max(histCache?.logs.length ?? 0, PAGE_SIZE);
-    (async () => {
-      const jobs: Promise<void>[] = [];
-      if (canSales)
-        jobs.push(
-          fetchBillsPage(0, billWindow).then((p) => {
-            if (alive) {
-              setBills(p.bills);
-              setBillsMore(p.hasMore);
-            }
-          }),
-        );
-      if (canInv)
-        jobs.push(
-          fetchLogsPage(0, logWindow).then((p) => {
-            if (alive) {
-              setLogs(p.logs);
-              setLogsMore(p.hasMore);
-            }
-          }),
-        );
-      if (isOwner)
-        jobs.push(
-          fetchAdminLogsPage(0, PAGE_SIZE).then((p) => {
-            if (alive) {
-              setAdminLogs(p.logs);
-              setAdminLogsMore(p.hasMore);
-              setAdminLoaded(true);
-            }
-          }),
-        );
-      try {
-        await Promise.all(jobs);
-      } catch {
-        if (alive) setHistError(true);
-      } finally {
-        if (alive) {
-          setLoaded(true);
-          setAdminLoaded(true);
-        }
-      }
-    })();
+    setBillsError(false);
+    const window = billsFiltered ? PAGE_SIZE : Math.max(billsCache?.bills.length ?? 0, PAGE_SIZE);
+    fetchBillsPage(0, window, billFilters)
+      .then((p) => {
+        if (!alive) return;
+        setBills(p.bills);
+        setBillsMore(p.hasMore);
+        setBillsLoaded(true);
+        if (!billsFiltered && user?.id) billsCache = { uid: user.id, bills: p.bills, more: p.hasMore };
+      })
+      .catch(() => {
+        if (!alive) return;
+        setBillsError(true);
+        setBillsLoaded(true);
+        if (billsLoaded) toast("Couldn't load bills");
+      });
     return () => {
       alive = false;
     };
-  }, [canSales, canInv, isOwner, histRetryToken]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canSales, billFilters, billsRetry]);
 
-  const retryLoad = () => {
-    setLoaded(false);
-    setAdminLoaded(false);
-    setHistError(false);
-    setHistRetryToken((t) => t + 1);
-  };
+  // Load stock-log (page 0) on filter change.
+  useEffect(() => {
+    if (!canInv) return;
+    let alive = true;
+    setLogsError(false);
+    const window = logsFiltered ? PAGE_SIZE : Math.max(logsCache?.logs.length ?? 0, PAGE_SIZE);
+    fetchLogsPage(0, window, logFilters)
+      .then((p) => {
+        if (!alive) return;
+        setLogs(p.logs);
+        setLogsMore(p.hasMore);
+        setLogsLoaded(true);
+        if (!logsFiltered && user?.id) logsCache = { uid: user.id, logs: p.logs, more: p.hasMore };
+      })
+      .catch(() => {
+        if (!alive) return;
+        setLogsError(true);
+        setLogsLoaded(true);
+        if (logsLoaded) toast("Couldn't load activity");
+      });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canInv, logFilters, logsRetry]);
+
+  // Load store/admin log (page 0) on filter change.
+  useEffect(() => {
+    if (!isOwner) return;
+    let alive = true;
+    setAdminError(false);
+    fetchAdminLogsPage(0, PAGE_SIZE, adminFilters)
+      .then((p) => {
+        if (!alive) return;
+        setAdminLogs(p.logs);
+        setAdminLogsMore(p.hasMore);
+        setAdminLoaded(true);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setAdminError(true);
+        setAdminLoaded(true);
+        if (adminLoaded) toast("Couldn't load activity");
+      });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOwner, adminFilters, adminRetry]);
 
   const loadMoreBills = async () => {
     setLoadingBills(true);
     try {
-      const p = await fetchBillsPage(bills.length, PAGE_SIZE);
+      const p = await fetchBillsPage(bills.length, PAGE_SIZE, billFilters);
       setBills((prev) => [...prev, ...p.bills]);
       setBillsMore(p.hasMore);
     } catch {
@@ -267,7 +431,7 @@ export function History() {
   const loadMoreLogs = async () => {
     setLoadingLogs(true);
     try {
-      const p = await fetchLogsPage(logs.length, PAGE_SIZE);
+      const p = await fetchLogsPage(logs.length, PAGE_SIZE, logFilters);
       setLogs((prev) => [...prev, ...p.logs]);
       setLogsMore(p.hasMore);
     } catch {
@@ -280,7 +444,7 @@ export function History() {
   const loadMoreAdminLogs = async () => {
     setLoadingAdminLogs(true);
     try {
-      const p = await fetchAdminLogsPage(adminLogs.length, PAGE_SIZE);
+      const p = await fetchAdminLogsPage(adminLogs.length, PAGE_SIZE, adminFilters);
       setAdminLogs((prev) => [...prev, ...p.logs]);
       setAdminLogsMore(p.hasMore);
     } catch {
@@ -290,12 +454,12 @@ export function History() {
     }
   };
 
-  // After a cancel/delete, re-fetch the already-loaded window so the change
-  // (status flip or removal) and the new activity-log entry are reflected.
+  // After a cancel/delete, re-fetch the loaded windows (with current filters) so
+  // the change and the new activity-log entry are reflected.
   const refreshLoaded = async () => {
     const [bp, lp] = await Promise.all([
-      fetchBillsPage(0, Math.max(bills.length, PAGE_SIZE)),
-      canInv ? fetchLogsPage(0, Math.max(logs.length, PAGE_SIZE)) : Promise.resolve(null),
+      fetchBillsPage(0, Math.max(bills.length, PAGE_SIZE), billFilters),
+      canInv ? fetchLogsPage(0, Math.max(logs.length, PAGE_SIZE), logFilters) : Promise.resolve(null),
     ]);
     setBills(bp.bills);
     setBillsMore(bp.hasMore);
@@ -343,19 +507,7 @@ export function History() {
     });
   };
 
-  // Recomputed only when the list or the filter/search inputs change, not on
-  // every unrelated re-render.
-  const filteredBills = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return bills.filter((b) => {
-      if (statusFilter !== "All" && b.status !== statusFilter.toLowerCase()) return false;
-      if (!q) return true;
-      const name = (b.customerName || "Walk-in").toLowerCase();
-      return name.includes(q) || String(b.billNo).includes(q);
-    });
-  }, [bills, statusFilter, search]);
-
-  const errorState = (label: string) => (
+  const errorState = (label: string, onRetry: () => void) => (
     <div className="px-5 py-10 text-center text-ink-muted">
       <div className="mb-3 flex justify-center">
         <AlertTriangle size={44} className="text-danger" />
@@ -363,10 +515,23 @@ export function History() {
       <p className="mb-3 text-sm">{label}</p>
       <button
         type="button"
-        onClick={retryLoad}
+        onClick={onRetry}
         className="rounded-full bg-brown px-4 py-1.5 text-[13px] font-bold text-warm-white"
       >
         Retry
+      </button>
+    </div>
+  );
+
+  const loadMoreButton = (loading: boolean, onClick: () => void) => (
+    <div className="mt-3 text-center">
+      <button
+        className="btn-secondary inline-flex items-center justify-center gap-2 text-[13px] disabled:cursor-not-allowed disabled:opacity-60"
+        onClick={onClick}
+        disabled={loading}
+      >
+        {loading && <Loader2 size={14} className="animate-spin" />}
+        {loading ? "Loading…" : "Load more"}
       </button>
     </div>
   );
@@ -387,7 +552,7 @@ export function History() {
 
       {tab === "bills" && (
         <>
-          <div className="mb-3.5 flex flex-wrap items-center gap-3">
+          <div className="mb-3 flex flex-wrap items-center gap-3">
             <div className="relative min-w-[200px] flex-1">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-light" />
               <input
@@ -416,214 +581,210 @@ export function History() {
               ))}
             </div>
           </div>
+          <div className="mb-3.5">
+            <DateRangeFilter value={billRange} onChange={setBillRange} />
+          </div>
 
-          {!loaded ? (
+          {!billsLoaded ? (
             <BillsSkeleton />
-          ) : histError && bills.length === 0 ? (
-            errorState("Couldn't load bills.")
-          ) : filteredBills.length === 0 ? (
+          ) : billsError && bills.length === 0 ? (
+            errorState("Couldn't load bills.", () => {
+              setBillsLoaded(false);
+              setBillsRetry((t) => t + 1);
+            })
+          ) : bills.length === 0 ? (
             <div className="px-5 py-10 text-center text-ink-muted">
               <div className="mb-3 flex justify-center">
                 <ReceiptText size={48} />
               </div>
-              <p className="text-sm">{bills.length === 0 ? "No bills generated yet" : "No bills match your search"}</p>
+              <p className="text-sm">{billsFiltered ? "No bills match your filters" : "No bills generated yet"}</p>
             </div>
           ) : (
             <>
-            <div className="overflow-hidden rounded-[18px] border border-line bg-warm-white shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
-              {filteredBills.map((b) => {
-                const cancelled = b.status === "cancelled";
-                return (
-                  <div key={b.id} className="flex flex-wrap items-center gap-3.5 border-t border-line-soft px-5 py-3.5 first:border-t-0">
-                    <div className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-[11px] bg-[#f4e7d2] text-[13px] font-bold text-brown">
-                      {billerInitials(b.customerName)}
-                    </div>
-                    <div className="min-w-0 flex-1 basis-[calc(100%_-_3.5rem)] sm:basis-0">
-                      <div className="truncate text-sm font-bold text-ink">{b.customerName || "Walk-in"}</div>
-                      <div className="text-xs text-ink-light">
-                        #{b.billNo} · {b.items.length} items · {formatDateFull(b.date)}
+              <div className="overflow-hidden rounded-[18px] border border-line bg-warm-white shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
+                {bills.map((b) => {
+                  const cancelled = b.status === "cancelled";
+                  return (
+                    <div key={b.id} className="flex flex-wrap items-center gap-3.5 border-t border-line-soft px-5 py-3.5 first:border-t-0">
+                      <div className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-[11px] bg-[#f4e7d2] text-[13px] font-bold text-brown">
+                        {billerInitials(b.customerName)}
                       </div>
-                      {cancelled && b.cancelledBy && (
-                        <div className="mt-0.5 text-[11px] text-danger">Cancelled by {b.cancelledBy}</div>
-                      )}
-                    </div>
-                    <span className={`badge ${cancelled ? "badge-danger" : "badge-success"}`}>
-                      {cancelled ? "Cancelled" : "Active"}
-                    </span>
-                    <div className={`num shrink-0 text-right text-[15px] font-extrabold ${cancelled ? "text-ink-muted line-through" : "text-ink"}`}>
-                      {currency}{b.total.toFixed(2)}
-                    </div>
-                    <div className="ml-auto flex shrink-0 gap-1.5">
-                      <button
-                        className="btn-sm btn-secondary inline-flex items-center justify-center"
-                        onClick={() => setViewBill(b)}
-                        aria-label="View bill"
-                      >
-                        <ReceiptIcon size={16} />
-                      </button>
-                      {!cancelled && (
+                      <div className="min-w-0 flex-1 basis-[calc(100%_-_3.5rem)] sm:basis-0">
+                        <div className="truncate text-sm font-bold text-ink">{b.customerName || "Walk-in"}</div>
+                        <div className="text-xs text-ink-light">
+                          #{b.billNo} · {b.items.length} items · {formatDateFull(b.date)}
+                        </div>
+                        {cancelled && b.cancelledBy && (
+                          <div className="mt-0.5 text-[11px] text-danger">Cancelled by {b.cancelledBy}</div>
+                        )}
+                      </div>
+                      <span className={`badge ${cancelled ? "badge-danger" : "badge-success"}`}>
+                        {cancelled ? "Cancelled" : "Active"}
+                      </span>
+                      <div className={`num shrink-0 text-right text-[15px] font-extrabold ${cancelled ? "text-ink-muted line-through" : "text-ink"}`}>
+                        {currency}{b.total.toFixed(2)}
+                      </div>
+                      <div className="ml-auto flex shrink-0 gap-1.5">
                         <button
-                          className="inline-flex cursor-pointer items-center justify-center rounded-lg border-none bg-warn px-2.5 py-1.5 text-xs text-white disabled:cursor-not-allowed disabled:opacity-60"
-                          onClick={() => doCancel(b)}
-                          disabled={busyBill.has(b.id)}
-                          aria-label="Cancel bill"
+                          className="btn-sm btn-secondary inline-flex items-center justify-center"
+                          onClick={() => setViewBill(b)}
+                          aria-label="View bill"
                         >
-                          {busyBill.has(b.id) ? <Loader2 size={16} className="animate-spin" /> : <Ban size={16} />}
+                          <ReceiptIcon size={16} />
                         </button>
-                      )}
-                      <button
-                        className="inline-flex cursor-pointer items-center justify-center rounded-lg border-none bg-danger px-2.5 py-1.5 text-xs text-white disabled:cursor-not-allowed disabled:opacity-60"
-                        onClick={() => doDelete(b)}
-                        disabled={busyBill.has(b.id)}
-                        aria-label="Delete bill"
-                      >
-                        {busyBill.has(b.id) ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
-                      </button>
+                        {!cancelled && (
+                          <button
+                            className="inline-flex cursor-pointer items-center justify-center rounded-lg border-none bg-warn px-2.5 py-1.5 text-xs text-white disabled:cursor-not-allowed disabled:opacity-60"
+                            onClick={() => doCancel(b)}
+                            disabled={busyBill.has(b.id)}
+                            aria-label="Cancel bill"
+                          >
+                            {busyBill.has(b.id) ? <Loader2 size={16} className="animate-spin" /> : <Ban size={16} />}
+                          </button>
+                        )}
+                        <button
+                          className="inline-flex cursor-pointer items-center justify-center rounded-lg border-none bg-danger px-2.5 py-1.5 text-xs text-white disabled:cursor-not-allowed disabled:opacity-60"
+                          onClick={() => doDelete(b)}
+                          disabled={busyBill.has(b.id)}
+                          aria-label="Delete bill"
+                        >
+                          {busyBill.has(b.id) ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-            {billsMore && (
-              <div className="mt-3 text-center">
-                <button
-                  className="btn-secondary inline-flex items-center justify-center gap-2 text-[13px] disabled:cursor-not-allowed disabled:opacity-60"
-                  onClick={loadMoreBills}
-                  disabled={loadingBills}
-                >
-                  {loadingBills && <Loader2 size={14} className="animate-spin" />}
-                  {loadingBills ? "Loading…" : "Load more"}
-                </button>
-                {(search.trim() || statusFilter !== "All") && (
-                  <p className="mt-1.5 text-[11px] text-ink-light">
-                    Search &amp; filter apply to loaded bills — load more to include older ones.
-                  </p>
-                )}
+                  );
+                })}
               </div>
-            )}
+              {billsMore && loadMoreButton(loadingBills, loadMoreBills)}
             </>
           )}
         </>
       )}
 
       {tab === "logs" && (
-        !loaded ? (
-          <LogsSkeleton />
-        ) : histError && logs.length === 0 ? (
-          errorState("Couldn't load activity.")
-        ) : logs.length === 0 ? (
-          <div className="px-5 py-10 text-center text-ink-muted">
-            <div className="mb-3 flex justify-center">
-              <ClipboardList size={48} />
+        <>
+          <LogFilterBar
+            search={logSearch}
+            onSearch={setLogSearch}
+            type={logType}
+            onType={setLogType}
+            typeOptions={STOCK_TYPE_OPTIONS}
+            range={logRange}
+            onRange={setLogRange}
+          />
+          {!logsLoaded ? (
+            <LogsSkeleton />
+          ) : logsError && logs.length === 0 ? (
+            errorState("Couldn't load activity.", () => {
+              setLogsLoaded(false);
+              setLogsRetry((t) => t + 1);
+            })
+          ) : logs.length === 0 ? (
+            <div className="px-5 py-10 text-center text-ink-muted">
+              <div className="mb-3 flex justify-center">
+                <ClipboardList size={48} />
+              </div>
+              <p className="text-sm">{logsFiltered ? "No activity matches your filters" : "No activity yet"}</p>
             </div>
-            <p className="text-sm">No activity yet</p>
-          </div>
-        ) : (
-          <>
-          <div className="overflow-hidden rounded-[18px] border border-line bg-warm-white shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
-            {logs.map((l) => {
-              const tone = toneClasses[logTone(l.type)];
-              const isStock = l.type === "in" || l.type === "out";
-              const isStore = l.type === "open" || l.type === "close";
-              const sign = l.type === "in" ? "+" : "−";
-              const Icon = logIcon(l.type);
-              return (
-                <div key={l.id} className="flex items-center gap-3.5 border-t border-line-soft px-5 py-3.5 first:border-t-0">
-                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] ${tone.bg} ${tone.text}`}>
-                    <Icon size={18} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-bold text-ink">
-                      {isStock
-                        ? `${itemEmoji(l.itemId)} ${l.itemName}`
-                        : isStore
-                          ? "Store"
-                          : `Bill #${l.billNo}`}
+          ) : (
+            <>
+              <div className="overflow-hidden rounded-[18px] border border-line bg-warm-white shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
+                {logs.map((l) => {
+                  const tone = toneClasses[logTone(l.type)];
+                  const isStock = l.type === "in" || l.type === "out";
+                  const isStore = l.type === "open" || l.type === "close";
+                  const sign = l.type === "in" ? "+" : "−";
+                  const Icon = logIcon(l.type);
+                  return (
+                    <div key={l.id} className="flex items-center gap-3.5 border-t border-line-soft px-5 py-3.5 first:border-t-0">
+                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] ${tone.bg} ${tone.text}`}>
+                        <Icon size={18} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-bold text-ink">
+                          {isStock
+                            ? `${itemEmoji(l.itemId)} ${l.itemName}`
+                            : isStore
+                              ? "Store"
+                              : `Bill #${l.billNo}`}
+                        </div>
+                        <div className="break-words text-xs text-ink-light">
+                          {logTypeLabel(l.type)}
+                          {logMeta(l) ? ` · ${logMeta(l)}` : ""}
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        {isStock && l.qty != null && (
+                          <div className={`num text-sm font-extrabold ${tone.text}`}>{sign}{l.qty}</div>
+                        )}
+                        {l.total != null && (
+                          <div className="num text-sm font-extrabold text-ink">{currency}{l.total.toFixed(2)}</div>
+                        )}
+                        <div className="text-[11.5px] text-ink-light">{formatDateFull(l.date)}</div>
+                      </div>
                     </div>
-                    <div className="truncate text-xs text-ink-light">
-                      {logTypeLabel(l.type)}
-                      {logMeta(l) ? ` · ${logMeta(l)}` : ""}
-                    </div>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    {isStock && l.qty != null && (
-                      <div className={`num text-sm font-extrabold ${tone.text}`}>{sign}{l.qty}</div>
-                    )}
-                    {l.total != null && (
-                      <div className="num text-sm font-extrabold text-ink">{currency}{l.total.toFixed(2)}</div>
-                    )}
-                    <div className="text-[11.5px] text-ink-light">{formatDateFull(l.date)}</div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          {logsMore && (
-            <div className="mt-3 text-center">
-              <button
-                className="btn-secondary inline-flex items-center justify-center gap-2 text-[13px] disabled:cursor-not-allowed disabled:opacity-60"
-                onClick={loadMoreLogs}
-                disabled={loadingLogs}
-              >
-                {loadingLogs && <Loader2 size={14} className="animate-spin" />}
-                {loadingLogs ? "Loading…" : "Load more"}
-              </button>
-            </div>
+                  );
+                })}
+              </div>
+              {logsMore && loadMoreButton(loadingLogs, loadMoreLogs)}
+            </>
           )}
-          </>
-        )
+        </>
       )}
 
       {tab === "store" && (
-        !adminLoaded ? (
-          <LogsSkeleton />
-        ) : histError && adminLogs.length === 0 ? (
-          errorState("Couldn't load store activity.")
-        ) : adminLogs.length === 0 ? (
-          <div className="px-5 py-10 text-center text-ink-muted">
-            <div className="mb-3 flex justify-center">
-              <Store size={48} />
+        <>
+          <LogFilterBar
+            search={adminSearch}
+            onSearch={setAdminSearch}
+            type={adminType}
+            onType={setAdminType}
+            typeOptions={ADMIN_TYPE_OPTIONS}
+            range={adminRange}
+            onRange={setAdminRange}
+          />
+          {!adminLoaded ? (
+            <LogsSkeleton />
+          ) : adminError && adminLogs.length === 0 ? (
+            errorState("Couldn't load store activity.", () => {
+              setAdminLoaded(false);
+              setAdminRetry((t) => t + 1);
+            })
+          ) : adminLogs.length === 0 ? (
+            <div className="px-5 py-10 text-center text-ink-muted">
+              <div className="mb-3 flex justify-center">
+                <Store size={48} />
+              </div>
+              <p className="text-sm">No store or staff activity yet</p>
             </div>
-            <p className="text-sm">No store or staff activity yet</p>
-          </div>
-        ) : (
-          <>
-          <div className="overflow-hidden rounded-[18px] border border-line bg-warm-white shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
-            {adminLogs.map((l) => {
-              const tone = toneClasses[logTone(l.type)];
-              const Icon = logIcon(l.type);
-              return (
-                <div key={l.id} className="flex items-center gap-3.5 border-t border-line-soft px-5 py-3.5 first:border-t-0">
-                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] ${tone.bg} ${tone.text}`}>
-                    <Icon size={18} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-bold text-ink">{logTypeLabel(l.type)}</div>
-                    {logMeta(l) && (
-                      <div className="truncate text-xs text-ink-light">{logMeta(l)}</div>
-                    )}
-                  </div>
-                  <div className="shrink-0 text-right text-[11.5px] text-ink-light">
-                    {formatDateFull(l.date)}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          {adminLogsMore && (
-            <div className="mt-3 text-center">
-              <button
-                className="btn-secondary inline-flex items-center justify-center gap-2 text-[13px] disabled:cursor-not-allowed disabled:opacity-60"
-                onClick={loadMoreAdminLogs}
-                disabled={loadingAdminLogs}
-              >
-                {loadingAdminLogs && <Loader2 size={14} className="animate-spin" />}
-                {loadingAdminLogs ? "Loading…" : "Load more"}
-              </button>
-            </div>
+          ) : (
+            <>
+              <div className="overflow-hidden rounded-[18px] border border-line bg-warm-white shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
+                {adminLogs.map((l) => {
+                  const tone = toneClasses[logTone(l.type)];
+                  const Icon = logIcon(l.type);
+                  return (
+                    <div key={l.id} className="flex items-center gap-3.5 border-t border-line-soft px-5 py-3.5 first:border-t-0">
+                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] ${tone.bg} ${tone.text}`}>
+                        <Icon size={18} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-bold text-ink">{logTypeLabel(l.type)}</div>
+                        {logMeta(l) && (
+                          <div className="break-words text-xs text-ink-light">{logMeta(l)}</div>
+                        )}
+                      </div>
+                      <div className="shrink-0 text-right text-[11.5px] text-ink-light">
+                        {formatDateFull(l.date)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {adminLogsMore && loadMoreButton(loadingAdminLogs, loadMoreAdminLogs)}
+            </>
           )}
-          </>
-        )
+        </>
       )}
 
       {viewBill && <ViewBillModal bill={viewBill} onClose={() => setViewBill(null)} />}
