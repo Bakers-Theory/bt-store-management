@@ -373,7 +373,7 @@ export function Bill() {
                       className="grid w-full grid-cols-[2.5fr_1fr_auto] items-center gap-3 border-t border-line-soft px-5 py-[13px] text-left transition-colors hover:bg-cream"
                     >
                       <div className="flex min-w-0 items-center gap-3">
-                        <ItemThumb src={item.imageUrl} emoji={item.emoji} size={38} />
+                        <ItemThumb src={item.imageUrl} emoji={item.emoji} size={46} />
                         <div className="min-w-0">
                           <div className="flex items-center">
                             <span className="truncate text-sm font-bold">{item.name}</span>
@@ -421,7 +421,7 @@ export function Bill() {
                         onClick={() => addToCart(item)}
                         className="flex min-w-0 flex-1 items-center gap-3 text-left"
                       >
-                        <ItemThumb src={item.imageUrl} emoji={item.emoji} size={46} />
+                        <ItemThumb src={item.imageUrl} emoji={item.emoji} size={54} />
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-sm font-bold">
                             {item.name}
