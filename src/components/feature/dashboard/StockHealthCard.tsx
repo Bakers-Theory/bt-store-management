@@ -29,7 +29,7 @@ export function StockHealthCard({
 }: {
   loading: boolean;
   health: StockHealthRow[];
-  onRestock: () => void;
+  onRestock: (itemId: string) => void;
 }) {
   const attention = useMemo(
     () =>
@@ -87,7 +87,7 @@ export function StockHealthCard({
               {needsRestock && (
                 <button
                   className="rounded-[9px] bg-line-soft px-3 py-1.5 text-[12px] font-bold text-brown"
-                  onClick={onRestock}
+                  onClick={() => onRestock(s.item.id)}
                 >
                   Restock
                 </button>

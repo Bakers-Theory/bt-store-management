@@ -5,12 +5,15 @@ import { Check, Loader2 } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 
-export function StockInForm({ onSuccess }: { onSuccess?: () => void } = {}) {
+export function StockInForm({
+  onSuccess,
+  initialItemId,
+}: { onSuccess?: () => void; initialItemId?: string } = {}) {
   const items = useBakeryStore((s) => s.items);
   const stockIn = useBakeryStore((s) => s.stockIn);
   const toast = useUIStore((s) => s.toast);
 
-  const [itemId, setItemId] = useState("");
+  const [itemId, setItemId] = useState(initialItemId ?? "");
   const [qty, setQty] = useState("");
   const [supplier, setSupplier] = useState("");
   const [notes, setNotes] = useState("");

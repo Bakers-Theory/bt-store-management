@@ -2,12 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Lightbulb, Download, Receipt, Plus } from "lucide-react";
+import { AlertTriangle, Lightbulb, Download, Receipt, Plus, ArrowUp, ArrowDown, Loader2 } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { useUIStore } from "@/lib/ui-store";
 import { hasPermission } from "@/lib/permissions";
-import { exportExcelReport } from "@/lib/excel";
+import { exportReport } from "@/lib/excel";
 import {
   fetchDashboardStats,
   fetchReportData,
@@ -84,6 +84,8 @@ export function Dashboard() {
   );
   const [addOpen, setAddOpen] = useState(false);
   const [stockInOpen, setStockInOpen] = useState(false);
+  const [stockInItemId, setStockInItemId] = useState<string | undefined>(undefined);
+  const [exporting, setExporting] = useState(false);
   const [viewBill, setViewBill] = useState<Bill | null>(null);
   const [topCustomers, setTopCustomers] = useState<Customer[]>([]);
   const [custLoaded, setCustLoaded] = useState(false);
@@ -152,9 +154,19 @@ export function Dashboard() {
     };
   }, [user?.id]);
 
+  // Export the full workbook scoped to the range the owner is currently viewing
+  // (fetched on click, not on mount, to keep the dashboard load light).
   const doExport = async () => {
-    const r = await exportExcelReport(await fetchReportData());
-    toast(r.ok ? "Excel report downloaded" : r.error ?? "Export failed");
+    if (invalidRange) return;
+    setExporting(true);
+    try {
+      const r = await exportReport("full", await fetchReportData(), range);
+      toast(r.ok ? "Excel report downloaded" : r.error ?? "Export failed");
+    } catch {
+      toast("Export failed");
+    } finally {
+      setExporting(false);
+    }
   };
 
   const openBill = async (id: string) => {
@@ -190,6 +202,22 @@ export function Dashboard() {
         : 0;
   const showDelta = stats !== null && prevSales > 0; // hidden for all-time / no prior period
   const avgBill = billsInRange > 0 ? rangeSales / billsInRange : 0;
+
+  // The prior period compared against: the equal-length window immediately
+  // before `range` (mirrors the server's prevSales window), shown so "vs prev
+  // period" names concrete dates instead of an invisible baseline.
+  const prevPeriodLabel = useMemo(() => {
+    if (!range.from || !range.to) return null;
+    const from = new Date(`${range.from}T00:00:00`);
+    const to = new Date(`${range.to}T00:00:00`);
+    const lenDays = Math.round((to.getTime() - from.getTime()) / 86_400_000) + 1;
+    const prevTo = new Date(from);
+    prevTo.setDate(prevTo.getDate() - 1);
+    const prevFrom = new Date(prevTo);
+    prevFrom.setDate(prevFrom.getDate() - (lenDays - 1));
+    const fmt = (d: Date) => d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+    return prevFrom.getTime() === prevTo.getTime() ? fmt(prevTo) : `${fmt(prevFrom)} – ${fmt(prevTo)}`;
+  }, [range.from, range.to]);
 
   const recent = stats?.recentBills ?? [];
   const topItemsData = stats?.topItems ?? [];
@@ -286,7 +314,20 @@ export function Dashboard() {
           label="Sales"
           corner={
             showDelta && (
-              <span className="rounded-full bg-white/20 px-2 py-0.5 text-[11px] font-bold">
+              <span
+                className={`flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                  salesDelta > 0
+                    ? "bg-success text-white"
+                    : salesDelta < 0
+                      ? "bg-danger text-white"
+                      : "bg-white/20"
+                }`}
+              >
+                {salesDelta > 0 ? (
+                  <ArrowUp size={11} />
+                ) : salesDelta < 0 ? (
+                  <ArrowDown size={11} />
+                ) : null}
                 {salesDelta >= 0 ? "+" : ""}
                 {salesDelta}%
               </span>
@@ -309,7 +350,8 @@ export function Dashboard() {
               ) : showDelta ? (
                 <>
                   vs {currency}
-                  {prevSales.toFixed(0)} prev period
+                  {prevSales.toFixed(0)}
+                  {prevPeriodLabel ? ` · ${prevPeriodLabel}` : " prev period"}
                 </>
               ) : (
                 <>in selected range</>
@@ -401,7 +443,10 @@ export function Dashboard() {
               {hasPermission(user, "inventory") && (
                 <button
                   className="btn-secondary flex items-center justify-center gap-2 p-3.5 text-sm"
-                  onClick={() => setStockInOpen(true)}
+                  onClick={() => {
+                    setStockInItemId(undefined);
+                    setStockInOpen(true);
+                  }}
                 >
                   <Plus size={16} /> Add stock
                 </button>
@@ -412,6 +457,20 @@ export function Dashboard() {
                   onClick={() => setAddOpen(true)}
                 >
                   <Plus size={16} /> Add Item
+                </button>
+              )}
+              {hasPermission(user, "analytics") && (
+                <button
+                  className="btn-secondary flex items-center justify-center gap-2 p-3.5 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={doExport}
+                  disabled={exporting || invalidRange}
+                >
+                  {exporting ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Download size={16} />
+                  )}
+                  {exporting ? "Preparing…" : "Export this range"}
                 </button>
               )}
             </div>
@@ -532,7 +591,10 @@ export function Dashboard() {
               <StockHealthCard
                 loading={loading}
                 health={health}
-                onRestock={() => setStockInOpen(true)}
+                onRestock={(id) => {
+                  setStockInItemId(id);
+                  setStockInOpen(true);
+                }}
               />
             )}
           </div>
@@ -543,7 +605,7 @@ export function Dashboard() {
       {viewBill && <ViewBillModal bill={viewBill} onClose={() => setViewBill(null)} />}
       {stockInOpen && (
         <Modal title="Add Stock" onClose={() => setStockInOpen(false)}>
-          <StockInForm onSuccess={() => setStockInOpen(false)} />
+          <StockInForm initialItemId={stockInItemId} onSuccess={() => setStockInOpen(false)} />
         </Modal>
       )}
     </>
