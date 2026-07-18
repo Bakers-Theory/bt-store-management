@@ -157,7 +157,7 @@ export function ItemModal({
       <div className="mb-3.5">
         <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Product image</label>
         <div className="flex items-center gap-3">
-          <ItemThumb src={imageUrl} emoji={emoji} size={64} className="border border-line" />
+          <ItemThumb src={imageUrl} emoji={emoji} size={88} className="border border-line" />
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
