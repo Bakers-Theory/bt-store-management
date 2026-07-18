@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { persist, createJSONStorage, type StateStorage } from "zustand/middleware";
 import type { Bakery, Bill, BillLine, Item, PaymentMethod, Permissions, StoreLists } from "./types";
 import {
   fetchBaseData,
@@ -16,6 +17,7 @@ import {
   rpcDeleteListValue,
   rpcGenerateBill,
   rpcSaveSettings,
+  rpcSetItemImage,
   rpcSetStoreStatus,
   rpcStockIn,
   rpcStockOut,
@@ -83,7 +85,13 @@ interface StoreState {
    */
   load: () => Promise<void>;
 
+  /** Clear all cached base data (in-memory + persisted). Called on sign-out so a
+   *  different user on the same device never sees the previous store's data. */
+  reset: () => void;
+
   saveItem: (input: ItemInput, id?: string) => Promise<SaveItemResult>;
+  /** Persist only an existing item's image (null clears it); patches the cache. */
+  setItemImage: (id: string, url: string | null) => Promise<void>;
   deleteItem: (id: string) => Promise<void>;
   stockIn: (itemId: string, qty: number, supplier: string, notes: string, expiry: string | null) => Promise<StockResult>;
   stockOut: (itemId: string, qty: number, reason: string, notes: string) => Promise<StockResult>;
@@ -135,7 +143,17 @@ const PLACEHOLDER_BAKERY: Bakery = {
 
 const EMPTY_LISTS: StoreLists = { categories: [], emojis: [], units: [], reasons: [] };
 
-export const useBakeryStore = create<StoreState>()((set, get) => {
+// SSR-safe storage: this module is a client component but Next still executes it
+// on the server, where `localStorage` doesn't exist. Fall back to a no-op there.
+const noopStorage: StateStorage = {
+  getItem: () => null,
+  setItem: () => {},
+  removeItem: () => {},
+};
+
+export const useBakeryStore = create<StoreState>()(
+  persist(
+    (set, get) => {
   // Patch one item in place (by id), appending it if it's not cached yet.
   // Used by item-scoped RPCs that now return the updated items_v row, so a
   // single stock/price change no longer re-downloads the whole catalogue.
@@ -180,6 +198,12 @@ export const useBakeryStore = create<StoreState>()((set, get) => {
     _hasHydrated: false,
 
     load: async () => {
+      // persist rehydrates synchronously from localStorage before this runs, so
+      // if we already have cached base data, paint the real UI immediately and
+      // refresh in the background (stale-while-revalidate).
+      if (get().items.length > 0 || get().bakery.name !== "") {
+        set({ _hasHydrated: true });
+      }
       try {
         const data = await fetchBaseData();
         set({ ...data, _hasHydrated: true });
@@ -187,6 +211,9 @@ export const useBakeryStore = create<StoreState>()((set, get) => {
         set({ _hasHydrated: true });
       }
     },
+
+    reset: () =>
+      set({ bakery: PLACEHOLDER_BAKERY, items: [], lists: EMPTY_LISTS, _hasHydrated: false }),
 
     // ─── Items ─────────────────────────────────────────────────────────────
     saveItem: async (input, id) => {
@@ -200,6 +227,10 @@ export const useBakeryStore = create<StoreState>()((set, get) => {
         return { kind: "merged", name: r.name ?? input.name, qty: r.qty ?? input.qty, unit: r.unit ?? input.unit };
       }
       return { kind: "added" };
+    },
+
+    setItemImage: async (id, url) => {
+      patchItem(await rpcSetItemImage(id, url));
     },
 
     deleteItem: async (id) => {
@@ -348,7 +379,18 @@ export const useBakeryStore = create<StoreState>()((set, get) => {
         return { ok: false, error: errMsg(e) };
       }
     },
-  };
-});
+    };
+    },
+    {
+      name: "bt-base-data",
+      storage: createJSONStorage(() =>
+        typeof window !== "undefined" ? window.localStorage : noopStorage,
+      ),
+      // Only the bounded, slow-changing base data is cached — never actions,
+      // the hydration flag, or unbounded/time-sensitive data (bills, dashboard).
+      partialize: (s) => ({ bakery: s.bakery, items: s.items, lists: s.lists }),
+    },
+  ),
+);
 
 export type { Permissions };

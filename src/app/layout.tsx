@@ -52,9 +52,20 @@ export const viewport: Viewport = {
   themeColor: "#7c4a1e",
 };
 
+// Warm the DNS + TLS connection to Supabase during initial HTML parse, so the
+// first base-data fetch on cold load doesn't pay the full handshake latency.
+const supabaseOrigin = process.env.NEXT_PUBLIC_SUPABASE_URL
+  ? new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).origin
+  : null;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${figtree.variable} ${newsreader.variable}`}>
+      <head>
+        {supabaseOrigin && (
+          <link rel="preconnect" href={supabaseOrigin} crossOrigin="anonymous" />
+        )}
+      </head>
       <body>
         <AuthProvider>
           {children}

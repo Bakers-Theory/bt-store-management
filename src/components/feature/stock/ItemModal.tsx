@@ -8,9 +8,15 @@ import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { fetchItemBatches } from "@/lib/supabase-data";
 import { compressImage, uploadProductImage, deleteProductImage, MAX_UPLOAD_BYTES } from "@/lib/image";
-import { CropModal } from "./CropModal";
+import dynamic from "next/dynamic";
 import { expiryStatus, type ExpiryStatus } from "@/lib/expiry";
 import type { Batch } from "@/lib/types";
+
+// The cropper pulls in react-easy-crop, only needed once a user picks an image
+// to crop. Load it on demand so it stays out of the Stock/Dashboard bundles.
+const CropModal = dynamic(() => import("./CropModal").then((m) => m.CropModal), {
+  ssr: false,
+});
 
 export function ItemModal({
   itemId,
@@ -22,6 +28,7 @@ export function ItemModal({
   const items = useBakeryStore((s) => s.items);
   const currency = useBakeryStore((s) => s.bakery.currency);
   const saveItem = useBakeryStore((s) => s.saveItem);
+  const setItemImage = useBakeryStore((s) => s.setItemImage);
   const toast = useUIStore((s) => s.toast);
   const cats = useBakeryStore((s) => s.lists.categories);
   const emojis = useBakeryStore((s) => s.lists.emojis);
@@ -83,6 +90,12 @@ export function ItemModal({
       const compressed = await compressImage(blob);
       const url = await uploadProductImage(compressed);
       const prev = imageUrl;
+      // Editing an existing item: link the image immediately (no Save needed).
+      // New item: hold it in state — there's no row to attach it to until Save.
+      if (itemId) {
+        await setItemImage(itemId, url);
+        toast("Image updated");
+      }
       setImageUrl(url);
       if (prev) void deleteProductImage(prev); // clean up the replaced image
     } catch (err) {
@@ -93,9 +106,22 @@ export function ItemModal({
     }
   };
 
-  const removeImage = () => {
+  const removeImage = async () => {
     const prev = imageUrl;
     setImageUrl(null);
+    if (itemId) {
+      // Persist the removal immediately for an existing item.
+      setImgBusy(true);
+      try {
+        await setItemImage(itemId, null);
+      } catch (err) {
+        toast(err instanceof Error ? err.message : "Could not remove image");
+        setImageUrl(prev); // roll back on failure
+        return;
+      } finally {
+        setImgBusy(false);
+      }
+    }
     if (prev) void deleteProductImage(prev);
   };
 

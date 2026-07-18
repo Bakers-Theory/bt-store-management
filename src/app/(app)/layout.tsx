@@ -7,7 +7,7 @@ import { useBakeryStore } from "@/lib/store";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { BottomNav } from "@/components/layout/BottomNav";
-import { AppSkeleton } from "@/components/system/AppSkeleton";
+import { AppSkeleton, ContentSkeleton } from "@/components/system/AppSkeleton";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -19,18 +19,26 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     if (ready && !user) router.replace("/login");
   }, [ready, user, router]);
 
-  // Show the shell skeleton (not a blank screen) while auth resolves and the
-  // Supabase-backed store loads, so the chrome paints early (FCP) and views
-  // never flash the placeholder profile before real data arrives.
-  if (!ready || !user || !hydrated) return <AppSkeleton />;
+  // Until auth resolves we can't render the real nav (it depends on the user's
+  // role), so show the full-screen shell skeleton — not a blank screen — for an
+  // early FCP.
+  if (!ready || !user) return <AppSkeleton />;
 
+  // Auth is resolved: paint the real chrome immediately so the nav is clickable
+  // right away, even on a cold load. Only the data-heavy page body waits for the
+  // store to hydrate, so views never flash the placeholder profile before real
+  // data arrives.
   return (
     <div className="flex min-h-screen bg-cream">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar />
-        <main className="flex-1 overflow-y-auto p-4 lg:px-8 lg:py-6 animate-fade-in">
-          <div className="mx-auto w-full max-w-[1400px]">{children}</div>
+        <main className="flex-1 overflow-y-auto p-4 lg:px-8 lg:py-6">
+          {hydrated ? (
+            <div className="mx-auto w-full max-w-[1400px] animate-fade-in">{children}</div>
+          ) : (
+            <ContentSkeleton />
+          )}
         </main>
         <BottomNav />
       </div>
