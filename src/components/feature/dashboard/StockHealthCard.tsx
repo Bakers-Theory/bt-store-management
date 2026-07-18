@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { Package } from "lucide-react";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { ItemThumb } from "@/components/ui/ItemThumb";
 import type { StockHealthRow, StockVerdict } from "@/lib/analytics";
 
 const verdictBadge: Record<StockVerdict, string> = {
@@ -70,7 +71,7 @@ export function StockHealthCard({
               key={s.item.id}
               className="flex items-center gap-2.5 border-t border-line-soft py-2.5 first:border-t-0"
             >
-              <div className="text-[22px]">{s.item.emoji || "📦"}</div>
+              <ItemThumb src={s.item.imageUrl} emoji={s.item.emoji} size={30} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
                   <span className="truncate text-[13.5px] font-bold">{s.item.name}</span>

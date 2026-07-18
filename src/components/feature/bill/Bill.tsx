@@ -10,6 +10,7 @@ import { expiryStatus } from "@/lib/expiry";
 import { formatDate } from "@/lib/format";
 import { fetchCustomerByPhone } from "@/lib/supabase-data";
 import { Modal } from "@/components/ui/Modal";
+import { ItemThumb } from "@/components/ui/ItemThumb";
 import { Receipt } from "./Receipt";
 import type { Bill as BillType, BillLine, Customer, Item, PaymentMethod } from "@/lib/types";
 
@@ -137,6 +138,7 @@ export function Bill() {
           itemId: item.id,
           name: item.name,
           emoji: item.emoji,
+          imageUrl: item.imageUrl,
           unit: item.unit,
           qty: 1,
           price: item.price,
@@ -298,7 +300,7 @@ export function Bill() {
                           : "border-line bg-warm-white shadow-[0_1px_3px_rgba(100,60,20,.05)]"
                       }`}
                     >
-                      <div className="text-[34px] leading-none">{item.emoji || "📦"}</div>
+                      <ItemThumb src={item.imageUrl} emoji={item.emoji} size={44} />
                       <div className="line-clamp-2 min-h-[34px] text-[13.5px] font-bold leading-tight">
                         {item.name}
                       </div>
@@ -367,7 +369,7 @@ export function Bill() {
                       className="grid w-full grid-cols-[2.5fr_1fr_auto] items-center gap-3 border-t border-line-soft px-5 py-[13px] text-left transition-colors hover:bg-cream"
                     >
                       <div className="flex min-w-0 items-center gap-3">
-                        <span className="text-[22px]">{item.emoji || "📦"}</span>
+                        <ItemThumb src={item.imageUrl} emoji={item.emoji} size={30} />
                         <div className="min-w-0">
                           <div className="flex items-center">
                             <span className="truncate text-sm font-bold">{item.name}</span>
@@ -415,7 +417,7 @@ export function Bill() {
                         onClick={() => addToCart(item)}
                         className="flex min-w-0 flex-1 items-center gap-3 text-left"
                       >
-                        <span className="text-[26px]">{item.emoji || "📦"}</span>
+                        <ItemThumb src={item.imageUrl} emoji={item.emoji} size={36} />
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-sm font-bold">
                             {item.name}
@@ -599,7 +601,7 @@ export function Bill() {
               <div className="max-h-[300px] overflow-y-auto px-2 py-1.5">
                 {lines.map((bi, idx) => (
                   <div key={bi.itemId} className="flex items-center gap-2.5 rounded-xl px-2.5 py-[9px]">
-                    <span className="text-2xl">{bi.emoji || "📦"}</span>
+                    <ItemThumb src={bi.imageUrl} emoji={bi.emoji} size={32} />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-[13px] font-bold">{bi.name}</div>
                       <div className="num text-[11.5px] text-ink-light">

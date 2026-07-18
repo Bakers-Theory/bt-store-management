@@ -11,6 +11,7 @@ interface ItemRow {
   id: string;
   name: string;
   emoji: string;
+  image_url: string | null;
   category: string;
   unit: string;
   price: number;
@@ -44,6 +45,7 @@ interface BillItemRow {
   item_id: string | null;
   name: string;
   emoji: string;
+  image_url: string | null;
   unit: string;
   qty: number;
   price: number;
@@ -96,10 +98,11 @@ interface BatchRow {
 }
 
 // ─── Mappers (DB row → app type) ────────────────────────────────────────────
-const mapItem = (r: ItemRow): Item => ({
+export const mapItem = (r: ItemRow): Item => ({
   id: r.id,
   name: r.name,
   emoji: r.emoji,
+  imageUrl: r.image_url,
   category: r.category,
   unit: r.unit,
   price: r.price,
@@ -114,6 +117,7 @@ const mapLine = (r: BillItemRow): BillLine => ({
   itemId: r.item_id ?? "",
   name: r.name,
   emoji: r.emoji,
+  imageUrl: r.image_url,
   unit: r.unit,
   qty: r.qty,
   price: r.price,
@@ -285,7 +289,7 @@ export async function fetchReportData(): Promise<FullStoreData> {
   const [billsRes, billItemsRes, logsRes, costRes, custRows] = await Promise.all([
     supabase.from("bills_v").select("*").order("created_at"),
     // Explicit columns — cost_price is revoked from the client role (see 0002).
-    supabase.from("bill_items").select("id,bill_id,item_id,name,emoji,unit,qty,price"),
+    supabase.from("bill_items").select("id,bill_id,item_id,name,emoji,image_url,unit,qty,price"),
     supabase.from("activity_log_v").select("*").order("created_at", { ascending: false }),
     // Historical per-line cost (analytics-gated SECURITY DEFINER; see 0005), so
     // the report's COGS/profit match the dashboard. Empty for non-analytics users.
@@ -364,7 +368,7 @@ export async function fetchBillsPage(offset: number, limit: number): Promise<Bil
 
   const { data: lineRows } = await supabase
     .from("bill_items")
-    .select("id,bill_id,item_id,name,emoji,unit,qty,price")
+    .select("id,bill_id,item_id,name,emoji,image_url,unit,qty,price")
     .in("bill_id", rows.map((r) => r.id));
   const linesByBill = linesByBillId((lineRows ?? []) as BillItemRow[]);
 
@@ -381,7 +385,7 @@ export async function fetchBill(id: string): Promise<Bill | null> {
   if (!billRow) return null;
   const { data: lineRows } = await supabase
     .from("bill_items")
-    .select("id,bill_id,item_id,name,emoji,unit,qty,price")
+    .select("id,bill_id,item_id,name,emoji,image_url,unit,qty,price")
     .eq("bill_id", id);
   return mapBill(billRow as BillRow, ((lineRows ?? []) as BillItemRow[]).map(mapLine));
 }
@@ -428,7 +432,7 @@ export async function fetchCustomerBills(customerId: string): Promise<Bill[]> {
 
   const { data: lineRows } = await supabase
     .from("bill_items")
-    .select("id,bill_id,item_id,name,emoji,unit,qty,price")
+    .select("id,bill_id,item_id,name,emoji,image_url,unit,qty,price")
     .in("bill_id", rows.map((r) => r.id));
   const linesByBill = linesByBillId((lineRows ?? []) as BillItemRow[]);
 
@@ -510,7 +514,7 @@ async function rpc<T = unknown>(fn: string, args: Record<string, unknown>): Prom
 }
 
 export interface ItemInputDb {
-  name: string; emoji: string; category: string; unit: string;
+  name: string; emoji: string; imageUrl: string | null; category: string; unit: string;
   price: number; costPrice: number; qty: number;
   tracksExpiry: boolean; expiryDate: string | null;
 }

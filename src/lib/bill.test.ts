@@ -3,7 +3,7 @@ import { computeTotals } from "./bill";
 import type { BillLine } from "./types";
 
 const line = (qty: number, price: number): BillLine => ({
-  itemId: "x", name: "x", emoji: "📦", unit: "pcs", qty, price, costPrice: 0,
+  itemId: "x", name: "x", emoji: "📦", imageUrl: null, unit: "pcs", qty, price, costPrice: 0,
 });
 
 describe("computeTotals", () => {

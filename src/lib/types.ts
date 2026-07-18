@@ -26,6 +26,7 @@ export interface Item {
   id: string;
   name: string;
   emoji: string;
+  imageUrl: string | null; // uploaded product image URL; null = use emoji
   category: string;
   unit: string;
   price: number; // selling price
@@ -50,6 +51,7 @@ export interface BillLine {
   itemId: string;
   name: string;
   emoji: string;
+  imageUrl: string | null; // snapshot of the item's image at bill time
   unit: string;
   qty: number;
   price: number;

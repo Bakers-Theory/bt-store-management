@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { groupLists, mapCustomer, mapBill } from "./supabase-data";
+import { groupLists, mapCustomer, mapBill, mapItem } from "./supabase-data";
 
 describe("groupLists", () => {
   it("buckets rows by kind and preserves input order", () => {
@@ -97,5 +97,22 @@ describe("mapBill", () => {
 
   it("maps a null customer_id (legacy bill) to undefined", () => {
     expect(mapBill({ ...baseRow, customer_id: null }, []).customerId).toBeUndefined();
+  });
+});
+
+describe("mapItem", () => {
+  const row = {
+    id: "i1", name: "Bread", emoji: "🍞", category: "Breads", unit: "pcs",
+    price: 40, cost_price: 20, qty: 5, tracks_expiry: true,
+    earliest_expiry: null, batches: null,
+  };
+
+  it("maps image_url to imageUrl", () => {
+    expect(mapItem({ ...row, image_url: "https://x/y.webp" }).imageUrl)
+      .toBe("https://x/y.webp");
+  });
+
+  it("maps a null image_url to null (emoji-only item)", () => {
+    expect(mapItem({ ...row, image_url: null }).imageUrl).toBeNull();
   });
 });

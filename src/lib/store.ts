@@ -47,6 +47,7 @@ export interface Result {
 export interface ItemInput {
   name: string;
   emoji: string;
+  imageUrl: string | null;
   category: string;
   unit: string;
   price: number;
