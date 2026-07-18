@@ -109,7 +109,6 @@ export function Dashboard() {
   const [editItemId, setEditItemId] = useState<string | null>(null);
   const [stockInOpen, setStockInOpen] = useState(false);
   const [stockInItemId, setStockInItemId] = useState<string | undefined>(undefined);
-  const [exporting, setExporting] = useState(false);
   const [viewBill, setViewBill] = useState<Bill | null>(null);
   const [topCustomers, setTopCustomers] = useState<Customer[]>([]);
   const [custLoaded, setCustLoaded] = useState(false);
@@ -177,21 +176,6 @@ export function Dashboard() {
       alive = false;
     };
   }, [user?.id]);
-
-  // Export the full workbook scoped to the range the owner is currently viewing
-  // (fetched on click, not on mount, to keep the dashboard load light).
-  const doExport = async () => {
-    if (invalidRange) return;
-    setExporting(true);
-    try {
-      const r = await exportReport("full", await fetchReportData(), range);
-      toast(r.ok ? "Excel report downloaded" : r.error ?? "Export failed");
-    } catch {
-      toast("Export failed");
-    } finally {
-      setExporting(false);
-    }
-  };
 
   const openBill = async (id: string) => {
     const b = await fetchBill(id);
@@ -468,20 +452,6 @@ export function Dashboard() {
                   onClick={() => setAddOpen(true)}
                 >
                   <Plus size={16} /> Add Item
-                </button>
-              )}
-              {hasPermission(user, "analytics") && (
-                <button
-                  className="btn-secondary flex items-center justify-center gap-2 p-3.5 text-sm disabled:cursor-not-allowed disabled:opacity-60"
-                  onClick={doExport}
-                  disabled={exporting || invalidRange}
-                >
-                  {exporting ? (
-                    <Loader2 size={16} className="animate-spin" />
-                  ) : (
-                    <Download size={16} />
-                  )}
-                  {exporting ? "Preparing…" : "Export this range"}
                 </button>
               )}
             </div>
