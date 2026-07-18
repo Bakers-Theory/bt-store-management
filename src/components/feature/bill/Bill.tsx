@@ -95,6 +95,15 @@ export function Bill() {
     return map;
   }, [lines]);
 
+  // Sellable (non-expired) stock per item, for capping cart quantities so a
+  // cashier can't bill more than exists (the server would clamp silently).
+  const freshQtyById = useMemo(() => {
+    const today = new Date();
+    const map = new Map<string, number>();
+    for (const i of items) map.set(i.id, freshInfo(i, expiringSoonDays, today).qty);
+    return map;
+  }, [items, expiringSoonDays]);
+
   // Best-effort: pull the latest store status so a biller sees an accurate
   // Open/Closed state. Bill creation is enforced server-side regardless.
   useEffect(() => {
@@ -125,6 +134,11 @@ export function Bill() {
   }, [customer.phone]);
 
   const addToCart = (item: Item) => {
+    const max = freshQtyById.get(item.id) ?? 0;
+    if ((cartQtyById.get(item.id) ?? 0) >= max) {
+      toast(`Only ${max} ${item.unit} of ${item.name} in stock`);
+      return;
+    }
     setLines((prev) => {
       const idx = prev.findIndex((bi) => bi.itemId === item.id);
       if (idx >= 0) {
@@ -156,8 +170,16 @@ export function Bill() {
       return prev.map((bi, i) => (i === idx ? { ...bi, qty: bi.qty - 1 } : bi));
     });
 
-  const inc = (idx: number) =>
+  const inc = (idx: number) => {
+    const line = lines[idx];
+    if (!line) return;
+    const max = freshQtyById.get(line.itemId) ?? 0;
+    if (line.qty >= max) {
+      toast(`Only ${max} ${line.unit} of ${line.name} in stock`);
+      return;
+    }
     setLines((prev) => prev.map((bi, i) => (i === idx ? { ...bi, qty: bi.qty + 1 } : bi)));
+  };
 
   const dec = (idx: number) =>
     setLines((prev) => {
@@ -334,8 +356,9 @@ export function Bill() {
                       <div className="absolute right-2 top-2 flex flex-col items-center gap-0.5 rounded-full bg-cream-dark p-1 shadow-[0_2px_8px_rgba(100,60,20,0.14)] lg:hidden">
                         <button
                           onClick={() => addToCart(item)}
+                          disabled={inCart >= freshQty}
                           aria-label={`Add one ${item.name}`}
-                          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border-none bg-warm-white text-lg font-extrabold leading-none text-brown transition-colors active:bg-cream"
+                          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border-none bg-warm-white text-lg font-extrabold leading-none text-brown transition-colors active:bg-cream disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           +
                         </button>
@@ -453,8 +476,9 @@ export function Bill() {
                           </span>
                           <button
                             onClick={() => addToCart(item)}
+                            disabled={inCart >= freshQty}
                             aria-label={`Add one ${item.name}`}
-                            className="flex h-[28px] w-[28px] cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-lg font-extrabold text-brown"
+                            className="flex h-[28px] w-[28px] cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-lg font-extrabold text-brown disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             +
                           </button>
@@ -625,7 +649,8 @@ export function Bill() {
                       </span>
                       <button
                         onClick={() => inc(idx)}
-                        className="flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-base font-extrabold text-brown"
+                        disabled={bi.qty >= (freshQtyById.get(bi.itemId) ?? 0)}
+                        className="flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-base font-extrabold text-brown disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         +
                       </button>

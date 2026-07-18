@@ -11,9 +11,18 @@ import { ItemThumb } from "@/components/ui/ItemThumb";
 import { ItemModal } from "./ItemModal";
 import { StockInForm } from "./StockInForm";
 import { StockOutForm } from "./StockOutForm";
+import type { Item } from "@/lib/types";
 
 type Tab = "all" | "in" | "out";
 type ModalState = { type: "add" | "edit" | "stockin" | "stockout"; id?: string } | null;
+
+// Sellable stock excludes expired batches — they can't be sold, so the status
+// pill must reflect them (an all-expired item is "Out", not "In stock").
+function sellableQty(item: Item, windowDays: number, today: Date) {
+  return item.batches
+    .filter((b) => expiryStatus(b.expiryDate, item.tracksExpiry, windowDays, today) !== "expired")
+    .reduce((n, b) => n + b.qty, 0);
+}
 
 function statusOf(qty: number, lowStockAlert: number) {
   if (qty === 0) return { label: "Out", cls: "bg-danger-bg text-danger" };
@@ -66,6 +75,7 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
     refreshSettings();
   }, [refreshSettings]);
 
+  const today = new Date();
   const filtered = items.filter(
     (i) =>
       (category === "All" || i.category === category) &&
@@ -202,7 +212,7 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
               <div />
             </div>
             {filtered.map((item) => {
-              const st = statusOf(item.qty, lowStockAlert);
+              const st = statusOf(sellableQty(item, expiringSoonDays, today), lowStockAlert);
               return (
                 <div
                   key={item.id}
@@ -260,7 +270,7 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
           {/* Phone cards */}
           <div className="flex flex-col gap-2.5 lg:hidden">
             {filtered.map((item) => {
-              const st = statusOf(item.qty, lowStockAlert);
+              const st = statusOf(sellableQty(item, expiringSoonDays, today), lowStockAlert);
               return (
                 <div
                   key={item.id}

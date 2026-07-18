@@ -25,6 +25,7 @@ export function Settings() {
   const removeLogo = useBakeryStore((s) => s.removeLogo);
   const clearAllData = useBakeryStore((s) => s.clearAllData);
   const toast = useUIStore((s) => s.toast);
+  const requireOwnerAuth = useUIStore((s) => s.requireOwnerAuth);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [name, setName] = useState(bakery.name);
@@ -85,17 +86,17 @@ export function Settings() {
     }
   };
 
-  const clearData = async () => {
-    if (!confirm("This will delete all items, bills, and history. Are you sure?")) return;
-    if (!confirm("Last chance — really delete everything?")) return;
-    setClearing(true);
-    try {
-      await clearAllData();
-      toast("All data cleared");
-      router.push("/dashboard");
-    } finally {
-      setClearing(false);
-    }
+  const clearData = () => {
+    requireOwnerAuth("delete all items, bills, and history", async () => {
+      setClearing(true);
+      try {
+        await clearAllData();
+        toast("All data cleared");
+        router.push("/dashboard");
+      } finally {
+        setClearing(false);
+      }
+    });
   };
 
   return (
