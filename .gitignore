@@ -5,7 +5,7 @@ out
 .DS_Store
 .gstack/
 .superpowers
-docs
+docs/superpowers
 *.tsbuildinfo
 .vercel
 .env*
