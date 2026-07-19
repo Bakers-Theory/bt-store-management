@@ -47,7 +47,9 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  // Allow pinch-zoom (WCAG 1.4.4) — this is a text-dense app.
+  // Lock zoom so mobile browsers don't auto-zoom on input focus.
+  maximumScale: 1,
+  userScalable: false,
   themeColor: "#7c4a1e",
   // Resize the layout viewport when the on-screen keyboard opens so bottom-anchored
   // controls (e.g. the bill sheet's Generate button) stay above it instead of hidden.
