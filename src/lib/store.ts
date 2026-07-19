@@ -76,6 +76,8 @@ interface StoreState {
   items: Item[];
   lists: StoreLists;
   _hasHydrated: boolean;
+  /** True when a cold load (no cached data) failed — surfaced as a retry banner. */
+  loadError: boolean;
 
   /**
    * Load the bounded base data (store settings + item catalogue) into the
@@ -102,7 +104,7 @@ interface StoreState {
     customer: { name: string; phone: string },
     lines: BillLine[],
     paymentMethod: PaymentMethod,
-    discountPercent: number,
+    discount: { mode: "percent" | "flat"; value: number },
     billerName: string,
   ) => Promise<Bill>;
   cancelBill: (id: string, byName: string) => Promise<Result>;
@@ -196,6 +198,7 @@ export const useBakeryStore = create<StoreState>()(
     items: [],
     lists: EMPTY_LISTS,
     _hasHydrated: false,
+    loadError: false,
 
     load: async () => {
       // persist rehydrates synchronously from localStorage before this runs, so
@@ -206,14 +209,17 @@ export const useBakeryStore = create<StoreState>()(
       }
       try {
         const data = await fetchBaseData();
-        set({ ...data, _hasHydrated: true });
+        set({ ...data, _hasHydrated: true, loadError: false });
       } catch {
-        set({ _hasHydrated: true });
+        // Only flag an error when there's nothing cached to show — a failed
+        // background revalidation over good cached data stays silent.
+        const cold = get().items.length === 0 && get().bakery.name === "";
+        set({ _hasHydrated: true, loadError: cold });
       }
     },
 
     reset: () =>
-      set({ bakery: PLACEHOLDER_BAKERY, items: [], lists: EMPTY_LISTS, _hasHydrated: false }),
+      set({ bakery: PLACEHOLDER_BAKERY, items: [], lists: EMPTY_LISTS, _hasHydrated: false, loadError: false }),
 
     // ─── Items ─────────────────────────────────────────────────────────────
     saveItem: async (input, id) => {
@@ -286,9 +292,9 @@ export const useBakeryStore = create<StoreState>()(
     // A bill can consume stock across many items at once (FIFO, per line), so
     // it refreshes the item list rather than patching a single row — still far
     // cheaper than the old full reload, since settings/lists never change here.
-    generateBill: async (customer, lines, paymentMethod, discountPercent, billerName) => {
+    generateBill: async (customer, lines, paymentMethod, discount, billerName) => {
       const row = await rpcGenerateBill(
-        { ...customer, payment: paymentMethod, discount: discountPercent },
+        { ...customer, payment: paymentMethod, discount: discount.value, discountType: discount.mode },
         lines.map((l) => ({ itemId: l.itemId, qty: l.qty })),
       );
       const bill: Bill = {
@@ -302,7 +308,9 @@ export const useBakeryStore = create<StoreState>()(
         total: row.total,
         taxRate: row.tax_rate,
         paymentMethod,
-        discountPercent,
+        discountPercent: row.discount_percent,
+        discountType: row.discount_type,
+        discountAmount: row.discount_amount,
         billerName,
         date: row.created_at,
         status: "active",

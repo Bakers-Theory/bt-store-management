@@ -85,6 +85,8 @@ export interface Bill {
   taxRate: number;
   paymentMethod: PaymentMethod;
   discountPercent: number;
+  discountType: "percent" | "flat";
+  discountAmount: number; // actual money discounted (₹), for percent and flat alike
   billerName: string; // name of the user who generated the bill ("" for legacy bills)
   date: string; // ISO
   status: BillStatus;

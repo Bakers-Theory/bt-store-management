@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Search, Users, X } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { fetchCustomers } from "@/lib/supabase-data";
-import { initials } from "@/lib/format";
+import { initials, relativeDay } from "@/lib/format";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { CustomerModal } from "./CustomerModal";
 import type { Customer } from "@/lib/types";
@@ -126,16 +126,30 @@ export function Customers() {
                   {c.phone} · {c.visitCount} visit{c.visitCount === 1 ? "" : "s"}
                 </div>
               </div>
-              <div className="num shrink-0 text-right text-[15px] font-extrabold text-ink">
-                {currency}
-                {c.totalSpend.toFixed(2)}
+              <div className="shrink-0 text-right">
+                <div className="num text-[15px] font-extrabold text-ink">
+                  {currency}
+                  {c.totalSpend.toFixed(2)}
+                </div>
+                <div className="text-[11px] text-ink-light">
+                  {c.lastPurchase ? relativeDay(c.lastPurchase) : "No visits"}
+                </div>
               </div>
             </button>
           ))}
         </div>
       )}
 
-      {selected && <CustomerModal customer={selected} onClose={() => setSelected(null)} />}
+      {selected && (
+        <CustomerModal
+          customer={selected}
+          onClose={() => setSelected(null)}
+          onUpdated={(u) => {
+            setSelected(u);
+            setCustomers((prev) => prev.map((c) => (c.id === u.id ? u : c)));
+          }}
+        />
+      )}
     </>
   );
 }

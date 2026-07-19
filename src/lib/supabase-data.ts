@@ -33,6 +33,8 @@ interface BillRow {
   tax_rate: number;
   payment_method: "Cash" | "UPI";
   discount_percent: number;
+  discount_type: "percent" | "flat";
+  discount_amount: number;
   status: "active" | "cancelled";
   created_at: string;
   cancelled_at: string | null;
@@ -137,6 +139,8 @@ export const mapBill = (r: BillRow, lines: BillLine[]): Bill => ({
   taxRate: r.tax_rate,
   paymentMethod: r.payment_method,
   discountPercent: r.discount_percent,
+  discountType: r.discount_type,
+  discountAmount: r.discount_amount,
   billerName: r.biller_name ?? "",
   date: r.created_at,
   status: r.status,
@@ -319,10 +323,54 @@ export async function fetchReportData(): Promise<FullStoreData> {
   };
 }
 
+export interface ReportCounts {
+  billsInRange: number;
+  logsInRange: number;
+  items: number;
+  customers: number;
+}
+
+/**
+ * Cheap preview counts for the Reports page — HEAD count queries only, so the
+ * page no longer downloads the entire store on mount just to show "N bills".
+ * The heavy fetchReportData() is deferred to the Download click.
+ *
+ * Range bounds mirror excel.ts `inRange` (which compares the UTC calendar day of
+ * created_at), so the preview matches what the export will actually include.
+ */
+export async function fetchReportCounts(range: DateRange): Promise<ReportCounts> {
+  const supabase = createClient();
+  const withRange = <T extends { gte: (c: string, v: string) => T; lte: (c: string, v: string) => T }>(q: T): T => {
+    let out = q;
+    if (range.from) out = out.gte("created_at", `${range.from}T00:00:00.000Z`);
+    if (range.to) out = out.lte("created_at", `${range.to}T23:59:59.999Z`);
+    return out;
+  };
+  const [bills, logs, items, customers] = await Promise.all([
+    withRange(supabase.from("bills_v").select("*", { count: "exact", head: true })),
+    withRange(supabase.from("activity_log_v").select("*", { count: "exact", head: true })),
+    supabase.from("items").select("*", { count: "exact", head: true }),
+    supabase.from("customers").select("*", { count: "exact", head: true }),
+  ]);
+  return {
+    billsInRange: bills.count ?? 0,
+    logsInRange: logs.count ?? 0,
+    items: items.count ?? 0,
+    customers: customers.count ?? 0,
+  };
+}
+
 // ─── Dashboard aggregates (server-computed, bounded) ─────────────────────────
 export interface DashboardStats {
   today: string;
-  kpis: { rangeSales: number; prevSales: number; billsInRange: number; itemsSold: number };
+  kpis: {
+    rangeSales: number;
+    prevSales: number;
+    billsInRange: number;
+    prevBills: number;
+    itemsSold: number;
+    prevItemsSold: number;
+  };
   /** Per-day active-sales totals for (up to) the last 7 local days. */
   weekly: { date: string; total: number }[];
   topItems: { name: string; qty: number }[];
@@ -355,14 +403,41 @@ export interface BillsPage {
   hasMore: boolean;
 }
 
-/** One page of bills (newest first) with their line items. */
-export async function fetchBillsPage(offset: number, limit: number): Promise<BillsPage> {
+export interface BillFilters {
+  q?: string; // numeric → exact bill_no; text → customer_name contains
+  status?: BillStatus;
+  from?: string | null; // local YYYY-MM-DD (inclusive)
+  to?: string | null; // local YYYY-MM-DD (inclusive)
+}
+
+// Local calendar-day bounds → UTC instants, so a timestamptz column filters by
+// the user's day, not the server's.
+const dayStartISO = (ymd: string) => new Date(`${ymd}T00:00:00`).toISOString();
+const dayEndISO = (ymd: string) => new Date(`${ymd}T23:59:59.999`).toISOString();
+
+/** One page of bills (newest first) with their line items, filtered server-side
+ *  so search / status / date reach the whole history, not just loaded rows. */
+export async function fetchBillsPage(
+  offset: number,
+  limit: number,
+  filters: BillFilters = {},
+): Promise<BillsPage> {
   const supabase = createClient();
-  const { data: billRows } = await supabase
-    .from("bills_v")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .range(offset, offset + limit - 1);
+  let query = supabase.from("bills_v").select("*").order("created_at", { ascending: false });
+  if (filters.status) query = query.eq("status", filters.status);
+  if (filters.from) query = query.gte("created_at", dayStartISO(filters.from));
+  if (filters.to) query = query.lte("created_at", dayEndISO(filters.to));
+  const q = filters.q?.trim();
+  if (q) {
+    if (/^\d+$/.test(q)) {
+      // Pure number → match the bill number exactly (typing "10" finds #10, not
+      // #10/#100/#101), still OR-matching names that contain the digits.
+      query = query.or(`bill_no.eq.${q},customer_name.ilike.*${q}*`);
+    } else {
+      query = query.ilike("customer_name", `%${q}%`);
+    }
+  }
+  const { data: billRows } = await query.range(offset, offset + limit - 1);
   const rows = (billRows ?? []) as BillRow[];
   if (rows.length === 0) return { bills: [], hasMore: false };
 
@@ -396,6 +471,12 @@ export async function fetchCustomers(): Promise<Customer[]> {
   const rows = await rpc<CustomerRow[]>("customers_with_stats", {});
   return (rows ?? []).map(mapCustomer);
 }
+
+/** Correct a mistyped customer name/phone. Throws on a phone collision. */
+export const rpcUpdateCustomer = (id: string, name: string, phone: string) =>
+  rpc<{ id: string; name: string; phone: string }>("update_customer", {
+    p_id: id, p_name: name, p_phone: phone,
+  });
 
 /**
  * Look a customer up by exact phone for billing autofill. Best-effort: returns
@@ -456,14 +537,36 @@ export interface LogsPage {
   hasMore: boolean;
 }
 
-/** One page of stock/bill movement log entries (newest first). Store & staff
- *  audit events are excluded here — they live in the Owner-only Store tab. */
-export async function fetchLogsPage(offset: number, limit: number): Promise<LogsPage> {
+export interface LogFilters {
+  q?: string; // matches item name / actor / notes
+  type?: Log["type"] | "all";
+  from?: string | null; // local YYYY-MM-DD (inclusive)
+  to?: string | null; // local YYYY-MM-DD (inclusive)
+}
+
+// Escape the PostgREST `.or()` grammar chars so a user query can't break it.
+const orSafe = (s: string) => s.replace(/[,()*]/g, " ").trim();
+
+const STOCK_LOG_TYPES: Log["type"][] = ["in", "out", "bill", "cancel", "delete"];
+
+/** One page of stock/bill movement log entries (newest first), filtered
+ *  server-side. Store & staff audit events live in the Owner-only Store tab. */
+export async function fetchLogsPage(
+  offset: number,
+  limit: number,
+  filters: LogFilters = {},
+): Promise<LogsPage> {
   const supabase = createClient();
-  const { data } = await supabase
-    .from("activity_log_v")
-    .select("*")
-    .in("type", ["in", "out", "bill", "cancel", "delete"])
+  let query = supabase.from("activity_log_v").select("*");
+  query =
+    filters.type && filters.type !== "all"
+      ? query.eq("type", filters.type)
+      : query.in("type", STOCK_LOG_TYPES);
+  if (filters.from) query = query.gte("created_at", dayStartISO(filters.from));
+  if (filters.to) query = query.lte("created_at", dayEndISO(filters.to));
+  const q = filters.q ? orSafe(filters.q) : "";
+  if (q) query = query.or(`item_name.ilike.*${q}*,actor_name.ilike.*${q}*,notes.ilike.*${q}*`);
+  const { data } = await query
     .order("created_at", { ascending: false })
     .range(offset, offset + limit - 1);
   const rows = (data ?? []) as LogRow[];
@@ -471,13 +574,21 @@ export async function fetchLogsPage(offset: number, limit: number): Promise<Logs
 }
 
 /** One page of administrative audit entries (store settings, staff, passwords,
- *  open/close) for the Owner-only Store tab. Returns nothing for non-owners
- *  (the view is gated on is_owner()). */
-export async function fetchAdminLogsPage(offset: number, limit: number): Promise<LogsPage> {
+ *  open/close) for the Owner-only Store tab, filtered server-side. Returns
+ *  nothing for non-owners (the view is gated on is_owner()). */
+export async function fetchAdminLogsPage(
+  offset: number,
+  limit: number,
+  filters: LogFilters = {},
+): Promise<LogsPage> {
   const supabase = createClient();
-  const { data } = await supabase
-    .from("activity_log_admin_v")
-    .select("*")
+  let query = supabase.from("activity_log_admin_v").select("*");
+  if (filters.type && filters.type !== "all") query = query.eq("type", filters.type);
+  if (filters.from) query = query.gte("created_at", dayStartISO(filters.from));
+  if (filters.to) query = query.lte("created_at", dayEndISO(filters.to));
+  const q = filters.q ? orSafe(filters.q) : "";
+  if (q) query = query.or(`actor_name.ilike.*${q}*,notes.ilike.*${q}*`);
+  const { data } = await query
     .order("created_at", { ascending: false })
     .range(offset, offset + limit - 1);
   const rows = (data ?? []) as LogRow[];
@@ -568,9 +679,13 @@ export async function rpcUpdateBatchExpiry(batchId: string, expiry: string): Pro
 interface GeneratedBillRow {
   id: string; bill_no: number; subtotal: number; tax: number;
   total: number; tax_rate: number; created_at: string;
+  discount_percent: number; discount_type: "percent" | "flat"; discount_amount: number;
 }
 export const rpcGenerateBill = (
-  customer: { name: string; phone: string; payment: PaymentMethod; discount: number },
+  customer: {
+    name: string; phone: string; payment: PaymentMethod;
+    discount: number; discountType: "percent" | "flat";
+  },
   lines: { itemId: string; qty: number }[],
 ) => {
   // Timezone drives which batches count as expired server-side — must match the

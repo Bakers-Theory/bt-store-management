@@ -3,8 +3,8 @@
 import { memo } from "react";
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis } from "recharts";
 
-const BROWN = "#7c4a1e";
-const GRAY = "#c9a97a";
+const BROWN = "var(--color-brown)";
+const GRAY = "var(--color-line-strong)";
 
 export const SalesChart = memo(function SalesChart({
   data,
@@ -21,14 +21,14 @@ export const SalesChart = memo(function SalesChart({
             dataKey="label"
             axisLine={false}
             tickLine={false}
-            tick={{ fill: "#b08060", fontSize: 11, fontWeight: 600 }}
+            tick={{ fill: "var(--color-ink-light)", fontSize: 11, fontWeight: 600 }}
           />
           <Tooltip
-            cursor={{ fill: "rgba(124,74,30,0.06)" }}
+            cursor={{ fill: "color-mix(in srgb, var(--color-brown) 6%, transparent)" }}
             formatter={(value) => [`${currency}${Number(value).toLocaleString("en-IN")}`, "Sales"]}
             contentStyle={{
-              background: "#fffcf8",
-              border: "1px solid #e8d5bb",
+              background: "var(--color-warm-white)",
+              border: "1px solid var(--color-line)",
               borderRadius: 10,
               fontSize: 12.5,
             }}

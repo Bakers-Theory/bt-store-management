@@ -32,7 +32,7 @@ export function CropModal({
     try {
       onCropped(await getCroppedBlob(src, area));
     } catch (e) {
-      toast(e instanceof Error ? e.message : "Could not crop image");
+      toast(e instanceof Error ? e.message : "Could not crop image", "error");
       setBusy(false);
     }
   };

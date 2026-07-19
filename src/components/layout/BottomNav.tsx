@@ -82,8 +82,6 @@ export function BottomNav() {
   const [moreOpen, setMoreOpen] = useState(false);
   const items = navItems(user);
 
-  if (items.length === 0) return null;
-
   const bill = items.find((it) => it.key === "bill");
   const primary = items.filter((it) => it.key !== "bill" && PRIMARY_KEYS.includes(it.key));
   // Everything that isn't the FAB or a primary tab lives in the sheet, plus
@@ -176,6 +174,17 @@ export function BottomNav() {
       </div>
     </div>
   ) : null;
+
+  // Zero-permission staff have no primary sections, but Settings is always
+  // reachable — surface it as a lone tab so they aren't stranded on NoAccess
+  // with no way out.
+  if (items.length === 0) {
+    return (
+      <nav className="sticky bottom-0 z-[100] flex items-end justify-center border-t border-line bg-warm-white px-1.5 pb-3 pt-2 lg:hidden">
+        {renderNav(SETTINGS_ITEM)}
+      </nav>
+    );
+  }
 
   // No bill FAB (user lacks sales): plain even row of the primary tabs + More.
   if (!bill) {

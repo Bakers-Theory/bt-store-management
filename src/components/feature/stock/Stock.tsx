@@ -11,9 +11,20 @@ import { ItemThumb } from "@/components/ui/ItemThumb";
 import { ItemModal } from "./ItemModal";
 import { StockInForm } from "./StockInForm";
 import { StockOutForm } from "./StockOutForm";
+import type { Item } from "@/lib/types";
 
 type Tab = "all" | "in" | "out";
 type ModalState = { type: "add" | "edit" | "stockin" | "stockout"; id?: string } | null;
+type Sort = "default" | "name" | "qty" | "expiry";
+type HealthFilter = "none" | "low" | "expiry";
+
+// Sellable stock excludes expired batches — they can't be sold, so the status
+// pill must reflect them (an all-expired item is "Out", not "In stock").
+function sellableQty(item: Item, windowDays: number, today: Date) {
+  return item.batches
+    .filter((b) => expiryStatus(b.expiryDate, item.tracksExpiry, windowDays, today) !== "expired")
+    .reduce((n, b) => n + b.qty, 0);
+}
 
 function statusOf(qty: number, lowStockAlert: number) {
   if (qty === 0) return { label: "Out", cls: "bg-danger-bg text-danger" };
@@ -59,6 +70,8 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
   );
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
+  const [sort, setSort] = useState<Sort>("default");
+  const [healthFilter, setHealthFilter] = useState<HealthFilter>("none");
 
   // Best-effort: refresh store status so the view-only lock reflects reality.
   // Inventory changes are enforced server-side regardless.
@@ -66,21 +79,49 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
     refreshSettings();
   }, [refreshSettings]);
 
-  const filtered = items.filter(
-    (i) =>
-      (category === "All" || i.category === category) &&
-      i.name.toLowerCase().includes(search.toLowerCase()),
-  );
+  const today = new Date();
 
   const totalItems = items.length;
   const totalUnits = items.reduce((s, i) => s + i.qty, 0);
   const stockValue = items.reduce((s, i) => s + i.price * i.qty, 0);
-  const lowOrOut = items.filter((i) => i.qty <= lowStockAlert).length;
+
+  // Per-item health, reused for the summary tiles, the tile filters, and the
+  // status pills below — all based on sellable (non-expired) stock.
+  const rows = items.map((item) => ({
+    item,
+    sellable: sellableQty(item, expiringSoonDays, today),
+    exp: expiryStatus(item.earliestExpiry, item.tracksExpiry, expiringSoonDays, today),
+  }));
+  const lowOrOut = rows.filter((r) => r.sellable <= lowStockAlert).length;
+  const expiringCount = rows.filter((r) => r.exp === "expiring" || r.exp === "expired").length;
+
+  const expiryKey = (item: Item) =>
+    item.tracksExpiry && item.earliestExpiry ? new Date(item.earliestExpiry).getTime() : Infinity;
+
+  const visible = rows
+    .filter(
+      ({ item }) =>
+        (category === "All" || item.category === category) &&
+        item.name.toLowerCase().includes(search.toLowerCase()),
+    )
+    .filter((r) =>
+      healthFilter === "low"
+        ? r.sellable <= lowStockAlert
+        : healthFilter === "expiry"
+          ? r.exp === "expiring" || r.exp === "expired"
+          : true,
+    )
+    .sort((a, b) => {
+      if (sort === "name") return a.item.name.localeCompare(b.item.name);
+      if (sort === "qty") return a.sellable - b.sellable;
+      if (sort === "expiry") return expiryKey(a.item) - expiryKey(b.item);
+      return 0;
+    });
 
   const remove = (id: string, name: string) => {
     requireOwnerAuth(`delete item "${name}"`, async () => {
       await deleteItem(id);
-      toast("Item deleted");
+      toast("Item deleted", "success");
     });
   };
 
@@ -94,26 +135,56 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
           Store is closed — inventory is view-only. Reopen the store to add or adjust stock.
         </div>
       )}
-      {/* Stat tiles */}
-      <div className="mb-[18px] grid grid-cols-2 gap-3.5 lg:grid-cols-4">
-        <div className="rounded-2xl border border-line bg-warm-white px-[18px] py-[15px]">
-          <div className="text-xs font-semibold text-ink-muted">Total items</div>
-          <div className="num mt-1 text-2xl font-extrabold">{totalItems}</div>
-        </div>
-        <div className="rounded-2xl border border-line bg-warm-white px-[18px] py-[15px]">
-          <div className="text-xs font-semibold text-ink-muted">Units in stock</div>
-          <div className="num mt-1 text-2xl font-extrabold">{totalUnits}</div>
-        </div>
-        <div className="rounded-2xl border border-line bg-warm-white px-[18px] py-[15px]">
-          <div className="text-xs font-semibold text-ink-muted">Stock value</div>
-          <div className="num mt-1 text-2xl font-extrabold">
-            {currency}
-            {stockValue.toFixed(2)}
+      {/* Stat tiles — 3 neutral metrics + 2 health tiles that double as list
+          filters. Mobile: 3-up neutral row above a 2-up filter row; desktop:
+          all five collapse into a single row via `contents`. */}
+      <div className="mb-[18px] flex flex-col gap-3 lg:grid lg:grid-cols-5 lg:gap-3.5">
+        <div className="grid grid-cols-3 gap-3 lg:contents">
+          <div className="min-w-0 rounded-2xl border border-line bg-warm-white px-3.5 py-3 lg:px-[18px] lg:py-[15px]">
+            <div className="truncate text-[11px] font-semibold text-ink-muted lg:text-xs">Total items</div>
+            <div className="num mt-0.5 text-xl font-extrabold lg:mt-1 lg:text-2xl">{totalItems}</div>
+          </div>
+          <div className="min-w-0 rounded-2xl border border-line bg-warm-white px-3.5 py-3 lg:px-[18px] lg:py-[15px]">
+            <div className="truncate text-[11px] font-semibold text-ink-muted lg:text-xs">Units in stock</div>
+            <div className="num mt-0.5 text-xl font-extrabold lg:mt-1 lg:text-2xl">{totalUnits}</div>
+          </div>
+          <div className="min-w-0 rounded-2xl border border-line bg-warm-white px-3.5 py-3 lg:px-[18px] lg:py-[15px]">
+            <div className="truncate text-[11px] font-semibold text-ink-muted lg:text-xs">Stock value</div>
+            <div className="num mt-0.5 truncate text-xl font-extrabold lg:mt-1 lg:text-2xl">
+              {currency}
+              {stockValue.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+            </div>
           </div>
         </div>
-        <div className="rounded-2xl border border-[#ecd9a8] bg-warn-bg px-[18px] py-[15px]">
-          <div className="text-xs font-semibold text-warn">Low / out</div>
-          <div className="num mt-1 text-2xl font-extrabold text-warn">{lowOrOut}</div>
+        <div className="grid grid-cols-2 gap-3 lg:contents">
+          <button
+            type="button"
+            aria-pressed={healthFilter === "low"}
+            onClick={() => setHealthFilter((f) => (f === "low" ? "none" : "low"))}
+            className={`cursor-pointer rounded-2xl border bg-warn-bg px-3.5 py-3 text-left transition-all lg:px-[18px] lg:py-[15px] ${
+              healthFilter === "low" ? "border-warn ring-2 ring-warn" : "border-[#ecd9a8]"
+            }`}
+          >
+            <div className="flex items-center gap-1 text-[11px] font-semibold text-warn lg:text-xs">
+              Low / out
+              {healthFilter === "low" && <X size={12} className="ml-auto" />}
+            </div>
+            <div className="num mt-0.5 text-xl font-extrabold text-warn lg:mt-1 lg:text-2xl">{lowOrOut}</div>
+          </button>
+          <button
+            type="button"
+            aria-pressed={healthFilter === "expiry"}
+            onClick={() => setHealthFilter((f) => (f === "expiry" ? "none" : "expiry"))}
+            className={`cursor-pointer rounded-2xl border bg-danger-bg px-3.5 py-3 text-left transition-all lg:px-[18px] lg:py-[15px] ${
+              healthFilter === "expiry" ? "border-danger ring-2 ring-danger" : "border-[#eccccc]"
+            }`}
+          >
+            <div className="flex items-center gap-1 text-[11px] font-semibold text-danger lg:text-xs">
+              Expiring / expired
+              {healthFilter === "expiry" && <X size={12} className="ml-auto" />}
+            </div>
+            <div className="num mt-0.5 text-xl font-extrabold text-danger lg:mt-1 lg:text-2xl">{expiringCount}</div>
+          </button>
         </div>
       </div>
 
@@ -141,27 +212,40 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
             </button>
           )}
         </div>
+        <select
+          value={sort}
+          onChange={(e) => setSort(e.target.value as Sort)}
+          aria-label="Sort items"
+          className="!w-auto shrink-0 rounded-xl border border-line bg-warm-white px-3 py-[11px] text-[13.5px] font-semibold text-ink-muted focus:border-brown"
+        >
+          <option value="default">Sort by: Added</option>
+          <option value="name">Sort by: Name (A–Z)</option>
+          <option value="qty">Sort by: Stock (low first)</option>
+          <option value="expiry">Sort by: Expiry (soonest)</option>
+        </select>
         {!locked && (
-          <>
+          // Full-width row on phone so the three actions share one line evenly;
+          // dissolves back into the toolbar (auto-width, inline) on desktop.
+          <div className="flex w-full gap-2.5 lg:contents">
             <button
-              className="btn-primary flex items-center gap-1.5 whitespace-nowrap text-[13.5px]"
+              className="btn-primary flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap px-2.5 text-[12.5px] lg:flex-none lg:px-[18px] lg:text-[13.5px]"
               onClick={() => setModal({ type: "add" })}
             >
               <Plus size={16} /> Add item
             </button>
             <button
-              className="btn-secondary flex items-center gap-1.5 whitespace-nowrap text-[13.5px]"
+              className="btn-secondary flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap px-2.5 text-[12.5px] lg:flex-none lg:px-[18px] lg:text-[13.5px]"
               onClick={() => setModal({ type: "stockin" })}
             >
               <PackagePlus size={16} /> Add stock
             </button>
             <button
-              className="btn-secondary flex items-center gap-1.5 whitespace-nowrap text-[13.5px]"
+              className="btn-secondary flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap px-2.5 text-[12.5px] lg:flex-none lg:px-[18px] lg:text-[13.5px]"
               onClick={() => setModal({ type: "stockout" })}
             >
               <PackageMinus size={16} /> Stock out
             </button>
-          </>
+          </div>
         )}
       </div>
 
@@ -182,12 +266,31 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
         ))}
       </div>
 
-      {filtered.length === 0 ? (
+      {visible.length === 0 ? (
         <div className="px-5 py-14 text-center text-ink-muted">
           <div className="mb-3 flex justify-center">
             <Package size={48} />
           </div>
-          <p className="text-sm">No items found.</p>
+          <p className="text-sm">
+            {healthFilter === "low"
+              ? "No low or out-of-stock items 🎉"
+              : healthFilter === "expiry"
+                ? "Nothing expiring or expired 🎉"
+                : "No items found."}
+          </p>
+          {(healthFilter !== "none" || search || category !== "All") && (
+            <button
+              type="button"
+              onClick={() => {
+                setHealthFilter("none");
+                setSearch("");
+                setCategory("All");
+              }}
+              className="mt-3 text-[13px] font-bold text-brown underline"
+            >
+              Clear filters
+            </button>
+          )}
         </div>
       ) : (
         <>
@@ -201,8 +304,8 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
               <div className="text-right">Status</div>
               <div />
             </div>
-            {filtered.map((item) => {
-              const st = statusOf(item.qty, lowStockAlert);
+            {visible.map(({ item, sellable }) => {
+              const st = statusOf(sellable, lowStockAlert);
               return (
                 <div
                   key={item.id}
@@ -259,8 +362,8 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
 
           {/* Phone cards */}
           <div className="flex flex-col gap-2.5 lg:hidden">
-            {filtered.map((item) => {
-              const st = statusOf(item.qty, lowStockAlert);
+            {visible.map(({ item, sellable }) => {
+              const st = statusOf(sellable, lowStockAlert);
               return (
                 <div
                   key={item.id}
@@ -288,14 +391,14 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
                     {!locked && (
                       <>
                         <button
-                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-line bg-warm-white text-sm"
+                          className="flex h-11 w-11 items-center justify-center rounded-lg border border-line bg-warm-white text-sm"
                           onClick={() => setModal({ type: "edit", id: item.id })}
                           aria-label={`Edit ${item.name}`}
                         >
                           <Pencil size={16} />
                         </button>
                         <button
-                          className="flex h-7 w-7 items-center justify-center rounded-lg border-none bg-danger-bg text-sm text-danger"
+                          className="flex h-11 w-11 items-center justify-center rounded-lg border-none bg-danger-bg text-sm text-danger"
                           onClick={() => remove(item.id, item.name)}
                           aria-label={`Delete ${item.name}`}
                         >

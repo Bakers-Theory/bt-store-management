@@ -180,10 +180,18 @@ export function stockHealth(
   return stockHealthFrom(soldById, daySpan, items, lowStockAlert);
 }
 
+// What a recommendation's action button does: jump the owner to restocking the
+// item, or to its editor (to adjust price / discount). `itemId` targets the most
+// relevant item when the insight spans several.
+export type RecAction =
+  | { kind: "restock"; itemId: string }
+  | { kind: "edit"; itemId: string };
+
 export interface Recommendation {
   priority: "High" | "Medium" | "Low" | "Info";
   insight: string;
   detail: string;
+  action?: RecAction;
 }
 
 const fmtHour = (h: number): string => {
@@ -215,7 +223,7 @@ export function recommendationsFrom(
 
   const reorderNow = health.filter((s) => s.verdict === "Reorder now");
   if (reorderNow.length)
-    recs.push({ priority: "High", insight: `Reorder ${reorderNow.length} item${reorderNow.length > 1 ? "s" : ""} now`, detail: names(reorderNow) });
+    recs.push({ priority: "High", insight: `Reorder ${reorderNow.length} item${reorderNow.length > 1 ? "s" : ""} now`, detail: names(reorderNow), action: { kind: "restock", itemId: reorderNow[0].item.id } });
 
   const reorderSoon = health.filter((s) => s.verdict === "Reorder soon");
   if (reorderSoon.length)
@@ -223,25 +231,26 @@ export function recommendationsFrom(
       priority: "Medium",
       insight: `${reorderSoon.length} item${reorderSoon.length > 1 ? "s" : ""} running low (≤7 days cover)`,
       detail: reorderSoon.map((s) => `${s.item.name} (${s.daysCover!.toFixed(0)}d)`).slice(0, 8).join(", "),
+      action: { kind: "restock", itemId: reorderSoon[0].item.id },
     });
 
   const dead = health.filter((s) => s.verdict === "Dead stock" && s.item.qty > 0);
   if (dead.length)
-    recs.push({ priority: "Medium", insight: `${dead.length} item${dead.length > 1 ? "s" : ""} not selling — discount or bundle`, detail: names(dead) });
+    recs.push({ priority: "Medium", insight: `${dead.length} item${dead.length > 1 ? "s" : ""} not selling — discount or bundle`, detail: names(dead), action: { kind: "edit", itemId: dead[0].item.id } });
 
   const slow = health.filter((s) => s.verdict === "Slow-moving");
   if (slow.length)
-    recs.push({ priority: "Low", insight: `${slow.length} slow-moving item${slow.length > 1 ? "s" : ""} (>90 days cover)`, detail: names(slow) });
+    recs.push({ priority: "Low", insight: `${slow.length} slow-moving item${slow.length > 1 ? "s" : ""} (>90 days cover)`, detail: names(slow), action: { kind: "edit", itemId: slow[0].item.id } });
 
   const withMargin = health
     .filter((s) => s.item.price > 0 && s.item.costPrice > 0 && s.sold > 0)
-    .map((s) => ({ name: s.item.name, marginPct: ((s.item.price - s.item.costPrice) / s.item.price) * 100 }));
+    .map((s) => ({ id: s.item.id, name: s.item.name, marginPct: ((s.item.price - s.item.costPrice) / s.item.price) * 100 }));
   if (withMargin.length) {
     const lowest = withMargin.reduce((a, b) => (a.marginPct < b.marginPct ? a : b));
     if (lowest.marginPct < 30)
-      recs.push({ priority: "Medium", insight: `Raise price on ${lowest.name}`, detail: `Margin is only ${lowest.marginPct.toFixed(1)}% — a small price bump adds direct profit.` });
+      recs.push({ priority: "Medium", insight: `Raise price on ${lowest.name}`, detail: `Margin is only ${lowest.marginPct.toFixed(1)}% — a small price bump adds direct profit.`, action: { kind: "edit", itemId: lowest.id } });
     const highest = withMargin.reduce((a, b) => (a.marginPct > b.marginPct ? a : b));
-    recs.push({ priority: "Low", insight: `Promote ${highest.name}`, detail: `Best margin at ${highest.marginPct.toFixed(1)}% — pushing sales here boosts profit fastest.` });
+    recs.push({ priority: "Low", insight: `Promote ${highest.name}`, detail: `Best margin at ${highest.marginPct.toFixed(1)}% — pushing sales here boosts profit fastest.`, action: { kind: "edit", itemId: highest.id } });
   }
 
   const bestDay = [...dowRevenue].sort((a, b) => b.total - a.total)[0];

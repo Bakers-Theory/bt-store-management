@@ -9,7 +9,7 @@
   --color-warm-white: #fffcf8;
   --color-ink: #2c1a0e;
   --color-ink-muted: #7a5c3e;
-  --color-ink-light: #b08060;
+  --color-ink-light: #976539;
   --color-success: #2d7a3a;
   --color-success-bg: #e8f2e9;
   --color-danger: #c0392b;
@@ -273,14 +273,20 @@
     bottom: 80px;
     left: 50%;
     transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: min(90vw, 420px);
     background: var(--color-ink);
     color: #fff;
     padding: 10px 18px;
-    border-radius: 20px;
+    border-radius: 16px;
     font-size: 13px;
     font-weight: 600;
+    line-height: 1.35;
+    text-align: left;
+    overflow-wrap: anywhere;
     z-index: 999;
-    white-space: nowrap;
     transition: opacity 0.3s;
   }
 }

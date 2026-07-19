@@ -47,9 +47,11 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  // Allow pinch-zoom (WCAG 1.4.4) — this is a text-dense app.
   themeColor: "#7c4a1e",
+  // Resize the layout viewport when the on-screen keyboard opens so bottom-anchored
+  // controls (e.g. the bill sheet's Generate button) stay above it instead of hidden.
+  interactiveWidget: "resizes-content",
 };
 
 // Warm the DNS + TLS connection to Supabase during initial HTML parse, so the

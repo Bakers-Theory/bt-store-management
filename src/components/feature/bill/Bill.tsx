@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, LayoutGrid, List, Loader2, Phone, Printer, Receipt as ReceiptIcon, ShoppingBasket, User, UserCheck, X } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
@@ -61,7 +61,10 @@ export function Bill() {
   const [cartOpen, setCartOpen] = useState(false); // mobile bottom-sheet expansion
   const [customer, setCustomer] = useState({ name: "", phone: "" });
   const [payment, setPayment] = useState<PaymentMethod>("Cash");
+  const [cashReceived, setCashReceived] = useState("");
+  const [clearArmed, setClearArmed] = useState(false);
   const [discount, setDiscount] = useState("");
+  const [discountMode, setDiscountMode] = useState<"percent" | "flat">("percent");
   const [phoneErr, setPhoneErr] = useState("");
   const [nameErr, setNameErr] = useState("");
   const [returning, setReturning] = useState<Customer | null>(null);
@@ -69,9 +72,27 @@ export function Bill() {
   const [lines, setLines] = useState<BillLine[]>([]);
   const [receipt, setReceipt] = useState<BillType | null>(null);
 
-  const discountPct = Math.min(100, Math.max(0, parseFloat(discount) || 0));
-  const { subtotal, discount: discountAmt, tax, total } = computeTotals(lines, taxRate, discountPct);
+  const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const discountValue = Math.max(0, parseFloat(discount) || 0);
+  const { subtotal, discount: discountAmt, tax, total } = computeTotals(
+    lines,
+    taxRate,
+    discountValue,
+    discountMode,
+  );
   const cartCount = lines.reduce((n, l) => n + l.qty, 0);
+  const changeDue = (parseFloat(cashReceived) || 0) - total;
+
+  // Why the Generate button is disabled — shown inline so it's never a silent
+  // dead-end (a disabled button can't fire its own click handler).
+  const disabledReason = !isOpen
+    ? "Store is closed — billing is paused"
+    : customer.name.trim() === ""
+      ? "Enter a customer name to generate the bill"
+      : customer.phone.length > 0 && customer.phone.length !== 10
+        ? "Phone number must be exactly 10 digits"
+        : "";
 
   // Each row carries its fresh (non-expired) qty + earliest fresh expiry.
   // Products with no fresh stock (out of stock, or only expired batches) are
@@ -94,6 +115,15 @@ export function Bill() {
     for (const l of lines) map.set(l.itemId, l.qty);
     return map;
   }, [lines]);
+
+  // Sellable (non-expired) stock per item, for capping cart quantities so a
+  // cashier can't bill more than exists (the server would clamp silently).
+  const freshQtyById = useMemo(() => {
+    const today = new Date();
+    const map = new Map<string, number>();
+    for (const i of items) map.set(i.id, freshInfo(i, expiringSoonDays, today).qty);
+    return map;
+  }, [items, expiringSoonDays]);
 
   // Best-effort: pull the latest store status so a biller sees an accurate
   // Open/Closed state. Bill creation is enforced server-side regardless.
@@ -125,6 +155,11 @@ export function Bill() {
   }, [customer.phone]);
 
   const addToCart = (item: Item) => {
+    const max = freshQtyById.get(item.id) ?? 0;
+    if ((cartQtyById.get(item.id) ?? 0) >= max) {
+      toast(`Only ${max} ${item.unit} of ${item.name} in stock`, "error");
+      return;
+    }
     setLines((prev) => {
       const idx = prev.findIndex((bi) => bi.itemId === item.id);
       if (idx >= 0) {
@@ -156,8 +191,16 @@ export function Bill() {
       return prev.map((bi, i) => (i === idx ? { ...bi, qty: bi.qty - 1 } : bi));
     });
 
-  const inc = (idx: number) =>
+  const inc = (idx: number) => {
+    const line = lines[idx];
+    if (!line) return;
+    const max = freshQtyById.get(line.itemId) ?? 0;
+    if (line.qty >= max) {
+      toast(`Only ${max} ${line.unit} of ${line.name} in stock`, "error");
+      return;
+    }
     setLines((prev) => prev.map((bi, i) => (i === idx ? { ...bi, qty: bi.qty + 1 } : bi)));
+  };
 
   const dec = (idx: number) =>
     setLines((prev) => {
@@ -166,15 +209,27 @@ export function Bill() {
       return prev.map((bi, i) => (i === idx ? { ...bi, qty: bi.qty - 1 } : bi));
     });
 
-  const clearCart = () => setLines([]);
+  // Two-step to prevent a mis-tap from wiping the whole order: the first tap
+  // arms the button ("Confirm?"), a second within 3s clears it.
+  const clearCart = () => {
+    if (clearTimer.current) clearTimeout(clearTimer.current);
+    if (!clearArmed) {
+      setClearArmed(true);
+      clearTimer.current = setTimeout(() => setClearArmed(false), 3000);
+      return;
+    }
+    setClearArmed(false);
+    setLines([]);
+    setCashReceived("");
+  };
 
   const generate = async () => {
     if (!isOpen) {
-      toast("Store is closed — new bills cannot be created");
+      toast("Store is closed — new bills cannot be created", "error");
       return;
     }
     if (lines.length === 0) {
-      toast("Add items to the order first");
+      toast("Add items to the order first", "error");
       return;
     }
     if (customer.name.trim() === "") {
@@ -188,17 +243,25 @@ export function Bill() {
     }
     setGenerating(true);
     try {
-      const bill = await generateBill(customer, lines, payment, discountPct, currentUser?.name ?? "");
+      const bill = await generateBill(
+        customer,
+        lines,
+        payment,
+        { mode: discountMode, value: discountValue },
+        currentUser?.name ?? "",
+      );
       setLines([]);
       setCustomer({ name: "", phone: "" });
       setPayment("Cash");
+      setCashReceived("");
       setDiscount("");
       setPhoneErr("");
       setNameErr("");
+      setClearArmed(false);
       setCartOpen(false);
       setReceipt(bill);
     } catch (e) {
-      toast(e instanceof Error ? e.message : "Could not generate bill");
+      toast(e instanceof Error ? e.message : "Could not generate bill", "error");
     } finally {
       setGenerating(false);
     }
@@ -334,8 +397,9 @@ export function Bill() {
                       <div className="absolute right-2 top-2 flex flex-col items-center gap-0.5 rounded-full bg-cream-dark p-1 shadow-[0_2px_8px_rgba(100,60,20,0.14)] lg:hidden">
                         <button
                           onClick={() => addToCart(item)}
+                          disabled={inCart >= freshQty}
                           aria-label={`Add one ${item.name}`}
-                          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border-none bg-warm-white text-lg font-extrabold leading-none text-brown transition-colors active:bg-cream"
+                          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border-none bg-warm-white text-lg font-extrabold leading-none text-brown transition-colors active:bg-cream disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           +
                         </button>
@@ -444,7 +508,7 @@ export function Bill() {
                           <button
                             onClick={() => removeFromCart(item)}
                             aria-label={`Remove one ${item.name}`}
-                            className="flex h-[28px] w-[28px] cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-lg font-extrabold text-brown"
+                            className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-lg font-extrabold text-brown"
                           >
                             −
                           </button>
@@ -453,8 +517,9 @@ export function Bill() {
                           </span>
                           <button
                             onClick={() => addToCart(item)}
+                            disabled={inCart >= freshQty}
                             aria-label={`Add one ${item.name}`}
-                            className="flex h-[28px] w-[28px] cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-lg font-extrabold text-brown"
+                            className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-lg font-extrabold text-brown disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             +
                           </button>
@@ -516,15 +581,17 @@ export function Bill() {
               {lines.length > 0 && (
                 <button
                   onClick={clearCart}
-                  className="flex cursor-pointer items-center rounded-lg border-none bg-danger-bg px-3 py-1.5 text-xs font-bold text-danger transition-transform active:scale-95"
+                  className={`flex cursor-pointer items-center rounded-lg border-none px-3 py-1.5 text-xs font-bold transition-transform active:scale-95 ${
+                    clearArmed ? "bg-danger text-warm-white" : "bg-danger-bg text-danger"
+                  }`}
                 >
-                  Clear
+                  {clearArmed ? "Confirm clear?" : "Clear"}
                 </button>
               )}
               <button
                 onClick={() => setCartOpen(false)}
                 aria-label="Close order"
-                className="flex h-7 w-7 items-center justify-center rounded-lg border border-line bg-warm-white text-ink-muted lg:hidden"
+                className="flex h-11 w-11 items-center justify-center rounded-lg border border-line bg-warm-white text-ink-muted lg:hidden"
               >
                 <X size={16} />
               </button>
@@ -616,7 +683,8 @@ export function Bill() {
                     <div className="flex items-center gap-1.5 rounded-[9px] bg-cream-dark p-[3px]">
                       <button
                         onClick={() => dec(idx)}
-                        className="flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-base font-extrabold text-brown"
+                        aria-label={`Remove one ${bi.name}`}
+                        className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-base font-extrabold text-brown"
                       >
                         −
                       </button>
@@ -625,7 +693,9 @@ export function Bill() {
                       </span>
                       <button
                         onClick={() => inc(idx)}
-                        className="flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-base font-extrabold text-brown"
+                        disabled={bi.qty >= (freshQtyById.get(bi.itemId) ?? 0)}
+                        aria-label={`Add one ${bi.name}`}
+                        className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-base font-extrabold text-brown disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         +
                       </button>
@@ -652,33 +722,53 @@ export function Bill() {
                     <input
                       type="number"
                       min="0"
-                      max="100"
-                      step="1"
+                      max={discountMode === "percent" ? 100 : undefined}
+                      step={discountMode === "percent" ? 1 : "0.01"}
+                      inputMode="decimal"
                       placeholder="0"
                       value={discount}
                       onChange={(e) => {
-                        const n = parseFloat(e.target.value);
-                        if (e.target.value !== "" && !isNaN(n) && (n < 0 || n > 100)) {
-                          setDiscount(String(Math.min(100, Math.max(0, n))));
+                        const raw = e.target.value;
+                        const n = parseFloat(raw);
+                        const cap = discountMode === "percent" ? 100 : subtotal;
+                        if (raw !== "" && !isNaN(n) && (n < 0 || n > cap)) {
+                          setDiscount(String(Math.min(cap, Math.max(0, n))));
                         } else {
-                          setDiscount(e.target.value);
+                          setDiscount(raw);
                         }
                       }}
-                      className="w-14 rounded-[8px] border border-line bg-warm-white px-2 py-1 text-right text-[13px] outline-none focus:border-brown"
+                      className="w-16 rounded-[8px] border border-line bg-warm-white px-2 py-1 text-right text-[13px] outline-none focus:border-brown"
                     />
-                    %
+                    <span className="inline-flex overflow-hidden rounded-[7px] border border-line">
+                      {(["percent", "flat"] as const).map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setDiscountMode(m)}
+                          aria-pressed={discountMode === m}
+                          aria-label={m === "percent" ? "Percentage discount" : "Flat amount discount"}
+                          className={`px-2 py-1 text-[12px] font-bold ${
+                            discountMode === m ? "bg-brown text-warm-white" : "bg-warm-white text-ink-muted"
+                          }`}
+                        >
+                          {m === "percent" ? "%" : currency}
+                        </button>
+                      ))}
+                    </span>
                   </span>
                   <span className="num text-danger">
                     {discountAmt > 0 ? `−${currency}${discountAmt.toFixed(2)}` : `${currency}0.00`}
                   </span>
                 </div>
-                <div className="flex justify-between py-0.5 text-[13px] font-semibold text-ink-muted">
-                  <span>Tax ({taxRate}%)</span>
-                  <span className="num">
-                    {currency}
-                    {tax.toFixed(2)}
-                  </span>
-                </div>
+                {tax > 0 && (
+                  <div className="flex justify-between py-0.5 text-[13px] font-semibold text-ink-muted">
+                    <span>Tax ({taxRate}%)</span>
+                    <span className="num">
+                      {currency}
+                      {tax.toFixed(2)}
+                    </span>
+                  </div>
+                )}
                 <div className="mt-[7px] flex justify-between border-t-[1.5px] border-line pt-[9px] text-lg font-extrabold">
                   <span>Total</span>
                   <span className="num">
@@ -693,7 +783,10 @@ export function Bill() {
                       <button
                         key={m}
                         type="button"
-                        onClick={() => setPayment(m)}
+                        onClick={() => {
+                          setPayment(m);
+                          if (m !== "Cash") setCashReceived("");
+                        }}
                         className={`cursor-pointer rounded-[7px] border-none px-3.5 py-1 text-[12.5px] font-bold ${
                           payment === m
                             ? "bg-brown text-warm-white"
@@ -705,6 +798,39 @@ export function Bill() {
                     ))}
                   </div>
                 </div>
+                {payment === "Cash" && (
+                  <>
+                    <div className="mt-2 flex items-center justify-between">
+                      <span className="text-[13px] font-semibold text-ink-muted">Cash received</span>
+                      <div className="relative w-[110px]">
+                        <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[13px] font-semibold text-ink-light">
+                          {currency}
+                        </span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          inputMode="decimal"
+                          placeholder="0.00"
+                          value={cashReceived}
+                          onChange={(e) => setCashReceived(e.target.value)}
+                          className="num w-full rounded-[8px] border border-line bg-warm-white py-1 pl-6 pr-2 text-right text-[13px] outline-none focus:border-brown"
+                        />
+                      </div>
+                    </div>
+                    {cashReceived !== "" && (
+                      <div className="mt-1.5 flex justify-between text-[13px] font-bold">
+                        <span className={changeDue < 0 ? "text-danger" : "text-ink"}>
+                          {changeDue < 0 ? "Short by" : "Change due"}
+                        </span>
+                        <span className={`num ${changeDue < 0 ? "text-danger" : "text-success"}`}>
+                          {currency}
+                          {Math.abs(changeDue).toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                  </>
+                )}
                 <button
                   onClick={generate}
                   disabled={
@@ -722,6 +848,11 @@ export function Bill() {
                   )}
                   {generating ? "Generating…" : `Generate bill · ${currency}${total.toFixed(2)}`}
                 </button>
+                {!generating && disabledReason && (
+                  <p className="mt-2 text-center text-[11.5px] font-semibold text-ink-muted">
+                    {disabledReason}
+                  </p>
+                )}
               </div>
             </>
           )}

@@ -26,7 +26,7 @@ export function StockOutForm({ onSuccess }: { onSuccess?: () => void } = {}) {
         setErr(r.error ?? "");
         return;
       }
-      toast(`Removed ${r.qty} ${r.unit} of ${r.name}`);
+      toast(`Removed ${r.qty} ${r.unit} of ${r.name}`, "success");
       setItemId("");
       setQty("");
       setReason("");
