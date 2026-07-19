@@ -51,11 +51,11 @@ export function Reports() {
 
   const doExport = async () => {
     if (selected.length === 0) {
-      toast("Select at least one report");
+      toast("Select at least one report", "error");
       return;
     }
     if (from && to && from > to) {
-      toast("From date must be before To date");
+      toast("From date must be before To date", "error");
       return;
     }
     setExporting(true);
@@ -63,9 +63,9 @@ export function Reports() {
       const types = ALL_REPORTS.filter((t) => selected.includes(t)); // fixed order
       const payload = data ?? (await fetchReportData());
       const r = await exportReports(types, payload, range);
-      toast(r.ok ? "Report downloaded" : r.error ?? "Export failed");
+      toast(r.ok ? "Report downloaded" : r.error ?? "Export failed", r.ok ? "success" : "error");
     } catch {
-      toast("Export failed");
+      toast("Export failed", "error");
     } finally {
       setExporting(false);
     }

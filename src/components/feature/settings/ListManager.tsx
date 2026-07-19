@@ -45,7 +45,7 @@ export function ListManager() {
   const reload = () => {
     fetchListRows()
       .then(setRows)
-      .catch(() => toast("Couldn't refresh options"));
+      .catch(() => toast("Couldn't refresh options", "error"));
   };
 
   // Initial load with a skeleton, then error + retry on failure.
@@ -79,7 +79,7 @@ export function ListManager() {
     try {
       const r = await addListValue(kind, value);
       if (!r.ok) {
-        toast(r.error ?? "Could not add");
+        toast(r.error ?? "Could not add", "error");
         return;
       }
       setDrafts((d) => ({ ...d, [kind]: "" }));
@@ -94,7 +94,7 @@ export function ListManager() {
     try {
       const r = await deleteListValue(row.id);
       if (!r.ok) {
-        toast(r.error ? `Can't remove "${row.value}" — ${r.error}` : "Could not remove");
+        toast(r.error ? `Can't remove "${row.value}" — ${r.error}` : "Could not remove", "error");
         return;
       }
       reload();

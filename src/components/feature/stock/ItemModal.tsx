@@ -69,11 +69,11 @@ export function ItemModal({
     e.target.value = ""; // allow re-selecting the same file later
     if (!file) return;
     if (!file.type.startsWith("image/")) {
-      toast("Please choose an image file");
+      toast("Please choose an image file", "error");
       return;
     }
     if (file.size > MAX_UPLOAD_BYTES) {
-      toast("Image must be under 30 MB");
+      toast("Image must be under 30 MB", "error");
       return;
     }
     setCropSrc(URL.createObjectURL(file)); // opens the crop step
@@ -94,12 +94,12 @@ export function ItemModal({
       // New item: hold it in state — there's no row to attach it to until Save.
       if (itemId) {
         await setItemImage(itemId, url);
-        toast("Image updated");
+        toast("Image updated", "success");
       }
       setImageUrl(url);
       if (prev) void deleteProductImage(prev); // clean up the replaced image
     } catch (err) {
-      toast(err instanceof Error ? err.message : "Could not upload image");
+      toast(err instanceof Error ? err.message : "Could not upload image", "error");
     } finally {
       setImgBusy(false);
       closeCrop();
@@ -115,7 +115,7 @@ export function ItemModal({
       try {
         await setItemImage(itemId, null);
       } catch (err) {
-        toast(err instanceof Error ? err.message : "Could not remove image");
+        toast(err instanceof Error ? err.message : "Could not remove image", "error");
         setImageUrl(prev); // roll back on failure
         return;
       } finally {
@@ -168,11 +168,11 @@ export function ItemModal({
         itemId ?? undefined,
       );
       if (r.kind === "merged")
-        toast(`"${r.name}" already exists — added ${r.qty} ${r.unit} to its stock`);
-      else toast(r.kind === "updated" ? "Item updated" : "Item added");
+        toast(`"${r.name}" already exists — added ${r.qty} ${r.unit} to its stock`, "success");
+      else toast(r.kind === "updated" ? "Item updated" : "Item added", "success");
       onClose();
     } catch (e) {
-      toast(e instanceof Error ? e.message : "Could not save item");
+      toast(e instanceof Error ? e.message : "Could not save item", "error");
       setSaving(false);
     }
   };
@@ -397,8 +397,8 @@ export function ItemModal({
                         setBusyBatchId(b.id);
                         try {
                           const r = await updateBatchExpiry(b.id, v);
-                          if (r.ok) { toast("Expiry updated"); loadBatches(); }
-                          else toast(r.error ?? "Could not update expiry");
+                          if (r.ok) { toast("Expiry updated", "success"); loadBatches(); }
+                          else toast(r.error ?? "Could not update expiry", "error");
                         } finally {
                           setBusyBatchId(null);
                         }
@@ -421,8 +421,8 @@ export function ItemModal({
                       setBusyBatchId(b.id);
                       try {
                         const r = await writeOffBatch(b.id);
-                        if (r.ok) { toast("Batch written off"); loadBatches(); }
-                        else toast(r.error ?? "Could not write off batch");
+                        if (r.ok) { toast("Batch written off", "success"); loadBatches(); }
+                        else toast(r.error ?? "Could not write off batch", "error");
                       } finally {
                         setBusyBatchId(null);
                       }

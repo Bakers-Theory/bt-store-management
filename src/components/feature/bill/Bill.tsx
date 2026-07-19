@@ -151,7 +151,7 @@ export function Bill() {
   const addToCart = (item: Item) => {
     const max = freshQtyById.get(item.id) ?? 0;
     if ((cartQtyById.get(item.id) ?? 0) >= max) {
-      toast(`Only ${max} ${item.unit} of ${item.name} in stock`);
+      toast(`Only ${max} ${item.unit} of ${item.name} in stock`, "error");
       return;
     }
     setLines((prev) => {
@@ -190,7 +190,7 @@ export function Bill() {
     if (!line) return;
     const max = freshQtyById.get(line.itemId) ?? 0;
     if (line.qty >= max) {
-      toast(`Only ${max} ${line.unit} of ${line.name} in stock`);
+      toast(`Only ${max} ${line.unit} of ${line.name} in stock`, "error");
       return;
     }
     setLines((prev) => prev.map((bi, i) => (i === idx ? { ...bi, qty: bi.qty + 1 } : bi)));
@@ -219,11 +219,11 @@ export function Bill() {
 
   const generate = async () => {
     if (!isOpen) {
-      toast("Store is closed — new bills cannot be created");
+      toast("Store is closed — new bills cannot be created", "error");
       return;
     }
     if (lines.length === 0) {
-      toast("Add items to the order first");
+      toast("Add items to the order first", "error");
       return;
     }
     if (customer.name.trim() === "") {
@@ -249,7 +249,7 @@ export function Bill() {
       setCartOpen(false);
       setReceipt(bill);
     } catch (e) {
-      toast(e instanceof Error ? e.message : "Could not generate bill");
+      toast(e instanceof Error ? e.message : "Could not generate bill", "error");
     } finally {
       setGenerating(false);
     }
@@ -496,7 +496,7 @@ export function Bill() {
                           <button
                             onClick={() => removeFromCart(item)}
                             aria-label={`Remove one ${item.name}`}
-                            className="flex h-[28px] w-[28px] cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-lg font-extrabold text-brown"
+                            className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-lg font-extrabold text-brown"
                           >
                             −
                           </button>
@@ -507,7 +507,7 @@ export function Bill() {
                             onClick={() => addToCart(item)}
                             disabled={inCart >= freshQty}
                             aria-label={`Add one ${item.name}`}
-                            className="flex h-[28px] w-[28px] cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-lg font-extrabold text-brown disabled:cursor-not-allowed disabled:opacity-40"
+                            className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-lg font-extrabold text-brown disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             +
                           </button>
@@ -579,7 +579,7 @@ export function Bill() {
               <button
                 onClick={() => setCartOpen(false)}
                 aria-label="Close order"
-                className="flex h-7 w-7 items-center justify-center rounded-lg border border-line bg-warm-white text-ink-muted lg:hidden"
+                className="flex h-11 w-11 items-center justify-center rounded-lg border border-line bg-warm-white text-ink-muted lg:hidden"
               >
                 <X size={16} />
               </button>
@@ -671,7 +671,8 @@ export function Bill() {
                     <div className="flex items-center gap-1.5 rounded-[9px] bg-cream-dark p-[3px]">
                       <button
                         onClick={() => dec(idx)}
-                        className="flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-base font-extrabold text-brown"
+                        aria-label={`Remove one ${bi.name}`}
+                        className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-base font-extrabold text-brown"
                       >
                         −
                       </button>
@@ -681,7 +682,8 @@ export function Bill() {
                       <button
                         onClick={() => inc(idx)}
                         disabled={bi.qty >= (freshQtyById.get(bi.itemId) ?? 0)}
-                        className="flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-base font-extrabold text-brown disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label={`Add one ${bi.name}`}
+                        className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-base font-extrabold text-brown disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         +
                       </button>
@@ -728,13 +730,15 @@ export function Bill() {
                     {discountAmt > 0 ? `−${currency}${discountAmt.toFixed(2)}` : `${currency}0.00`}
                   </span>
                 </div>
-                <div className="flex justify-between py-0.5 text-[13px] font-semibold text-ink-muted">
-                  <span>Tax ({taxRate}%)</span>
-                  <span className="num">
-                    {currency}
-                    {tax.toFixed(2)}
-                  </span>
-                </div>
+                {tax > 0 && (
+                  <div className="flex justify-between py-0.5 text-[13px] font-semibold text-ink-muted">
+                    <span>Tax ({taxRate}%)</span>
+                    <span className="num">
+                      {currency}
+                      {tax.toFixed(2)}
+                    </span>
+                  </div>
+                )}
                 <div className="mt-[7px] flex justify-between border-t-[1.5px] border-line pt-[9px] text-lg font-extrabold">
                   <span>Total</span>
                   <span className="num">

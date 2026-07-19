@@ -70,7 +70,7 @@ export function UserModal({
       setBusy(false);
       return;
     }
-    toast(user ? "User updated" : "User created");
+    toast(user ? "User updated" : "User created", "success");
     onSaved();
     onClose();
   };

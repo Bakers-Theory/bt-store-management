@@ -44,7 +44,7 @@ export function UserManagement() {
     try {
       setUsers(await fetchStaff());
     } catch {
-      toast("Couldn't refresh staff list");
+      toast("Couldn't refresh staff list", "error");
     }
   }, [toast]);
 
@@ -83,10 +83,10 @@ export function UserManagement() {
       });
       const body = await res.json();
       if (!res.ok) {
-        toast(body.error ?? "Could not delete user");
+        toast(body.error ?? "Could not delete user", "error");
         return;
       }
-      toast("User deleted");
+      toast("User deleted", "success");
       reload();
     } finally {
       setDeletingId(u.id, false);
@@ -138,15 +138,17 @@ export function UserManagement() {
         {!isOwner && (
           <div className="mt-[11px] flex items-center justify-end gap-1.5 border-t border-line-soft pt-[11px]">
             <button
-              className="cursor-pointer rounded-lg border border-line bg-warm-white px-2.5 py-1.5 text-xs font-bold text-ink-muted"
+              className="inline-flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg border border-line bg-warm-white text-xs font-bold text-ink-muted"
               onClick={() => setModal({ user: u })}
+              aria-label={`Edit ${u.name}`}
             >
               <Pencil size={14} />
             </button>
             <button
-              className="cursor-pointer rounded-lg border-none bg-danger px-2.5 py-1.5 text-xs text-white disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg border-none bg-danger text-xs text-white disabled:cursor-not-allowed disabled:opacity-60"
               onClick={() => setConfirmUser(u)}
               disabled={deleting.has(u.id)}
+              aria-label={`Delete ${u.name}`}
             >
               {deleting.has(u.id) ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
             </button>

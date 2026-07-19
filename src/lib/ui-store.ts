@@ -8,11 +8,14 @@ interface OwnerAuthRequest {
   onConfirm: () => void;
 }
 
+export type ToastVariant = "info" | "success" | "error";
+
 interface UIState {
   // Toasts
   toastMessage: string | null;
+  toastVariant: ToastVariant;
   toastNonce: number;
-  toast: (message: string) => void;
+  toast: (message: string, variant?: ToastVariant) => void;
   clearToast: () => void;
 
   // Owner-password gate
@@ -28,9 +31,10 @@ interface UIState {
 
 export const useUIStore = create<UIState>((set) => ({
   toastMessage: null,
+  toastVariant: "info",
   toastNonce: 0,
-  toast: (message) =>
-    set((s) => ({ toastMessage: message, toastNonce: s.toastNonce + 1 })),
+  toast: (message, variant = "info") =>
+    set((s) => ({ toastMessage: message, toastVariant: variant, toastNonce: s.toastNonce + 1 })),
   clearToast: () => set({ toastMessage: null }),
 
   ownerAuth: null,
@@ -43,4 +47,5 @@ export const useUIStore = create<UIState>((set) => ({
 }));
 
 /** Convenience accessor for firing a toast outside of React render. */
-export const toast = (message: string) => useUIStore.getState().toast(message);
+export const toast = (message: string, variant?: ToastVariant) =>
+  useUIStore.getState().toast(message, variant);

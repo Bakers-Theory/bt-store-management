@@ -121,7 +121,7 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
   const remove = (id: string, name: string) => {
     requireOwnerAuth(`delete item "${name}"`, async () => {
       await deleteItem(id);
-      toast("Item deleted");
+      toast("Item deleted", "success");
     });
   };
 
@@ -391,14 +391,14 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
                     {!locked && (
                       <>
                         <button
-                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-line bg-warm-white text-sm"
+                          className="flex h-11 w-11 items-center justify-center rounded-lg border border-line bg-warm-white text-sm"
                           onClick={() => setModal({ type: "edit", id: item.id })}
                           aria-label={`Edit ${item.name}`}
                         >
                           <Pencil size={16} />
                         </button>
                         <button
-                          className="flex h-7 w-7 items-center justify-center rounded-lg border-none bg-danger-bg text-sm text-danger"
+                          className="flex h-11 w-11 items-center justify-center rounded-lg border-none bg-danger-bg text-sm text-danger"
                           onClick={() => remove(item.id, item.name)}
                           aria-label={`Delete ${item.name}`}
                         >

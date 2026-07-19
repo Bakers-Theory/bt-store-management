@@ -36,7 +36,7 @@ export function StockInForm({
         setErr(r.error ?? "");
         return;
       }
-      toast(`Added ${r.qty} ${r.unit} of ${r.name}`);
+      toast(`Added ${r.qty} ${r.unit} of ${r.name}`, "success");
       setItemId("");
       setQty("");
       setSupplier("");

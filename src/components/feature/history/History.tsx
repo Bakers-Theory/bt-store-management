@@ -359,7 +359,7 @@ export function History() {
         if (!alive) return;
         setBillsError(true);
         setBillsLoaded(true);
-        if (billsLoaded) toast("Couldn't load bills");
+        if (billsLoaded) toast("Couldn't load bills", "error");
       });
     return () => {
       alive = false;
@@ -385,7 +385,7 @@ export function History() {
         if (!alive) return;
         setLogsError(true);
         setLogsLoaded(true);
-        if (logsLoaded) toast("Couldn't load activity");
+        if (logsLoaded) toast("Couldn't load activity", "error");
       });
     return () => {
       alive = false;
@@ -409,7 +409,7 @@ export function History() {
         if (!alive) return;
         setAdminError(true);
         setAdminLoaded(true);
-        if (adminLoaded) toast("Couldn't load activity");
+        if (adminLoaded) toast("Couldn't load activity", "error");
       });
     return () => {
       alive = false;
@@ -424,7 +424,7 @@ export function History() {
       setBills((prev) => [...prev, ...p.bills]);
       setBillsMore(p.hasMore);
     } catch {
-      toast("Couldn't load more bills");
+      toast("Couldn't load more bills", "error");
     } finally {
       setLoadingBills(false);
     }
@@ -437,7 +437,7 @@ export function History() {
       setLogs((prev) => [...prev, ...p.logs]);
       setLogsMore(p.hasMore);
     } catch {
-      toast("Couldn't load more activity");
+      toast("Couldn't load more activity", "error");
     } finally {
       setLoadingLogs(false);
     }
@@ -450,7 +450,7 @@ export function History() {
       setAdminLogs((prev) => [...prev, ...p.logs]);
       setAdminLogsMore(p.hasMore);
     } catch {
-      toast("Couldn't load more activity");
+      toast("Couldn't load more activity", "error");
     } finally {
       setLoadingAdminLogs(false);
     }
@@ -478,7 +478,7 @@ export function History() {
 
   const doCancel = (b: Bill) => {
     if (b.status === "cancelled") {
-      toast("Already cancelled");
+      toast("Already cancelled", "error");
       return;
     }
     setConfirmCancel(b);
@@ -492,9 +492,9 @@ export function History() {
     try {
       const r = await cancelBill(b.id, user?.name ?? "Unknown");
       if (r.ok) {
-        toast(`Bill #${b.billNo} cancelled`);
+        toast(`Bill #${b.billNo} cancelled`, "success");
         await refreshLoaded();
-      } else if (r.error) toast(r.error);
+      } else if (r.error) toast(r.error, "error");
     } finally {
       setBillBusy(b.id, false);
     }
@@ -506,9 +506,9 @@ export function History() {
       try {
         const r = await deleteBill(b.id, user?.name ?? "Unknown");
         if (r.ok) {
-          toast(`Bill #${b.billNo} deleted`);
+          toast(`Bill #${b.billNo} deleted`, "success");
           await refreshLoaded();
-        } else if (r.error) toast(r.error);
+        } else if (r.error) toast(r.error, "error");
       } finally {
         setBillBusy(b.id, false);
       }

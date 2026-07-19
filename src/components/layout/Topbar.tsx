@@ -70,10 +70,10 @@ export function Topbar() {
     setSaving(true);
     try {
       await setStoreStatus(!isOpen, user?.name ?? "");
-      toast(isOpen ? "Store closed" : "Store opened");
+      toast(isOpen ? "Store closed" : "Store opened", "success");
       setConfirming(false);
     } catch (e) {
-      toast(e instanceof Error ? e.message : "Could not change store status");
+      toast(e instanceof Error ? e.message : "Could not change store status", "error");
     } finally {
       setSaving(false);
     }

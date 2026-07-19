@@ -80,7 +80,7 @@ export function Settings() {
         lowStockAlert: parseInt(lowStockAlert) || 5,
         expiringSoonDays: parseInt(expiringSoonDays) || 3,
       });
-      toast("Settings saved");
+      toast("Settings saved", "success");
     } finally {
       setSavingSettings(false);
     }
@@ -91,7 +91,7 @@ export function Settings() {
       setClearing(true);
       try {
         await clearAllData();
-        toast("All data cleared");
+        toast("All data cleared", "success");
         router.push("/dashboard");
       } finally {
         setClearing(false);
