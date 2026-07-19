@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { Download, Loader2 } from "lucide-react";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { useUIStore } from "@/lib/ui-store";
-import { exportReports, inRange, REPORT_META, type ReportType } from "@/lib/excel";
-import { fetchReportData, type FullStoreData } from "@/lib/supabase-data";
+import { exportReports, REPORT_META, type ReportType } from "@/lib/excel";
+import { fetchReportCounts, fetchReportData, type ReportCounts } from "@/lib/supabase-data";
 import { NoAccess } from "@/components/feature/NoAccess";
 import { DateRangePicker } from "@/components/ui/DateRangePicker";
 
@@ -23,19 +23,22 @@ export function Reports() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [exporting, setExporting] = useState(false);
-  const [data, setData] = useState<FullStoreData | null>(null);
+  const [counts, setCounts] = useState<ReportCounts | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
 
-  // Load once so we can preview record counts and reuse the payload on export.
+  // Cheap HEAD count queries for the preview — refreshed when the range changes.
+  // The heavy full-store fetch is deferred to the Download click.
   useEffect(() => {
     let alive = true;
-    fetchReportData()
-      .then((d) => alive && setData(d))
+    setCounts(null);
+    setLoadFailed(false);
+    fetchReportCounts({ from: from || null, to: to || null })
+      .then((c) => alive && setCounts(c))
       .catch(() => alive && setLoadFailed(true));
     return () => {
       alive = false;
     };
-  }, []);
+  }, [from, to]);
 
   if (user && user.role !== "Owner") return <NoAccess />;
 
@@ -46,8 +49,6 @@ export function Reports() {
   const toggleAll = () => setSelected(allChecked ? [] : [...ALL_REPORTS]);
 
   const range = { from: from || null, to: to || null };
-  const billsInRange = data ? data.bills.filter((b) => inRange(b.date, range)).length : null;
-  const logsInRange = data ? data.logs.filter((l) => inRange(l.date, range)).length : null;
 
   const doExport = async () => {
     if (selected.length === 0) {
@@ -61,7 +62,7 @@ export function Reports() {
     setExporting(true);
     try {
       const types = ALL_REPORTS.filter((t) => selected.includes(t)); // fixed order
-      const payload = data ?? (await fetchReportData());
+      const payload = await fetchReportData();
       const r = await exportReports(types, payload, range);
       toast(r.ok ? "Report downloaded" : r.error ?? "Export failed", r.ok ? "success" : "error");
     } catch {
@@ -131,8 +132,8 @@ export function Reports() {
         <p className="mt-2.5 text-xs text-ink-muted">
           {loadFailed
             ? "Couldn't load a preview — export will still fetch fresh data."
-            : data
-              ? `In range: ${billsInRange} bill${billsInRange === 1 ? "" : "s"} · ${logsInRange} stock movement${logsInRange === 1 ? "" : "s"}. Snapshot: ${data.items.length} products · ${data.customers.length} customers.`
+            : counts
+              ? `In range: ${counts.billsInRange} bill${counts.billsInRange === 1 ? "" : "s"} · ${counts.logsInRange} stock movement${counts.logsInRange === 1 ? "" : "s"}. Snapshot: ${counts.items} products · ${counts.customers} customers.`
               : "Loading record counts…"}
         </p>
 

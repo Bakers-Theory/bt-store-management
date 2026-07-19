@@ -33,6 +33,8 @@ interface BillRow {
   tax_rate: number;
   payment_method: "Cash" | "UPI";
   discount_percent: number;
+  discount_type: "percent" | "flat";
+  discount_amount: number;
   status: "active" | "cancelled";
   created_at: string;
   cancelled_at: string | null;
@@ -137,6 +139,8 @@ export const mapBill = (r: BillRow, lines: BillLine[]): Bill => ({
   taxRate: r.tax_rate,
   paymentMethod: r.payment_method,
   discountPercent: r.discount_percent,
+  discountType: r.discount_type,
+  discountAmount: r.discount_amount,
   billerName: r.biller_name ?? "",
   date: r.created_at,
   status: r.status,
@@ -319,6 +323,43 @@ export async function fetchReportData(): Promise<FullStoreData> {
   };
 }
 
+export interface ReportCounts {
+  billsInRange: number;
+  logsInRange: number;
+  items: number;
+  customers: number;
+}
+
+/**
+ * Cheap preview counts for the Reports page — HEAD count queries only, so the
+ * page no longer downloads the entire store on mount just to show "N bills".
+ * The heavy fetchReportData() is deferred to the Download click.
+ *
+ * Range bounds mirror excel.ts `inRange` (which compares the UTC calendar day of
+ * created_at), so the preview matches what the export will actually include.
+ */
+export async function fetchReportCounts(range: DateRange): Promise<ReportCounts> {
+  const supabase = createClient();
+  const withRange = <T extends { gte: (c: string, v: string) => T; lte: (c: string, v: string) => T }>(q: T): T => {
+    let out = q;
+    if (range.from) out = out.gte("created_at", `${range.from}T00:00:00.000Z`);
+    if (range.to) out = out.lte("created_at", `${range.to}T23:59:59.999Z`);
+    return out;
+  };
+  const [bills, logs, items, customers] = await Promise.all([
+    withRange(supabase.from("bills_v").select("*", { count: "exact", head: true })),
+    withRange(supabase.from("activity_log_v").select("*", { count: "exact", head: true })),
+    supabase.from("items").select("*", { count: "exact", head: true }),
+    supabase.from("customers").select("*", { count: "exact", head: true }),
+  ]);
+  return {
+    billsInRange: bills.count ?? 0,
+    logsInRange: logs.count ?? 0,
+    items: items.count ?? 0,
+    customers: customers.count ?? 0,
+  };
+}
+
 // ─── Dashboard aggregates (server-computed, bounded) ─────────────────────────
 export interface DashboardStats {
   today: string;
@@ -430,6 +471,12 @@ export async function fetchCustomers(): Promise<Customer[]> {
   const rows = await rpc<CustomerRow[]>("customers_with_stats", {});
   return (rows ?? []).map(mapCustomer);
 }
+
+/** Correct a mistyped customer name/phone. Throws on a phone collision. */
+export const rpcUpdateCustomer = (id: string, name: string, phone: string) =>
+  rpc<{ id: string; name: string; phone: string }>("update_customer", {
+    p_id: id, p_name: name, p_phone: phone,
+  });
 
 /**
  * Look a customer up by exact phone for billing autofill. Best-effort: returns
@@ -632,9 +679,13 @@ export async function rpcUpdateBatchExpiry(batchId: string, expiry: string): Pro
 interface GeneratedBillRow {
   id: string; bill_no: number; subtotal: number; tax: number;
   total: number; tax_rate: number; created_at: string;
+  discount_percent: number; discount_type: "percent" | "flat"; discount_amount: number;
 }
 export const rpcGenerateBill = (
-  customer: { name: string; phone: string; payment: PaymentMethod; discount: number },
+  customer: {
+    name: string; phone: string; payment: PaymentMethod;
+    discount: number; discountType: "percent" | "flat";
+  },
   lines: { itemId: string; qty: number }[],
 ) => {
   // Timezone drives which batches count as expired server-side — must match the

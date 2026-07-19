@@ -140,7 +140,16 @@ export function Customers() {
         </div>
       )}
 
-      {selected && <CustomerModal customer={selected} onClose={() => setSelected(null)} />}
+      {selected && (
+        <CustomerModal
+          customer={selected}
+          onClose={() => setSelected(null)}
+          onUpdated={(u) => {
+            setSelected(u);
+            setCustomers((prev) => prev.map((c) => (c.id === u.id ? u : c)));
+          }}
+        />
+      )}
     </>
   );
 }

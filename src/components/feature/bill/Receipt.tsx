@@ -69,10 +69,10 @@ export function Receipt({ bill }: { bill: Bill }) {
       ))}
       <div className="receipt-divider" />
       <div className="receipt-row"><span>Subtotal</span><span>{b.currency}{bill.subtotal.toFixed(2)}</span></div>
-      {bill.discountPercent > 0 && (
+      {bill.discountAmount > 0 && (
         <div className="receipt-row">
-          <span>Discount ({bill.discountPercent}%)</span>
-          <span>−{b.currency}{((bill.subtotal * bill.discountPercent) / 100).toFixed(2)}</span>
+          <span>Discount{bill.discountType === "percent" ? ` (${bill.discountPercent}%)` : ""}</span>
+          <span>−{b.currency}{bill.discountAmount.toFixed(2)}</span>
         </div>
       )}
       {bill.tax > 0 && (

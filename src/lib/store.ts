@@ -104,7 +104,7 @@ interface StoreState {
     customer: { name: string; phone: string },
     lines: BillLine[],
     paymentMethod: PaymentMethod,
-    discountPercent: number,
+    discount: { mode: "percent" | "flat"; value: number },
     billerName: string,
   ) => Promise<Bill>;
   cancelBill: (id: string, byName: string) => Promise<Result>;
@@ -292,9 +292,9 @@ export const useBakeryStore = create<StoreState>()(
     // A bill can consume stock across many items at once (FIFO, per line), so
     // it refreshes the item list rather than patching a single row — still far
     // cheaper than the old full reload, since settings/lists never change here.
-    generateBill: async (customer, lines, paymentMethod, discountPercent, billerName) => {
+    generateBill: async (customer, lines, paymentMethod, discount, billerName) => {
       const row = await rpcGenerateBill(
-        { ...customer, payment: paymentMethod, discount: discountPercent },
+        { ...customer, payment: paymentMethod, discount: discount.value, discountType: discount.mode },
         lines.map((l) => ({ itemId: l.itemId, qty: l.qty })),
       );
       const bill: Bill = {
@@ -308,7 +308,9 @@ export const useBakeryStore = create<StoreState>()(
         total: row.total,
         taxRate: row.tax_rate,
         paymentMethod,
-        discountPercent,
+        discountPercent: row.discount_percent,
+        discountType: row.discount_type,
+        discountAmount: row.discount_amount,
         billerName,
         date: row.created_at,
         status: "active",

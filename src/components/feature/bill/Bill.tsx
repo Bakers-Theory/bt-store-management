@@ -64,6 +64,7 @@ export function Bill() {
   const [cashReceived, setCashReceived] = useState("");
   const [clearArmed, setClearArmed] = useState(false);
   const [discount, setDiscount] = useState("");
+  const [discountMode, setDiscountMode] = useState<"percent" | "flat">("percent");
   const [phoneErr, setPhoneErr] = useState("");
   const [nameErr, setNameErr] = useState("");
   const [returning, setReturning] = useState<Customer | null>(null);
@@ -73,8 +74,13 @@ export function Bill() {
 
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const discountPct = Math.min(100, Math.max(0, parseFloat(discount) || 0));
-  const { subtotal, discount: discountAmt, tax, total } = computeTotals(lines, taxRate, discountPct);
+  const discountValue = Math.max(0, parseFloat(discount) || 0);
+  const { subtotal, discount: discountAmt, tax, total } = computeTotals(
+    lines,
+    taxRate,
+    discountValue,
+    discountMode,
+  );
   const cartCount = lines.reduce((n, l) => n + l.qty, 0);
   const changeDue = (parseFloat(cashReceived) || 0) - total;
 
@@ -237,7 +243,13 @@ export function Bill() {
     }
     setGenerating(true);
     try {
-      const bill = await generateBill(customer, lines, payment, discountPct, currentUser?.name ?? "");
+      const bill = await generateBill(
+        customer,
+        lines,
+        payment,
+        { mode: discountMode, value: discountValue },
+        currentUser?.name ?? "",
+      );
       setLines([]);
       setCustomer({ name: "", phone: "" });
       setPayment("Cash");
@@ -710,21 +722,39 @@ export function Bill() {
                     <input
                       type="number"
                       min="0"
-                      max="100"
-                      step="1"
+                      max={discountMode === "percent" ? 100 : undefined}
+                      step={discountMode === "percent" ? 1 : "0.01"}
+                      inputMode="decimal"
                       placeholder="0"
                       value={discount}
                       onChange={(e) => {
-                        const n = parseFloat(e.target.value);
-                        if (e.target.value !== "" && !isNaN(n) && (n < 0 || n > 100)) {
-                          setDiscount(String(Math.min(100, Math.max(0, n))));
+                        const raw = e.target.value;
+                        const n = parseFloat(raw);
+                        const cap = discountMode === "percent" ? 100 : subtotal;
+                        if (raw !== "" && !isNaN(n) && (n < 0 || n > cap)) {
+                          setDiscount(String(Math.min(cap, Math.max(0, n))));
                         } else {
-                          setDiscount(e.target.value);
+                          setDiscount(raw);
                         }
                       }}
-                      className="w-14 rounded-[8px] border border-line bg-warm-white px-2 py-1 text-right text-[13px] outline-none focus:border-brown"
+                      className="w-16 rounded-[8px] border border-line bg-warm-white px-2 py-1 text-right text-[13px] outline-none focus:border-brown"
                     />
-                    %
+                    <span className="inline-flex overflow-hidden rounded-[7px] border border-line">
+                      {(["percent", "flat"] as const).map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setDiscountMode(m)}
+                          aria-pressed={discountMode === m}
+                          aria-label={m === "percent" ? "Percentage discount" : "Flat amount discount"}
+                          className={`px-2 py-1 text-[12px] font-bold ${
+                            discountMode === m ? "bg-brown text-warm-white" : "bg-warm-white text-ink-muted"
+                          }`}
+                        >
+                          {m === "percent" ? "%" : currency}
+                        </button>
+                      ))}
+                    </span>
                   </span>
                   <span className="num text-danger">
                     {discountAmt > 0 ? `−${currency}${discountAmt.toFixed(2)}` : `${currency}0.00`}

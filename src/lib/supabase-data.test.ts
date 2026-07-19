@@ -84,6 +84,8 @@ describe("mapBill", () => {
     tax_rate: 5,
     payment_method: "Cash" as const,
     discount_percent: 0,
+    discount_type: "percent" as const,
+    discount_amount: 0,
     status: "active" as const,
     created_at: "2026-06-30T10:00:00Z",
     cancelled_at: null,
