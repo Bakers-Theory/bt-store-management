@@ -10,7 +10,7 @@ import { defaultRoute } from "@/lib/permissions";
  * round trip. Unauthenticated users are sent to /login.
  */
 export default async function Index() {
-  const supabase = createClient(cookies());
+  const supabase = createClient(await cookies());
   const {
     data: { user },
   } = await supabase.auth.getUser();
