@@ -115,7 +115,7 @@ export default function LoginPage() {
               Store Management
             </p>
             <p className="mt-3 text-[13.5px] text-ink-muted">
-              Crafting joy, one bake at a time.
+              The formula of happiness.
             </p>
           </div>
 
@@ -193,7 +193,7 @@ export default function LoginPage() {
                 <span>Authenticating...</span>
               </>
             ) : (
-              <span>Sign In to Dashboard</span>
+              <span>Sign In</span>
             )}
           </m.button>
         </m.div>
