@@ -1,13 +1,34 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Search, Users, X } from "lucide-react";
+import { Users } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { fetchCustomers } from "@/lib/supabase-data";
 import { initials, relativeDay } from "@/lib/format";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { CustomerModal } from "./CustomerModal";
+import {
+  CustomerFilters,
+  DEFAULT_FILTERS,
+  type CustomerFilterState,
+  type SpendTier,
+} from "./CustomerFilters";
 import type { Customer } from "@/lib/types";
+
+const DAY_MS = 86_400_000;
+
+// Rank customers into spend terciles (High/Mid/Low) by position, so buckets
+// stay balanced regardless of the actual amounts. Zero-spend customers land in
+// Low. Computed over the whole loaded set — independent of the active filters.
+function spendTiers(customers: Customer[]): Map<string, SpendTier> {
+  const ranked = [...customers].sort((a, b) => b.totalSpend - a.totalSpend);
+  const third = Math.ceil(ranked.length / 3);
+  const map = new Map<string, SpendTier>();
+  ranked.forEach((c, i) => {
+    map.set(c.id, i < third ? "high" : i < third * 2 ? "mid" : "low");
+  });
+  return map;
+}
 
 const ListSkeleton = () => (
   <div className="overflow-hidden rounded-[18px] border border-line bg-warm-white shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
@@ -32,6 +53,7 @@ export function Customers() {
   const [error, setError] = useState(false);
   const [retryToken, setRetryToken] = useState(0);
   const [search, setSearch] = useState("");
+  const [filters, setFilters] = useState<CustomerFilterState>(DEFAULT_FILTERS);
   const [selected, setSelected] = useState<Customer | null>(null);
 
   useEffect(() => {
@@ -53,36 +75,48 @@ export function Customers() {
     };
   }, [retryToken]);
 
-  // Default sort: highest lifetime spend first.
+  const tiers = useMemo(() => spendTiers(customers), [customers]);
+
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return customers
-      .filter((c) => !q || c.name.toLowerCase().includes(q) || c.phone.includes(q))
-      .sort((a, b) => b.totalSpend - a.totalSpend);
-  }, [customers, search]);
+    const now = new Date().getTime();
+    // Days since last purchase; never-visited → Infinity (treated as lapsed).
+    const daysSince = (iso: string | null) => (iso ? (now - new Date(iso).getTime()) / DAY_MS : Infinity);
+
+    const rows = customers.filter((c) => {
+      if (q && !c.name.toLowerCase().includes(q) && !c.phone.includes(q)) return false;
+
+      const days = daysSince(c.lastPurchase);
+      if (filters.activity === "active" && days > 30) return false;
+      if (filters.activity === "lapsed30" && days <= 30) return false;
+      if (filters.activity === "lapsed60" && days <= 60) return false;
+      if (filters.activity === "lapsed90" && days <= 90) return false;
+
+      if (filters.spend !== "all" && tiers.get(c.id) !== filters.spend) return false;
+
+      if (filters.visits === "new" && c.visitCount !== 1) return false;
+      if (filters.visits === "repeat" && c.visitCount < 2) return false;
+
+      return true;
+    });
+
+    return rows.sort((a, b) => {
+      switch (filters.sort) {
+        case "visits":
+          return b.visitCount - a.visitCount;
+        case "recent": // most recent first (never-visited last)
+          return daysSince(a.lastPurchase) - daysSince(b.lastPurchase);
+        case "lapsed": // longest since visit first (never-visited first)
+          return daysSince(b.lastPurchase) - daysSince(a.lastPurchase);
+        default:
+          return b.totalSpend - a.totalSpend;
+      }
+    });
+  }, [customers, search, filters, tiers]);
 
   return (
     <>
-      <div className="mb-3.5 relative min-w-[200px] max-w-md">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-light" />
-        <input
-          type="text"
-          placeholder="Search by name or phone…"
-          className="w-full pl-9 pr-9"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        {search && (
-          <button
-            type="button"
-            onClick={() => setSearch("")}
-            aria-label="Clear search"
-            className="absolute right-2.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full text-ink-light hover:bg-cream hover:text-ink-muted"
-          >
-            <X size={15} />
-          </button>
-        )}
-      </div>
+      <CustomerFilters search={search} onSearch={setSearch} filters={filters} onFilters={setFilters} />
 
       {!loaded ? (
         <ListSkeleton />
@@ -106,7 +140,7 @@ export function Customers() {
             <Users size={48} />
           </div>
           <p className="text-sm">
-            {customers.length === 0 ? "No customers yet" : "No customers match your search"}
+            {customers.length === 0 ? "No customers yet" : "No customers match your filters"}
           </p>
         </div>
       ) : (
