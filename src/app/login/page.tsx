@@ -111,11 +111,11 @@ export default function LoginPage() {
             <h2 className="wordmark mt-5 text-[32px] leading-[1.1] text-[#3a200d]">
               Bakers Theory
             </h2>
-            <p className="mt-1.5 text-[12px] font-bold uppercase tracking-[0.1em] text-[#8a6a3c]/80">
-              Store Management
-            </p>
-            <p className="mt-3 text-[13.5px] text-ink-muted">
+            <p className="mt-1 text-[13px] text-ink-muted">
               The formula of happiness.
+            </p>
+            <p className="mt-4 text-[15px] font-bold uppercase tracking-[0.1em] text-[#8a6a3c]/80">
+              Store Management
             </p>
           </div>
 
