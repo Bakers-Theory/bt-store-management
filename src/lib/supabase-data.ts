@@ -1,7 +1,9 @@
 "use client";
 
 import { createClient } from "@/utils/supabase/client";
-import type { Bakery, Batch, Bill, BillLine, BillStatus, Customer, Item, Log, PaymentMethod, StoreLists, User } from "./types";
+import type { Attendance, AttendanceStatus, AttendanceSummary, Bakery, Batch, Bill, BillLine, BillStatus, Customer, Employee, EmployeeSalary, Item, Log, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, StoreLists, User } from "./types";
+import { isAttendanceStatus } from "./attendance";
+import { isSalaryMode } from "./salary";
 import type { ProfileRow } from "./auth";
 import { PROFILE_COLUMNS, profileToUser } from "./auth";
 import type { DateRange } from "./date-range";
@@ -713,3 +715,336 @@ export const rpcAddListValue = (kind: string, value: string) =>
   rpc<void>("add_list_value", { p_kind: kind, p_value: value });
 export const rpcDeleteListValue = (id: string) =>
   rpc<void>("delete_list_value", { p_id: id });
+
+// ─── Attendance ─────────────────────────────────────────────────────────────
+
+interface AttendanceRow {
+  id: string;
+  profile_id: string;
+  on_date: string;
+  status: string;
+  note: string | null;
+  updated_at: string;
+  employee_name: string;
+  marked_by_name: string | null;
+}
+
+/**
+ * Returns null for a row whose status isn't in the catalogue. The DB check
+ * constraint makes that unreachable, but there is no longer a safe fallback to
+ * substitute — inventing a status would silently change someone's payable days —
+ * so such a row is dropped rather than guessed at.
+ */
+function mapAttendance(r: AttendanceRow): Attendance | null {
+  if (!isAttendanceStatus(r.status)) return null;
+  return {
+    id: r.id,
+    profileId: r.profile_id,
+    employeeName: r.employee_name,
+    date: r.on_date,
+    status: r.status,
+    note: r.note ?? "",
+    markedByName: r.marked_by_name ?? "",
+    updatedAt: r.updated_at,
+  };
+}
+
+/** Map a batch of rows, dropping any that can't be interpreted. */
+const mapAttendanceRows = (rows: AttendanceRow[]): Attendance[] =>
+  rows.map(mapAttendance).filter((r): r is Attendance => r !== null);
+
+/**
+ * Everyone attendance can be recorded against, name only. The RPC already
+ * excludes the Owner and orders by name.
+ */
+export async function fetchEmployees(): Promise<Employee[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("attendance_roster");
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as { id: string; name: string }[]).map((r) => ({
+    id: r.id,
+    name: r.name,
+  }));
+}
+
+export interface AttendanceFilters {
+  from: string | null;
+  to: string | null;
+  profileId: string | null;
+  status: AttendanceStatus | null;
+}
+
+/** Records for a single day — what the marking screen reads. */
+export async function fetchAttendanceForDate(date: string): Promise<Attendance[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("attendance_v")
+    .select("*")
+    .eq("on_date", date);
+  if (error) throw new Error(error.message);
+  return mapAttendanceRows((data ?? []) as AttendanceRow[]);
+}
+
+/**
+ * Filtered history. Bounded by `limit` so a long range can't pull the whole
+ * table into the browser; the caller shows a "showing first N" note when the
+ * result comes back full.
+ */
+export async function fetchAttendance(
+  filters: AttendanceFilters,
+  limit = 500,
+): Promise<Attendance[]> {
+  const supabase = createClient();
+  let q = supabase.from("attendance_v").select("*");
+  if (filters.from) q = q.gte("on_date", filters.from);
+  if (filters.to) q = q.lte("on_date", filters.to);
+  if (filters.profileId) q = q.eq("profile_id", filters.profileId);
+  if (filters.status) q = q.eq("status", filters.status);
+  const { data, error } = await q
+    .order("on_date", { ascending: false })
+    .order("employee_name")
+    .limit(limit);
+  if (error) throw new Error(error.message);
+  return mapAttendanceRows((data ?? []) as AttendanceRow[]);
+}
+
+interface SummaryRow {
+  profile_id: string;
+  employee_name: string;
+  present: number | string;
+  half_day: number | string;
+  leave_days: number | string;
+  holiday: number | string;
+  recorded: number | string;
+  payable_days: number | string;
+  unpaid_days: number | string;
+}
+
+/** Server-computed per-employee tallies. `bigint`/`numeric` arrive as strings. */
+export async function fetchAttendanceSummary(
+  from: string | null,
+  to: string | null,
+  profileId: string | null = null,
+): Promise<AttendanceSummary[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("attendance_summary", {
+    p_from: from,
+    p_to: to,
+    p_profile: profileId,
+  });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as SummaryRow[]).map((r) => ({
+    profileId: r.profile_id,
+    employeeName: r.employee_name,
+    present: Number(r.present),
+    halfDay: Number(r.half_day),
+    leave: Number(r.leave_days),
+    holiday: Number(r.holiday),
+    recorded: Number(r.recorded),
+    payableDays: Number(r.payable_days),
+    unpaidDays: Number(r.unpaid_days),
+  }));
+}
+
+export async function rpcSetAttendance(
+  profileId: string,
+  date: string,
+  status: AttendanceStatus,
+  note = "",
+): Promise<Attendance> {
+  // Timezone decides what "today" is, so the server's future-date guard agrees
+  // with the date the user actually sees (same convention as dashboard_stats).
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const row = await rpc<AttendanceRow>("set_attendance", {
+    p_profile: profileId,
+    p_date: date,
+    p_status: status,
+    p_note: note,
+    p_tz: tz,
+  });
+  const mapped = mapAttendance(row);
+  // The row we just wrote came from a validated status, so this cannot fail —
+  // throwing beats returning a half-built record if it somehow does.
+  if (!mapped) throw new Error("Saved attendance came back unreadable");
+  return mapped;
+}
+
+export const rpcClearAttendance = (profileId: string, date: string) =>
+  rpc<void>("clear_attendance", { p_profile: profileId, p_date: date });
+
+// ─── Salary & payroll ───────────────────────────────────────────────────────
+
+/** Everyone on the payroll with their monthly salary (Owner excluded by the RPC). */
+export async function fetchEmployeeSalaries(): Promise<EmployeeSalary[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("employee_salaries");
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as {
+    profile_id: string; employee_name: string;
+    monthly_salary: number | string; updated_at: string | null;
+  }[]).map((r) => ({
+    profileId: r.profile_id,
+    employeeName: r.employee_name,
+    monthlySalary: Number(r.monthly_salary),
+    updatedAt: r.updated_at,
+  }));
+}
+
+export const rpcSetEmployeeSalary = (profileId: string, amount: number) =>
+  rpc<void>("set_employee_salary", { p_profile: profileId, p_amount: amount });
+
+interface PayrollPreviewRow {
+  profile_id: string;
+  employee_name: string;
+  gross: number | string;
+  calendar_days: number | string;
+  recorded: number | string;
+  unpaid_days: number | string;
+  deduction: number | string;
+  computed_net: number | string;
+  payment_id: string | null;
+  status: string;
+  net: number | string | null;
+  stored_computed_net: number | string | null;
+  override_reason: string | null;
+  paid_on: string | null;
+  payment_mode: string | null;
+}
+
+/**
+ * The month's payroll, recomputed from live attendance on every call. Numeric
+ * and bigint columns arrive as strings over the wire, hence the Number()s.
+ */
+export async function fetchPayroll(
+  year: number,
+  month: number,
+): Promise<PayrollRow[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("payroll_preview", {
+    p_year: year,
+    p_month: month,
+  });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as PayrollPreviewRow[]).map((r) => ({
+    profileId: r.profile_id,
+    employeeName: r.employee_name,
+    gross: Number(r.gross),
+    calendarDays: Number(r.calendar_days),
+    recorded: Number(r.recorded),
+    unpaidDays: Number(r.unpaid_days),
+    deduction: Number(r.deduction),
+    computedNet: Number(r.computed_net),
+    paymentId: r.payment_id,
+    status: r.status === "paid" ? "paid" : r.status === "unpaid" ? "unpaid" : "none",
+    net: r.net === null ? null : Number(r.net),
+    storedComputedNet:
+      r.stored_computed_net === null ? null : Number(r.stored_computed_net),
+    overrideReason: r.override_reason ?? "",
+    paidOn: r.paid_on,
+    paymentMode: isSalaryMode(r.payment_mode) ? r.payment_mode : "",
+  }));
+}
+
+interface SalaryPaymentRow {
+  id: string;
+  profile_id: string;
+  employee_name: string;
+  period_year: number | string;
+  period_month: number | string;
+  gross: number | string;
+  calendar_days: number | string;
+  recorded_days: number | string | null;
+  unpaid_days: number | string;
+  deduction: number | string;
+  computed_net: number | string;
+  net: number | string;
+  override_reason: string | null;
+  status: string;
+  paid_on: string | null;
+  payment_mode: string | null;
+  recorded_by_name: string | null;
+  updated_at: string;
+}
+
+function mapSalaryPayment(r: SalaryPaymentRow): SalaryPayment {
+  return {
+    id: r.id,
+    profileId: r.profile_id,
+    employeeName: r.employee_name,
+    periodYear: Number(r.period_year),
+    periodMonth: Number(r.period_month),
+    gross: Number(r.gross),
+    calendarDays: Number(r.calendar_days),
+    recordedDays: r.recorded_days === null ? null : Number(r.recorded_days),
+    unpaidDays: Number(r.unpaid_days),
+    deduction: Number(r.deduction),
+    computedNet: Number(r.computed_net),
+    net: Number(r.net),
+    overrideReason: r.override_reason ?? "",
+    status: r.status === "paid" ? "paid" : "unpaid",
+    paidOn: r.paid_on,
+    paymentMode: isSalaryMode(r.payment_mode) ? r.payment_mode : "",
+    recordedByName: r.recorded_by_name ?? "",
+    updatedAt: r.updated_at,
+  };
+}
+
+/** Payment history, newest period first. */
+export async function fetchSalaryPayments(
+  profileId: string | null = null,
+  limit = 300,
+): Promise<SalaryPayment[]> {
+  const supabase = createClient();
+  let q = supabase.from("salary_payment_v").select("*");
+  if (profileId) q = q.eq("profile_id", profileId);
+  const { data, error } = await q
+    .order("period_year", { ascending: false })
+    .order("period_month", { ascending: false })
+    .order("employee_name")
+    .limit(limit);
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as SalaryPaymentRow[]).map(mapSalaryPayment);
+}
+
+/** Create or adjust a period's payroll. `net` null takes the computed figure. */
+export async function rpcSaveSalaryPayment(
+  profileId: string,
+  year: number,
+  month: number,
+  net: number | null = null,
+  reason = "",
+): Promise<SalaryPayment> {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const row = await rpc<SalaryPaymentRow>("save_salary_payment", {
+    p_profile: profileId,
+    p_year: year,
+    p_month: month,
+    p_net: net,
+    p_reason: reason,
+    p_tz: tz,
+  });
+  return mapSalaryPayment(row);
+}
+
+export async function rpcMarkSalaryPaid(
+  id: string,
+  paidOn: string,
+  mode: SalaryMode,
+): Promise<SalaryPayment> {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const row = await rpc<SalaryPaymentRow>("mark_salary_paid", {
+    p_id: id,
+    p_paid_on: paidOn,
+    p_mode: mode,
+    p_tz: tz,
+  });
+  return mapSalaryPayment(row);
+}
+
+export async function rpcMarkSalaryUnpaid(id: string): Promise<SalaryPayment> {
+  const row = await rpc<SalaryPaymentRow>("mark_salary_unpaid", { p_id: id });
+  return mapSalaryPayment(row);
+}
+
+export const rpcDeleteSalaryPayment = (id: string) =>
+  rpc<void>("delete_salary_payment", { p_id: id });

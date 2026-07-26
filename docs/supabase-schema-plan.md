@@ -358,6 +358,18 @@ unless marked *internal*.
 | `assert_store_open()` | `void` | *internal* — raises if store closed (Owner exempt). |
 | `set_updated_at()` | trigger | *internal* — shared `updated_at` bump. |
 | `handle_new_user()` | trigger | *internal* — creates a `profiles` row from `auth.users` metadata. |
+| `attendance_roster()` | `table` | Names of everyone attendance can be recorded against (`attendance.view`). |
+| `set_attendance(...)` | `attendance_v` | Upsert one employee-day (`attendance.edit`); rejects future dates in the caller's tz. |
+| `clear_attendance(...)` | `void` | Remove one employee-day (`attendance.edit`). |
+| `attendance_summary(...)` | `table` | Per-employee status tallies + `payable_days` (`attendance.view`). |
+| `attendance_tally(from, to)` | `table` | *internal* — the status weights in one place (`payable_days` + `unpaid_days`). Deliberately NOT permission-gated and revoked from public, so payroll can read tallies without `attendance.view`. |
+| `employee_salaries()` | `table` | Roster with monthly salary (`salary.view`). |
+| `set_employee_salary(...)` | `void` | Upsert one salary (`salary.edit`). |
+| `payroll_compute(gross, days, unpaid)` | `table` | *internal* — deduction + net; rounds the deduction first so `gross − deduction = net` exactly. |
+| `payroll_preview(year, month)` | `table` | The month's payroll recomputed from live attendance (`salary.view`). |
+| `save_salary_payment(...)` | `salary_payment_v` | Create/adjust a period; refuses a period already paid (`salary.edit`). |
+| `mark_salary_paid(...)` / `mark_salary_unpaid(...)` | `salary_payment_v` | Record or reverse a payment (`salary.pay`). |
+| `delete_salary_payment(id)` | `void` | Unpaid records only (`salary.edit`). |
 
 ### Items & inventory — gate: one key each (+ store-open)
 

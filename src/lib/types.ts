@@ -31,6 +31,13 @@ export type PermissionKey =
   // Reports
   | "reports.view"
   | "reports.export"
+  // Attendance
+  | "attendance.view"
+  | "attendance.edit"
+  // Salary
+  | "salary.view"
+  | "salary.edit"
+  | "salary.pay"
   // Store admin
   | "store.settings"
   | "store.status"
@@ -183,6 +190,119 @@ export interface User {
   role: UserRole;
   /** Granular grants. Empty for the Owner, who bypasses the check entirely. */
   permissions: PermissionKey[];
+}
+
+/**
+ * Statuses an employee's day can be recorded as.
+ *
+ * There is no "absent": every day is one of these four. Time off is recorded as
+ * Leave, which is unpaid. An unmarked day is therefore data not yet entered — not
+ * an absence — and never costs anyone money.
+ */
+export type AttendanceStatus = "present" | "half_day" | "leave" | "holiday";
+
+export interface Attendance {
+  id: string;
+  profileId: string;
+  employeeName: string;
+  date: string; // "YYYY-MM-DD"
+  status: AttendanceStatus;
+  note: string;
+  markedByName: string; // "" when the marker's account was since removed
+  updatedAt: string; // ISO
+}
+
+/** One employee's status tallies over a date range, computed server-side. */
+export interface AttendanceSummary {
+  profileId: string;
+  employeeName: string;
+  present: number;
+  halfDay: number;
+  leave: number;
+  holiday: number;
+  recorded: number;
+  /** Days that earn pay: Present/Holiday = 1, Half Day = 0.5, Leave = 0. */
+  payableDays: number;
+  /**
+   * Days deducted from a fixed monthly salary: Leave = 1, Half Day = 0.5.
+   * This — not `payableDays` — is what payroll bills against, because
+   * unrecorded days must not deduct.
+   */
+  unpaidDays: number;
+}
+
+/**
+ * A person attendance can be recorded against: a `profiles` row, name only.
+ * The Owner is excluded — they're the proprietor, not an employee — so there is
+ * no role to carry here.
+ */
+export interface Employee {
+  id: string;
+  name: string;
+}
+
+// ─── Salary ─────────────────────────────────────────────────────────────────
+
+export type PaymentStatus = "unpaid" | "paid";
+
+/** How a salary was handed over. Wider than a bill's `PaymentMethod`. */
+export type SalaryMode = "Cash" | "UPI" | "Bank Transfer" | "Cheque";
+
+export interface EmployeeSalary {
+  profileId: string;
+  employeeName: string;
+  monthlySalary: number;
+  updatedAt: string | null; // null until a salary is first set
+}
+
+/** One employee's payroll for one month, as computed from live attendance. */
+export interface PayrollRow {
+  profileId: string;
+  employeeName: string;
+  gross: number;
+  calendarDays: number;
+  /** Attendance rows present for the month — `calendarDays - recorded` is the gap. */
+  recorded: number;
+  unpaidDays: number;
+  deduction: number;
+  computedNet: number;
+  /** Null until a payroll record exists for the period. */
+  paymentId: string | null;
+  status: PaymentStatus | "none";
+  /** The filed figure, which may differ from `computedNet`. */
+  net: number | null;
+  /**
+   * What the calculation said when the record was prepared. It differs from
+   * `computedNet` only when attendance moved afterwards — which is how a stale
+   * record is told apart from a deliberately adjusted one. Null before a record
+   * exists.
+   */
+  storedComputedNet: number | null;
+  overrideReason: string;
+  paidOn: string | null;
+  paymentMode: SalaryMode | "";
+}
+
+export interface SalaryPayment {
+  id: string;
+  profileId: string;
+  employeeName: string;
+  periodYear: number;
+  periodMonth: number;
+  gross: number;
+  calendarDays: number;
+  /** Null for records filed before this was snapshotted — i.e. unknown. */
+  recordedDays: number | null;
+  unpaidDays: number;
+  deduction: number;
+  computedNet: number;
+  net: number;
+  overrideReason: string;
+  status: PaymentStatus;
+  paidOn: string | null;
+  paymentMode: SalaryMode | "";
+  recordedByName: string;
+  updatedAt: string;
 }
 
 export interface StoreLists {

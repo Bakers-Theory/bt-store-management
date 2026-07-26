@@ -6,6 +6,7 @@ import { StoreHydrator } from "@/components/system/StoreHydrator";
 import { ToastHost } from "@/components/system/ToastHost";
 import { OwnerAuthHost } from "@/components/system/OwnerAuthHost";
 import { PrintHost } from "@/components/system/PrintHost";
+import { ReportPrintHost } from "@/components/system/ReportPrintHost";
 import { ServiceWorkerRegistrar } from "@/components/system/ServiceWorkerRegistrar";
 import { SpeedInsights } from "@vercel/speed-insights/next"
 import { Analytics } from "@vercel/analytics/next"
@@ -86,6 +87,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <ToastHost />
           <OwnerAuthHost />
           <PrintHost />
+          <ReportPrintHost />
           <ServiceWorkerRegistrar />
         </AuthProvider>
         <SpeedInsights />

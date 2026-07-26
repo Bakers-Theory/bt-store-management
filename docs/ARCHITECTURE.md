@@ -120,6 +120,8 @@ src/
     (app)/                      # authenticated route group
       layout.tsx                # guards session, renders chrome (Sidebar/Topbar/BottomNav)
       dashboard/  stock/  bill/  history/  customers/  settings/  reports/
+      attendance/                 # staff attendance: mark a day + history
+      salary/                     # payroll, salaries, payment history
     api/staff/route.ts          # staff CRUD, staff.manage-gated (service-role, server-only)
 
   utils/supabase/               # the four @supabase/ssr clients
@@ -138,6 +140,10 @@ src/
     bill.ts                     # pure bill math (totals, tax, discount)
     analytics.ts                # pure dashboard aggregation helpers
     excel.ts                    # multi-sheet report assembly
+    attendance.ts               # status weights, payable/unpaid-day math, CSV
+    salary.ts                   # payroll arithmetic, period helpers, report rows
+    report.ts                   # printable report documents (pure builders)
+    payslip.ts                  # payslip document + amount-in-words
     expiry.ts  date-range.ts  format.ts  image.ts   # small pure helpers
     *.test.ts                   # Vitest suites (logic layer only)
 
@@ -146,9 +152,11 @@ src/
       AuthProvider.tsx          # auth context (session + profile)
       StoreHydrator.tsx         # kicks off store.load() once authed
       ToastHost / OwnerAuthHost / PrintHost / ServiceWorkerRegistrar / ...
+      ReportPrintHost.tsx       # prints A4 reports & payslips (vs PrintHost's 80mm receipt)
     layout/                     # Sidebar, Topbar, BottomNav
     feature/                    # one folder per section — the "use client" boundary
       dashboard/ stock/ bill/ history/ customers/ settings/
+      attendance/ salary/
       Guard.tsx  NoAccess.tsx
     ui/                         # shared primitives (Modal, Skeleton, DateRangePicker, ...)
 
@@ -358,14 +366,18 @@ Current shape (see `ROLE_PRESETS` for the authoritative lists):
 | Store profile | ✓ | – | – | – |
 | Open/close + lists | ✓ | ✓ | – | – |
 | Activity log | ✓ | ✓ | – | – |
+| Attendance | ✓ | ✓ | – | – |
+| Salary & payroll | – | – | – | – |
 | Manage staff | – | – | – | – |
 
 Deliberate choices worth preserving:
 
-- **No preset grants `*.delete`** (bills or items) except Admin, and none grants
-  `staff.manage` at all. Cancelling a bill and writing off a batch leave an audit
-  trail; deleting leaves nothing. `staff.manage` remains in the catalogue so the
-  Owner can delegate the roster to one individual by hand.
+- **No preset grants `*.delete`** (bills or items) except Admin. Nor does any
+  preset grant `staff.manage` or the three `salary.*` keys — see
+  `OWNER_BY_DEFAULT` in `permissions.ts`. Cancelling a bill and writing off a
+  batch leave an audit trail; deleting leaves nothing. Staff management and
+  payroll stay with the Owner but remain in the catalogue, so each can be
+  delegated to one individual by hand without handing over a whole preset.
 - **Cashier and Manager are disjoint** apart from `customers.*` — the counter and
   the back of house are separate jobs. A test pins that intersection so future
   edits can't quietly blur them.
@@ -424,12 +436,17 @@ Supabase SQL editor or `supabase db push`.
 | `customers` | Directory (added in 0009); visit/spend stats computed via RPC. |
 | `activity_log` | Append-only audit trail — stock moves, bill events, and (later) store/staff/password admin events. |
 | `store_lists` | Admin-managed option lists — categories, emojis, units, stock-out reasons (added in 0006). |
+| `employee_salary` | Each employee's monthly salary (`0030`). A **separate table, not columns on `profiles`** — every authed user reads their own profile row, so a salary column there would ride along in that fetch. |
+| `salary_payment` | One payroll record per employee per month (`0030`). Snapshots gross / calendar days / unpaid days, so a later salary change never rewrites a past month. Three check constraints carry the rules: no duplicate period, an override must state a reason, and "paid" requires a date and mode. |
+| `attendance` | One row per employee per day (`0029`). Employees *are* `profiles` rows, minus the Owner (excluded from the roster, the view and the write RPC alike). Statuses are Present / Half Day / Leave / Holiday — there is no `absent`, because an unmarked day *is* the absence. A unique `(profile_id, on_date)` constraint makes "no duplicate entries" a database guarantee, so `set_attendance` upserts — re-marking a day *is* the edit path. |
 
 ### Views (read surface)
 
 `*_v` views are what the client selects from: `items_v` (with `batches` and
 `earliest_expiry`), `bills_v` (with joined `biller_name`), `activity_log_v`
-(stock/bill events), `activity_log_admin_v` (Owner-only admin events).
+(stock/bill events), `activity_log_admin_v` (Owner-only admin events),
+`attendance_v` (with employee + marker names, gated on `attendance.view`),
+`salary_payment_v` (with employee + recorder names, gated on `salary.view`).
 
 ### Migration history (chronological highlights)
 
@@ -443,7 +460,8 @@ status · `0018` store admin audit · `0019` closed store blocks inventory ·
 `0020` bills skip expired batches · `0021` dashboard stats by range ·
 `0022`/`0023` product images · `0024` grant bill_items image_url ·
 `0025` dashboard prev-period counts · `0026` flat discount · `0027` update
-customer · `0028` granular RBAC (`perms text[]`, per-key RPC gates, role presets).
+customer · `0028` granular RBAC (`perms text[]`, per-key RPC gates, role presets) ·
+`0029` staff attendance · `0030` salary & payroll.
 
 > The full consolidated schema — every table's columns, the views, the complete
 > RPC catalog, the privacy/grants model, and deep-dives on the batch/FIFO and
@@ -467,6 +485,16 @@ unit-tested in plain functions. These are the files with `*.test.ts` siblings:
 - **`analytics.ts`** — dashboard aggregation helpers.
 - **`excel.ts`** — multi-sheet report assembly; cancelled bills are excluded from
   aggregates.
+- **`attendance.ts`** — status metadata, `payableDays()` and CSV assembly.
+  `payableDays()` deliberately mirrors `payable_days` in `attendance_summary`
+  (Present/Holiday/Leave = 1, Half Day = 0.5, Absent = 0) so the UI can show the
+  figure without a round-trip — but **the SQL copy is what payroll bills
+  against**, the same client/server mirror rule as `permissions.ts`.
+- **`salary.ts`** — the payroll arithmetic, mirroring `payroll_compute` in SQL.
+  The **rounding order is the contract**: the deduction is rounded to paise first
+  and the net derived from it, so `gross − deduction === net` holds exactly and a
+  payslip always adds up. Rounding both independently would let one drift by a
+  paisa.
 - **`expiry.ts`** — day-granularity expiry status (fresh / expiring-soon /
   expired) shared by UI and matching server-side batch logic.
 - **`date-range.ts`** — date-range presets and bounds.

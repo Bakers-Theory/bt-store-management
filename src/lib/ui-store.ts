@@ -2,6 +2,11 @@
 
 import { create } from "zustand";
 import type { Bill } from "./types";
+import type { PrintReport } from "./report";
+import type { Payslip } from "./payslip";
+
+/** Either printable A4 document. */
+export type PrintDoc = PrintReport | Payslip;
 
 interface OwnerAuthRequest {
   label: string;
@@ -27,6 +32,10 @@ interface UIState {
   printTarget: Bill | null;
   requestPrint: (bill: Bill) => void;
   clearPrint: () => void;
+  /** A built report or payslip awaiting the print dialog (ReportPrintHost). */
+  reportTarget: (PrintDoc & { generatedAt: string }) | null;
+  requestReport: (report: PrintDoc) => void;
+  clearReport: () => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -44,6 +53,20 @@ export const useUIStore = create<UIState>((set) => ({
   printTarget: null,
   requestPrint: (bill) => set({ printTarget: bill }),
   clearPrint: () => set({ printTarget: null }),
+  reportTarget: null,
+  // Stamp the timestamp here rather than in render: a Date during render would
+  // differ between server and client and trip hydration.
+  requestReport: (report) =>
+    set({
+      reportTarget: {
+        ...report,
+        generatedAt: new Date().toLocaleString(undefined, {
+          dateStyle: "medium",
+          timeStyle: "short",
+        }),
+      },
+    }),
+  clearReport: () => set({ reportTarget: null }),
 }));
 
 /** Convenience accessor for firing a toast outside of React render. */
