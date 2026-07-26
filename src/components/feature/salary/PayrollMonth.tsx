@@ -18,7 +18,8 @@ import {
   MONTHS,
   PAYROLL_REPORT_HEADER,
   SALARY_MODES,
-  isOverridden,
+  isAdjusted,
+  isStale,
   missingDays,
   payrollReportRows,
   payrollTotals,
@@ -108,8 +109,17 @@ export function PayrollMonth({
     }
   };
 
+  /**
+   * Prepare a record, or re-prepare a stale one. `save_salary_payment` always
+   * recomputes from live attendance, so the same call serves both — and it
+   * refuses a paid period, which is why the stale banner tells you to reopen.
+   */
   const createFor = (r: PayrollRow) =>
-    act(r.profileId, () => rpcSaveSalaryPayment(r.profileId, year, month), "Payroll prepared");
+    act(
+      r.profileId,
+      () => rpcSaveSalaryPayment(r.profileId, year, month),
+      r.status === "none" ? "Payroll prepared" : "Recalculated from attendance",
+    );
 
   /** Prepare every employee that doesn't have a record yet, one at a time. */
   const createAll = async () => {
@@ -239,24 +249,25 @@ export function PayrollMonth({
       </div>
 
       {/*
-        The single most important control on this screen. With no "absent"
-        status, an unmarked day deducts nothing — so an incomplete month
-        understates deductions and overpays. Warn, don't block: a mid-month
-        advance is legitimate.
+        An unmarked day is excluded from the calculation by design — it deducts
+        nothing and is paid. So a gap is NOT an error; the only thing it can hide
+        is leave that was never recorded. Worded to say exactly that, rather than
+        implying the figures are wrong.
       */}
       {loaded && !error && gaps.length > 0 && (
-        <div className="mb-4 flex items-start gap-2.5 rounded-[14px] border border-[#f0e2c2] bg-warn-bg p-3.5">
-          <AlertTriangle size={17} className="mt-0.5 shrink-0 text-warn" />
+        <div className="mb-4 flex items-start gap-2.5 rounded-[14px] border border-line bg-cream p-3.5">
+          <AlertTriangle size={17} className="mt-0.5 shrink-0 text-ink-light" />
           <div className="text-[12.5px] text-ink-muted">
-            <span className="font-bold text-warn">
-              Attendance is incomplete for {gaps.length} employee
-              {gaps.length === 1 ? "" : "s"} in {periodLabel(year, month)}.
+            <span className="font-bold text-ink">
+              {gaps.length} employee{gaps.length === 1 ? " has" : "s have"} unmarked
+              days in {periodLabel(year, month)}
             </span>{" "}
-            Unrecorded days don&apos;t deduct anything, so these figures may be
-            higher than they should be. Finish marking the month first:{" "}
+            — those days are excluded from the calculation and paid in full, which
+            is intended. Only worth a look if someone took leave that never got
+            recorded:{" "}
             {gaps
               .slice(0, 4)
-              .map((r) => `${r.employeeName} (${missingDays(r)} days)`)
+              .map((r) => `${r.employeeName} (${missingDays(r)})`)
               .join(", ")}
             {gaps.length > 4 ? `, +${gaps.length - 4} more` : ""}.
           </div>
@@ -362,9 +373,39 @@ export function PayrollMonth({
                   </div>
                 </div>
 
-                {isOverridden(r) && (
+                {/*
+                  Two different things, deliberately worded differently: someone
+                  changed the figure, versus the days beneath it moved. Conflating
+                  them was the original defect.
+                */}
+                {isAdjusted(r) && r.storedComputedNet !== null && (
                   <div className="mb-2.5 text-[11.5px] font-semibold text-warn">
-                    Overridden from {money(r.computedNet)}
+                    Adjusted from {money(r.storedComputedNet)}
+                    {r.overrideReason ? ` — ${r.overrideReason}` : ""}
+                  </div>
+                )}
+                {isStale(r) && (
+                  <div className="mb-2.5 flex flex-wrap items-center gap-2 rounded-[10px] bg-warn-bg px-2.5 py-2 text-[11.5px] text-ink-muted">
+                    <AlertTriangle size={13} className="shrink-0 text-warn" />
+                    <span>
+                      Attendance changed since this was prepared — recalculated
+                      net is <span className="num font-bold">{money(r.computedNet)}</span>.
+                    </span>
+                    {r.status === "unpaid" && canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => createFor(r)}
+                        disabled={isBusy}
+                        className="ml-auto rounded-lg bg-brown px-2.5 py-1 text-[11px] font-bold text-warm-white disabled:opacity-60"
+                      >
+                        Recalculate
+                      </button>
+                    )}
+                    {r.status === "paid" && (
+                      <span className="ml-auto font-semibold text-warn">
+                        Reopen to recalculate
+                      </span>
+                    )}
                   </div>
                 )}
                 {r.status === "paid" && r.paidOn && (

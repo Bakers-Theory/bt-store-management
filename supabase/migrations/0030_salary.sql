@@ -25,11 +25,23 @@
 -- ============================================================================
 
 -- ─── Audit log: salary entry types ──────────────────────────────────────────
-alter table public.activity_log drop constraint if exists activity_log_type_check;
-alter table public.activity_log add constraint activity_log_type_check
-  check (type in ('in','out','bill','cancel','delete','open','close',
-                  'settings','staff_add','staff_edit','staff_remove','password',
-                  'attendance','salary','salary_pay'));
+-- Widen only, and idempotently — same reasoning as 0029.
+do $ck$
+declare v_def text;
+begin
+  select pg_get_constraintdef(oid) into v_def
+  from pg_constraint
+  where conrelid = 'public.activity_log'::regclass
+    and conname = 'activity_log_type_check';
+
+  if v_def is null or v_def not like '%salary_pay%' then
+    alter table public.activity_log drop constraint if exists activity_log_type_check;
+    alter table public.activity_log add constraint activity_log_type_check
+      check (type in ('in','out','bill','cancel','delete','open','close',
+                      'settings','staff_add','staff_edit','staff_remove','password',
+                      'attendance','salary','salary_pay'));
+  end if;
+end $ck$;
 
 -- ─── Each employee's salary ─────────────────────────────────────────────────
 create table if not exists public.employee_salary (
@@ -181,6 +193,8 @@ end $$;
 -- ─── Payroll preview for a month ────────────────────────────────────────────
 -- Reads attendance through `attendance_tally`, which is NOT gated on
 -- attendance.view — payroll must work for someone who may only hold salary.*.
+-- Return type changes across versions, so drop first.
+drop function if exists public.payroll_preview(int, int);
 create or replace function public.payroll_preview(p_year int, p_month int)
 returns table (
   profile_id    uuid,
@@ -189,11 +203,17 @@ returns table (
   calendar_days int,
   recorded      bigint,
   unpaid_days   numeric,
+  -- Recomputed from attendance as it stands RIGHT NOW.
   deduction     numeric,
   computed_net  numeric,
   payment_id    uuid,
   status        text,
   net           numeric,
+  -- What the calculation said when the record was prepared. Differs from
+  -- `computed_net` only when attendance moved afterwards, which is how the UI
+  -- distinguishes "someone adjusted this" from "this is stale".
+  stored_computed_net numeric,
+  override_reason     text,
   paid_on       date,
   payment_mode  text
 )
@@ -221,6 +241,8 @@ begin
     sp.id,
     coalesce(sp.status, 'none'),
     sp.net,
+    sp.computed_net,
+    coalesce(sp.override_reason, ''),
     sp.paid_on,
     sp.payment_mode
   from public.profiles p

@@ -48,6 +48,9 @@ export function AttendanceDay({
   // Per-employee, so marking one person doesn't disable the whole roster.
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  // In-flight note edits, keyed by employee. Absent = not being edited, so the
+  // input falls back to the stored note.
+  const [noteDraft, setNoteDraft] = useState<Record<string, string>>({});
 
   const setBusyFor = (id: string, on: boolean) =>
     setBusy((prev) => {
@@ -83,10 +86,10 @@ export function AttendanceDay({
   );
 
   const mark = useCallback(
-    async (employee: Employee, status: AttendanceStatus) => {
+    async (employee: Employee, status: AttendanceStatus, note = "") => {
       setBusyFor(employee.id, true);
       try {
-        const row = await rpcSetAttendance(employee.id, date, status);
+        const row = await rpcSetAttendance(employee.id, date, status, note);
         // Upsert locally: the RPC returns the stored row either way, so one
         // reconcile handles both "first mark" and "correction".
         setRecords((prev) => [
@@ -102,12 +105,36 @@ export function AttendanceDay({
     [date, toast],
   );
 
+  /**
+   * Save a note against an already-marked day. Re-sends the existing status
+   * because `set_attendance` is a single upsert — the RPC recognises a
+   * note-only change and logs it as such rather than as a status change.
+   */
+  const saveNote = useCallback(
+    async (employee: Employee, rec: Attendance) => {
+      const next = (noteDraft[employee.id] ?? rec.note).trim();
+      if (next === rec.note.trim()) return;
+      await mark(employee, rec.status, next);
+      setNoteDraft((d) => {
+        const rest = { ...d };
+        delete rest[employee.id];
+        return rest;
+      });
+    },
+    [mark, noteDraft],
+  );
+
   const clear = useCallback(
     async (employee: Employee) => {
       setBusyFor(employee.id, true);
       try {
         await rpcClearAttendance(employee.id, date);
         setRecords((prev) => prev.filter((r) => r.profileId !== employee.id));
+        setNoteDraft((d) => {
+          const rest = { ...d };
+          delete rest[employee.id];
+          return rest;
+        });
       } catch (e) {
         toast(e instanceof Error ? e.message : "Could not clear attendance", "error");
       } finally {
@@ -248,6 +275,34 @@ export function AttendanceDay({
                   )}
                 </div>
 
+                {rec && canEdit && (
+                  <input
+                    type="text"
+                    value={noteDraft[e.id] ?? rec.note}
+                    disabled={isBusy}
+                    maxLength={200}
+                    placeholder={
+                      rec.status === "leave"
+                        ? "Why? e.g. sick, family function (optional)"
+                        : "Add a note (optional)"
+                    }
+                    aria-label={`Note for ${e.name}`}
+                    onChange={(ev) =>
+                      setNoteDraft((d) => ({ ...d, [e.id]: ev.target.value }))
+                    }
+                    onBlur={() => void saveNote(e, rec)}
+                    onKeyDown={(ev) => {
+                      if (ev.key === "Enter") ev.currentTarget.blur();
+                    }}
+                    className="mb-2.5 w-full rounded-[10px] border border-line bg-cream px-2.5 py-2 text-[12.5px] outline-none focus:border-brown disabled:opacity-60"
+                  />
+                )}
+                {rec && !canEdit && rec.note && (
+                  <div className="mb-2.5 rounded-[10px] bg-cream px-2.5 py-2 text-[12.5px] text-ink-muted">
+                    {rec.note}
+                  </div>
+                )}
+
                 <div className="grid grid-cols-4 gap-1.5">
                   {ATTENDANCE_STATUSES.map((s) => {
                     const on = rec?.status === s;
@@ -275,8 +330,8 @@ export function AttendanceDay({
 
       {canEdit && loaded && !error && employees.length > 0 && (
         <p className="mt-4 text-center text-[12px] text-ink-light">
-          Leave a day unmarked to record an absence — clearing a record and
-          marking someone absent are the same thing.
+          Leave is unpaid, so it deducts a day. Present, Holiday and unmarked days
+          all deduct nothing — notes are saved when you tap away.
         </p>
       )}
       {!canEdit && loaded && !error && employees.length > 0 && (

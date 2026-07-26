@@ -271,6 +271,14 @@ export interface PayrollRow {
   status: PaymentStatus | "none";
   /** The filed figure, which may differ from `computedNet`. */
   net: number | null;
+  /**
+   * What the calculation said when the record was prepared. It differs from
+   * `computedNet` only when attendance moved afterwards — which is how a stale
+   * record is told apart from a deliberately adjusted one. Null before a record
+   * exists.
+   */
+  storedComputedNet: number | null;
+  overrideReason: string;
   paidOn: string | null;
   paymentMode: SalaryMode | "";
 }

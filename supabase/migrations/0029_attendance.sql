@@ -43,14 +43,26 @@ create table if not exists public.attendance (
 );
 
 -- ─── Allowed statuses ───────────────────────────────────────────────────────
--- Written as drop-then-add so this file stays re-runnable, and so an earlier
--- version of it that permitted 'absent' can be tightened in place. Dropping
--- those rows is lossless under the new model: no record means absent.
-delete from public.attendance
-  where status not in ('present','half_day','leave','holiday');
-alter table public.attendance drop constraint if exists attendance_status_check;
-alter table public.attendance add constraint attendance_status_check
-  check (status in ('present','half_day','leave','holiday'));
+-- Runs only when the constraint is missing or still permits 'absent', so a
+-- re-run never re-tightens (and never deletes) rows a later migration may have
+-- legitimately widened the set to allow. Dropping 'absent' rows is lossless
+-- under this model: no record means absent.
+do $st$
+declare v_def text;
+begin
+  select pg_get_constraintdef(oid) into v_def
+  from pg_constraint
+  where conrelid = 'public.attendance'::regclass
+    and conname = 'attendance_status_check';
+
+  if v_def is null or v_def like '%absent%' then
+    delete from public.attendance
+      where status not in ('present','half_day','leave','holiday');
+    alter table public.attendance drop constraint if exists attendance_status_check;
+    alter table public.attendance add constraint attendance_status_check
+      check (status in ('present','half_day','leave','holiday'));
+  end if;
+end $st$;
 
 -- Date-first index serves the "who was in on this day" screen; the unique
 -- constraint above already covers per-employee lookups.
@@ -61,11 +73,26 @@ create trigger attendance_updated_at before update on public.attendance
   for each row execute function public.set_updated_at();
 
 -- ─── Audit log: allow the attendance entry type ─────────────────────────────
-alter table public.activity_log drop constraint if exists activity_log_type_check;
-alter table public.activity_log add constraint activity_log_type_check
-  check (type in ('in','out','bill','cancel','delete','open','close',
-                  'settings','staff_add','staff_edit','staff_remove','password',
-                  'attendance'));
+-- WIDEN ONLY. A later migration (0030) adds more types to this same constraint,
+-- so blindly dropping and re-adding our list would narrow it on a re-run and
+-- fail against rows that already use the newer types. Skip if 'attendance' is
+-- already permitted.
+do $ck$
+declare v_def text;
+begin
+  select pg_get_constraintdef(oid) into v_def
+  from pg_constraint
+  where conrelid = 'public.activity_log'::regclass
+    and conname = 'activity_log_type_check';
+
+  if v_def is null or v_def not like '%attendance%' then
+    alter table public.activity_log drop constraint if exists activity_log_type_check;
+    alter table public.activity_log add constraint activity_log_type_check
+      check (type in ('in','out','bill','cancel','delete','open','close',
+                      'settings','staff_add','staff_edit','staff_remove','password',
+                      'attendance'));
+  end if;
+end $ck$;
 
 -- ─── RLS: reads need attendance.view; writes only via the RPCs below ────────
 alter table public.attendance enable row level security;
@@ -117,7 +144,9 @@ create or replace function public.set_attendance(
 )
 returns public.attendance_v
 language plpgsql security definer set search_path = public as $$
-declare v_row public.attendance_v; v_name text; v_role text; v_existing text;
+declare v_row public.attendance_v; v_name text; v_role text;
+        v_existing text; v_existing_note text; v_found boolean;
+        v_note text := coalesce(p_note, '');
 begin
   if not public.has_perm('attendance.edit') then raise exception 'forbidden'; end if;
   if p_status not in ('present','half_day','leave','holiday') then
@@ -139,22 +168,38 @@ begin
     raise exception 'the Owner is not an employee — attendance is not recorded for them';
   end if;
 
-  select status into v_existing from public.attendance
+  select status, note into v_existing, v_existing_note from public.attendance
     where profile_id = p_profile and on_date = p_date;
+  v_found := found;
 
   insert into public.attendance (profile_id, on_date, status, note, marked_by)
-    values (p_profile, p_date, p_status, coalesce(p_note,''), auth.uid())
+    values (p_profile, p_date, p_status, v_note, auth.uid())
   on conflict (profile_id, on_date) do update
     set status = excluded.status,
         note = excluded.note,
         marked_by = excluded.marked_by;
 
-  insert into public.activity_log (type, actor, item_name, reason, notes)
-    values ('attendance', auth.uid(), v_name, p_status,
-            case when v_existing is null
-                 then 'Marked ' || p_status || ' on ' || p_date::text
-                 else 'Changed ' || v_existing || ' → ' || p_status
-                      || ' on ' || p_date::text end);
+  -- Describe what actually changed, and stay silent on a true no-op: editing a
+  -- note re-sends the status, which would otherwise log 'Changed present →
+  -- present' every keystroke-save.
+  if not v_found then
+    insert into public.activity_log (type, actor, item_name, reason, notes)
+      values ('attendance', auth.uid(), v_name, p_status,
+              'Marked ' || p_status || ' on ' || p_date::text
+              || case when v_note <> '' then ' — ' || v_note else '' end);
+  elsif v_existing <> p_status then
+    insert into public.activity_log (type, actor, item_name, reason, notes)
+      values ('attendance', auth.uid(), v_name, p_status,
+              'Changed ' || v_existing || ' → ' || p_status
+              || ' on ' || p_date::text
+              || case when v_note <> '' then ' — ' || v_note else '' end);
+  elsif coalesce(v_existing_note, '') <> v_note then
+    insert into public.activity_log (type, actor, item_name, reason, notes)
+      values ('attendance', auth.uid(), v_name, p_status,
+              case when v_note = ''
+                   then 'Cleared the note on ' || p_date::text
+                   else 'Note on ' || p_date::text || ': ' || v_note end);
+  end if;
 
   select * into v_row from public.attendance_v
     where profile_id = p_profile and on_date = p_date;

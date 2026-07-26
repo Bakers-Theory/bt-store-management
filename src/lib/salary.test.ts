@@ -4,8 +4,9 @@ import {
   SALARY_MODES,
   calendarDays,
   computePay,
-  isOverridden,
+  isAdjusted,
   isSalaryMode,
+  isStale,
   missingDays,
   payrollReportRows,
   payrollTotals,
@@ -29,6 +30,8 @@ const row = (p: Partial<PayrollRow> = {}): PayrollRow => ({
   paymentId: null,
   status: "none",
   net: null,
+  storedComputedNet: null,
+  overrideReason: "",
   paidOn: null,
   paymentMode: "",
   ...p,
@@ -153,18 +156,53 @@ describe("missingDays / withGaps", () => {
   });
 });
 
-describe("isOverridden", () => {
-  it("is false before a record exists", () => {
-    expect(isOverridden(row({ net: null }))).toBe(false);
+describe("isAdjusted / isStale", () => {
+  it("are both false before a record exists", () => {
+    const r = row({ net: null, storedComputedNet: null });
+    expect(isAdjusted(r)).toBe(false);
+    expect(isStale(r)).toBe(false);
   });
-  it("is false when the filed net equals the computed net", () => {
-    expect(isOverridden(row({ computedNet: 16548.39, net: 16548.39 }))).toBe(false);
+
+  it("are both false for an untouched record matching live attendance", () => {
+    const r = row({ computedNet: 16548.39, storedComputedNet: 16548.39, net: 16548.39 });
+    expect(isAdjusted(r)).toBe(false);
+    expect(isStale(r)).toBe(false);
   });
-  it("is true when they differ", () => {
-    expect(isOverridden(row({ computedNet: 16548.39, net: 17000 }))).toBe(true);
+
+  it("reports a manual adjustment, not staleness", () => {
+    // Filed 17000 against a calculation that said 16548.39, attendance unchanged.
+    const r = row({
+      computedNet: 16548.39, storedComputedNet: 16548.39,
+      net: 17000, overrideReason: "festival bonus",
+    });
+    expect(isAdjusted(r)).toBe(true);
+    expect(isStale(r)).toBe(false);
   });
-  it("ignores float noise rather than reporting a phantom override", () => {
-    expect(isOverridden(row({ computedNet: 16548.39, net: 16548.390000001 }))).toBe(false);
+
+  it("reports staleness, NOT an adjustment, when attendance moved afterwards", () => {
+    // This is the bug the stored figure exists to prevent: a leave day added
+    // after preparing must not read as though someone overrode the net.
+    const r = row({
+      computedNet: 15967.74,      // recomputed now — one more leave day
+      storedComputedNet: 16548.39, // what it said when prepared
+      net: 16548.39,               // filed, untouched
+    });
+    expect(isAdjusted(r)).toBe(false);
+    expect(isStale(r)).toBe(true);
+  });
+
+  it("can report both at once", () => {
+    const r = row({
+      computedNet: 15967.74, storedComputedNet: 16548.39,
+      net: 17000, overrideReason: "advance settled",
+    });
+    expect(isAdjusted(r)).toBe(true);
+    expect(isStale(r)).toBe(true);
+  });
+
+  it("ignores float noise rather than reporting a phantom change", () => {
+    expect(isAdjusted(row({ storedComputedNet: 16548.39, net: 16548.390000001 }))).toBe(false);
+    expect(isStale(row({ storedComputedNet: 16548.39, computedNet: 16548.390000001 }))).toBe(false);
   });
 });
 
@@ -179,7 +217,7 @@ describe("payrollTotals", () => {
   });
   it("uses the filed net where one exists and the computed net otherwise", () => {
     const t = payrollTotals([
-      row({ computedNet: 16548.39, net: 17000, status: "paid" }),
+      row({ computedNet: 16548.39, storedComputedNet: 16548.39, net: 17000, status: "paid" }),
       row({ profileId: "b", computedNet: 18000, net: null, status: "none" }),
     ]);
     expect(t.net).toBe(35000);
@@ -221,7 +259,8 @@ describe("payrollReportRows", () => {
     const rows = payrollReportRows(
       [
         row({ recorded: 24, unpaidDays: 2.5, deduction: 1451.61, computedNet: 16548.39,
-              net: 16548.39, status: "paid", paidOn: "2026-08-01", paymentMode: "UPI" }),
+              storedComputedNet: 16548.39, net: 16548.39, status: "paid",
+              paidOn: "2026-08-01", paymentMode: "UPI" }),
         row({ profileId: "b", gross: 0 }), // no salary — excluded
       ],
       2026, 7,

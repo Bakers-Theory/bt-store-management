@@ -51,16 +51,33 @@ export const missingDays = (row: PayrollRow): number =>
   Math.max(0, row.calendarDays - row.recorded);
 
 /**
- * Rows that shouldn't be paid yet without a second look: attendance is
- * incomplete, so the deduction may be understated. Deliberately a warning
- * rather than a block — a mid-month advance is legitimate.
+ * Rows with unmarked days in the period. These are NOT errors: an unmarked day
+ * is excluded from the calculation by design, deducts nothing and is paid. The
+ * only thing a gap can hide is leave that was never recorded, which is why this
+ * surfaces as a note rather than a block.
  */
 export const withGaps = (rows: PayrollRow[]): PayrollRow[] =>
   rows.filter((r) => r.gross > 0 && missingDays(r) > 0);
 
-/** True when the filed net differs from what attendance implied. */
-export const isOverridden = (row: PayrollRow): boolean =>
-  row.net !== null && round2(row.net) !== round2(row.computedNet);
+/**
+ * True when someone deliberately changed the net away from what the calculation
+ * produced *at the time it was prepared*. Compared against `storedComputedNet`,
+ * not the live figure — otherwise an attendance edit would masquerade as a
+ * manual adjustment.
+ */
+export const isAdjusted = (row: PayrollRow): boolean =>
+  row.net !== null &&
+  row.storedComputedNet !== null &&
+  round2(row.net) !== round2(row.storedComputedNet);
+
+/**
+ * True when attendance has moved since the record was prepared, so the filed
+ * figure no longer reflects the days behind it. Independent of `isAdjusted`:
+ * a record can be both adjusted and stale.
+ */
+export const isStale = (row: PayrollRow): boolean =>
+  row.storedComputedNet !== null &&
+  round2(row.storedComputedNet) !== round2(row.computedNet);
 
 export const MONTHS = [
   "January", "February", "March", "April", "May", "June",

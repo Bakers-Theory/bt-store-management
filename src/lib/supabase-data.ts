@@ -905,6 +905,8 @@ interface PayrollPreviewRow {
   payment_id: string | null;
   status: string;
   net: number | string | null;
+  stored_computed_net: number | string | null;
+  override_reason: string | null;
   paid_on: string | null;
   payment_mode: string | null;
 }
@@ -935,6 +937,9 @@ export async function fetchPayroll(
     paymentId: r.payment_id,
     status: r.status === "paid" ? "paid" : r.status === "unpaid" ? "unpaid" : "none",
     net: r.net === null ? null : Number(r.net),
+    storedComputedNet:
+      r.stored_computed_net === null ? null : Number(r.stored_computed_net),
+    overrideReason: r.override_reason ?? "",
     paidOn: r.paid_on,
     paymentMode: isSalaryMode(r.payment_mode) ? r.payment_mode : "",
   }));
