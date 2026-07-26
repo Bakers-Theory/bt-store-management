@@ -34,6 +34,10 @@ export type PermissionKey =
   // Attendance
   | "attendance.view"
   | "attendance.edit"
+  // Salary
+  | "salary.view"
+  | "salary.edit"
+  | "salary.pay"
   // Store admin
   | "store.settings"
   | "store.status"
@@ -191,8 +195,9 @@ export interface User {
 /**
  * Statuses an employee's day can be recorded as.
  *
- * There is no "absent": an unmarked day *is* the absence, so the daily flow is
- * marking exceptions only, and clearing a record is how you mark someone absent.
+ * There is no "absent": every day is one of these four. Time off is recorded as
+ * Leave, which is unpaid. An unmarked day is therefore data not yet entered — not
+ * an absence — and never costs anyone money.
  */
 export type AttendanceStatus = "present" | "half_day" | "leave" | "holiday";
 
@@ -216,11 +221,14 @@ export interface AttendanceSummary {
   leave: number;
   holiday: number;
   recorded: number;
-  /**
-   * Present/Holiday/Leave = 1, Half Day = 0.5, unrecorded = 0. Drives payroll —
-   * an absence costs a day precisely by having no record.
-   */
+  /** Days that earn pay: Present/Holiday = 1, Half Day = 0.5, Leave = 0. */
   payableDays: number;
+  /**
+   * Days deducted from a fixed monthly salary: Leave = 1, Half Day = 0.5.
+   * This — not `payableDays` — is what payroll bills against, because
+   * unrecorded days must not deduct.
+   */
+  unpaidDays: number;
 }
 
 /**
@@ -231,6 +239,60 @@ export interface AttendanceSummary {
 export interface Employee {
   id: string;
   name: string;
+}
+
+// ─── Salary ─────────────────────────────────────────────────────────────────
+
+export type PaymentStatus = "unpaid" | "paid";
+
+/** How a salary was handed over. Wider than a bill's `PaymentMethod`. */
+export type SalaryMode = "Cash" | "UPI" | "Bank Transfer" | "Cheque";
+
+export interface EmployeeSalary {
+  profileId: string;
+  employeeName: string;
+  monthlySalary: number;
+  updatedAt: string | null; // null until a salary is first set
+}
+
+/** One employee's payroll for one month, as computed from live attendance. */
+export interface PayrollRow {
+  profileId: string;
+  employeeName: string;
+  gross: number;
+  calendarDays: number;
+  /** Attendance rows present for the month — `calendarDays - recorded` is the gap. */
+  recorded: number;
+  unpaidDays: number;
+  deduction: number;
+  computedNet: number;
+  /** Null until a payroll record exists for the period. */
+  paymentId: string | null;
+  status: PaymentStatus | "none";
+  /** The filed figure, which may differ from `computedNet`. */
+  net: number | null;
+  paidOn: string | null;
+  paymentMode: SalaryMode | "";
+}
+
+export interface SalaryPayment {
+  id: string;
+  profileId: string;
+  employeeName: string;
+  periodYear: number;
+  periodMonth: number;
+  gross: number;
+  calendarDays: number;
+  unpaidDays: number;
+  deduction: number;
+  computedNet: number;
+  net: number;
+  overrideReason: string;
+  status: PaymentStatus;
+  paidOn: string | null;
+  paymentMode: SalaryMode | "";
+  recordedByName: string;
+  updatedAt: string;
 }
 
 export interface StoreLists {

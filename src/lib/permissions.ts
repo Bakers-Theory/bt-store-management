@@ -86,6 +86,14 @@ export const PERMISSION_CATALOG: PermissionGroup[] = [
     ],
   },
   {
+    title: "Salary",
+    perms: [
+      { key: "salary.view", label: "View salaries & payroll", hint: "See what each employee earns and their payment history" },
+      { key: "salary.edit", label: "Set salaries & run payroll", hint: "Change a salary and prepare the monthly payroll" },
+      { key: "salary.pay", label: "Record payments", hint: "Mark a month paid, with date and payment mode" },
+    ],
+  },
+  {
     title: "Store admin",
     perms: [
       { key: "store.settings", label: "Store profile & tax", hint: "Name, address, GST, tax rate, thresholds, logo" },
@@ -135,12 +143,21 @@ export const isPermissionKey = (value: unknown): value is PermissionKey =>
  * No preset below Admin gets `*.delete` — cancelling and writing off leave an
  * audit trail, deleting does not.
  *
- * `staff.manage` is in no preset at all: staff management stays with the Owner
- * by default. It remains in the catalogue, so it can still be ticked by hand for
- * one trusted person without handing over the whole Admin set.
+ * `staff.manage` and the three `salary.*` keys are in no preset at all: staff
+ * management and payroll stay with the Owner by default. They remain in the
+ * catalogue, so each can be ticked by hand for one trusted person without
+ * handing over a whole preset.
  */
+/** Keys no preset grants — delegated one person at a time, or not at all. */
+const OWNER_BY_DEFAULT: PermissionKey[] = [
+  "staff.manage",
+  "salary.view",
+  "salary.edit",
+  "salary.pay",
+];
+
 export const ROLE_PRESETS: Record<PresetRole, PermissionKey[]> = {
-  Admin: ALL_PERMISSIONS.filter((k) => k !== "staff.manage"),
+  Admin: ALL_PERMISSIONS.filter((k) => !OWNER_BY_DEFAULT.includes(k)),
   Manager: [
     "stock.view",
     "stock.in",
@@ -223,6 +240,8 @@ export function navItems(user: User | null): NavItem[] {
     items.push({ key: "history", href: "/history", icon: "📋", label: "History" });
   if (hasPermission(user, "attendance.view"))
     items.push({ key: "attendance", href: "/attendance", icon: "🗓️", label: "Attendance" });
+  if (hasPermission(user, "salary.view"))
+    items.push({ key: "salary", href: "/salary", icon: "💰", label: "Salary" });
   return items;
 }
 
@@ -241,6 +260,8 @@ export function canAccessSection(user: User | null, section: string): boolean {
       return hasAnyPermission(user, ["bill.history", "activity.view"]);
     case "attendance":
       return hasPermission(user, "attendance.view");
+    case "salary":
+      return hasPermission(user, "salary.view");
     case "reports":
       return hasPermission(user, "reports.view");
     case "settings":
@@ -258,6 +279,7 @@ export function defaultRoute(user: User | null): string {
   if (hasPermission(user, "customers.view")) return "/customers";
   if (hasAnyPermission(user, ["bill.history", "activity.view"])) return "/history";
   if (hasPermission(user, "attendance.view")) return "/attendance";
+  if (hasPermission(user, "salary.view")) return "/salary";
   if (hasPermission(user, "reports.view")) return "/reports";
   return "/dashboard"; // no access — page renders the "No Access" state
 }

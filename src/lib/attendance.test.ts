@@ -57,21 +57,20 @@ describe("status catalogue", () => {
 });
 
 describe("payableDays", () => {
-  it("pays Present, Leave and Holiday in full", () => {
+  it("pays Present and Holiday in full, and Leave not at all", () => {
     expect(payableDays(counts({ present: 3 }))).toBe(3);
-    expect(payableDays(counts({ leave: 2 }))).toBe(2);
     expect(payableDays(counts({ holiday: 4 }))).toBe(4);
+    expect(payableDays(counts({ leave: 2 }))).toBe(0);
   });
   it("pays a half day at one half", () => {
     expect(payableDays(counts({ half_day: 1 }))).toBe(0.5);
     expect(payableDays(counts({ half_day: 3 }))).toBe(1.5);
   });
-  it("matches the worked example: 22 present, 2 half, 2 days unrecorded", () => {
-    // The 2 absences are expressed by having no record, so they simply never
-    // enter the tally — 22 + (2 × 0.5) = 23 payable days out of 26.
-    expect(payableDays(counts({ present: 22, half_day: 2 }))).toBe(23);
+  it("matches the worked example: 24 present, 4 holiday, 2 leave, 1 half", () => {
+    expect(payableDays(counts({ present: 24, holiday: 4, leave: 2, half_day: 1 })))
+      .toBe(28.5);
   });
-  it("is zero for a month with nothing recorded — a full month absent", () => {
+  it("is zero for a month with nothing recorded", () => {
     expect(payableDays(counts({}))).toBe(0);
   });
   it("keeps an odd number of half days exact, not floating-point noise", () => {
@@ -103,20 +102,23 @@ const summary = (
 ): AttendanceSummary => ({
   profileId: name, employeeName: name,
   present: 0, halfDay: 0, leave: 0, holiday: 0,
-  recorded: 0, payableDays: 0, ...p,
+  recorded: 0, payableDays: 0, unpaidDays: 0, ...p,
 });
 
 describe("totalsOf", () => {
   it("adds up every employee's tallies", () => {
     const t = totalsOf([
-      summary("A", { present: 20, leave: 2, recorded: 22, payableDays: 22 }),
-      summary("B", { present: 18, halfDay: 2, recorded: 20, payableDays: 19 }),
+      // A: 20 present + 2 leave → 20 payable, 2 unpaid.
+      summary("A", { present: 20, leave: 2, recorded: 22, payableDays: 20, unpaidDays: 2 }),
+      // B: 18 present + 2 half days → 19 payable, 1 unpaid.
+      summary("B", { present: 18, halfDay: 2, recorded: 20, payableDays: 19, unpaidDays: 1 }),
     ]);
     expect(t.present).toBe(38);
     expect(t.leave).toBe(2);
     expect(t.halfDay).toBe(2);
     expect(t.recorded).toBe(42);
-    expect(t.payableDays).toBe(41);
+    expect(t.payableDays).toBe(39);
+    expect(t.unpaidDays).toBe(3);
   });
   it("keeps fractional day totals exact across employees", () => {
     const t = totalsOf([
@@ -174,12 +176,13 @@ describe("CSV exports", () => {
   });
   it("writes a summary row per employee", () => {
     const csv = summaryCsv([
-      summary("Anjali", { present: 20, halfDay: 2, recorded: 22, payableDays: 21 }),
+      summary("Anjali", { present: 20, halfDay: 2, recorded: 22, payableDays: 21, unpaidDays: 1 }),
     ]);
     const [header, row] = csv.split("\r\n");
     expect(header).toContain("Payable days");
+    expect(header).toContain("Unpaid days");
     expect(header).not.toContain("Absent");
-    expect(row).toBe("Anjali,20,2,0,0,22,21");
+    expect(row).toBe("Anjali,20,2,0,0,22,21,1");
   });
   it("emits a header even with no data, so the file is never empty", () => {
     expect(attendanceCsv([]).split("\r\n")).toHaveLength(1);

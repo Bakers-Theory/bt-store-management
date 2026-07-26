@@ -1,8 +1,9 @@
 "use client";
 
 import { createClient } from "@/utils/supabase/client";
-import type { Attendance, AttendanceStatus, AttendanceSummary, Bakery, Batch, Bill, BillLine, BillStatus, Customer, Employee, Item, Log, PaymentMethod, StoreLists, User } from "./types";
+import type { Attendance, AttendanceStatus, AttendanceSummary, Bakery, Batch, Bill, BillLine, BillStatus, Customer, Employee, EmployeeSalary, Item, Log, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, StoreLists, User } from "./types";
 import { isAttendanceStatus } from "./attendance";
+import { isSalaryMode } from "./salary";
 import type { ProfileRow } from "./auth";
 import { PROFILE_COLUMNS, profileToUser } from "./auth";
 import type { DateRange } from "./date-range";
@@ -816,6 +817,7 @@ interface SummaryRow {
   holiday: number | string;
   recorded: number | string;
   payable_days: number | string;
+  unpaid_days: number | string;
 }
 
 /** Server-computed per-employee tallies. `bigint`/`numeric` arrive as strings. */
@@ -840,6 +842,7 @@ export async function fetchAttendanceSummary(
     holiday: Number(r.holiday),
     recorded: Number(r.recorded),
     payableDays: Number(r.payable_days),
+    unpaidDays: Number(r.unpaid_days),
   }));
 }
 
@@ -868,3 +871,173 @@ export async function rpcSetAttendance(
 
 export const rpcClearAttendance = (profileId: string, date: string) =>
   rpc<void>("clear_attendance", { p_profile: profileId, p_date: date });
+
+// ─── Salary & payroll ───────────────────────────────────────────────────────
+
+/** Everyone on the payroll with their monthly salary (Owner excluded by the RPC). */
+export async function fetchEmployeeSalaries(): Promise<EmployeeSalary[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("employee_salaries");
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as {
+    profile_id: string; employee_name: string;
+    monthly_salary: number | string; updated_at: string | null;
+  }[]).map((r) => ({
+    profileId: r.profile_id,
+    employeeName: r.employee_name,
+    monthlySalary: Number(r.monthly_salary),
+    updatedAt: r.updated_at,
+  }));
+}
+
+export const rpcSetEmployeeSalary = (profileId: string, amount: number) =>
+  rpc<void>("set_employee_salary", { p_profile: profileId, p_amount: amount });
+
+interface PayrollPreviewRow {
+  profile_id: string;
+  employee_name: string;
+  gross: number | string;
+  calendar_days: number | string;
+  recorded: number | string;
+  unpaid_days: number | string;
+  deduction: number | string;
+  computed_net: number | string;
+  payment_id: string | null;
+  status: string;
+  net: number | string | null;
+  paid_on: string | null;
+  payment_mode: string | null;
+}
+
+/**
+ * The month's payroll, recomputed from live attendance on every call. Numeric
+ * and bigint columns arrive as strings over the wire, hence the Number()s.
+ */
+export async function fetchPayroll(
+  year: number,
+  month: number,
+): Promise<PayrollRow[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("payroll_preview", {
+    p_year: year,
+    p_month: month,
+  });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as PayrollPreviewRow[]).map((r) => ({
+    profileId: r.profile_id,
+    employeeName: r.employee_name,
+    gross: Number(r.gross),
+    calendarDays: Number(r.calendar_days),
+    recorded: Number(r.recorded),
+    unpaidDays: Number(r.unpaid_days),
+    deduction: Number(r.deduction),
+    computedNet: Number(r.computed_net),
+    paymentId: r.payment_id,
+    status: r.status === "paid" ? "paid" : r.status === "unpaid" ? "unpaid" : "none",
+    net: r.net === null ? null : Number(r.net),
+    paidOn: r.paid_on,
+    paymentMode: isSalaryMode(r.payment_mode) ? r.payment_mode : "",
+  }));
+}
+
+interface SalaryPaymentRow {
+  id: string;
+  profile_id: string;
+  employee_name: string;
+  period_year: number | string;
+  period_month: number | string;
+  gross: number | string;
+  calendar_days: number | string;
+  unpaid_days: number | string;
+  deduction: number | string;
+  computed_net: number | string;
+  net: number | string;
+  override_reason: string | null;
+  status: string;
+  paid_on: string | null;
+  payment_mode: string | null;
+  recorded_by_name: string | null;
+  updated_at: string;
+}
+
+function mapSalaryPayment(r: SalaryPaymentRow): SalaryPayment {
+  return {
+    id: r.id,
+    profileId: r.profile_id,
+    employeeName: r.employee_name,
+    periodYear: Number(r.period_year),
+    periodMonth: Number(r.period_month),
+    gross: Number(r.gross),
+    calendarDays: Number(r.calendar_days),
+    unpaidDays: Number(r.unpaid_days),
+    deduction: Number(r.deduction),
+    computedNet: Number(r.computed_net),
+    net: Number(r.net),
+    overrideReason: r.override_reason ?? "",
+    status: r.status === "paid" ? "paid" : "unpaid",
+    paidOn: r.paid_on,
+    paymentMode: isSalaryMode(r.payment_mode) ? r.payment_mode : "",
+    recordedByName: r.recorded_by_name ?? "",
+    updatedAt: r.updated_at,
+  };
+}
+
+/** Payment history, newest period first. */
+export async function fetchSalaryPayments(
+  profileId: string | null = null,
+  limit = 300,
+): Promise<SalaryPayment[]> {
+  const supabase = createClient();
+  let q = supabase.from("salary_payment_v").select("*");
+  if (profileId) q = q.eq("profile_id", profileId);
+  const { data, error } = await q
+    .order("period_year", { ascending: false })
+    .order("period_month", { ascending: false })
+    .order("employee_name")
+    .limit(limit);
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as SalaryPaymentRow[]).map(mapSalaryPayment);
+}
+
+/** Create or adjust a period's payroll. `net` null takes the computed figure. */
+export async function rpcSaveSalaryPayment(
+  profileId: string,
+  year: number,
+  month: number,
+  net: number | null = null,
+  reason = "",
+): Promise<SalaryPayment> {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const row = await rpc<SalaryPaymentRow>("save_salary_payment", {
+    p_profile: profileId,
+    p_year: year,
+    p_month: month,
+    p_net: net,
+    p_reason: reason,
+    p_tz: tz,
+  });
+  return mapSalaryPayment(row);
+}
+
+export async function rpcMarkSalaryPaid(
+  id: string,
+  paidOn: string,
+  mode: SalaryMode,
+): Promise<SalaryPayment> {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const row = await rpc<SalaryPaymentRow>("mark_salary_paid", {
+    p_id: id,
+    p_paid_on: paidOn,
+    p_mode: mode,
+    p_tz: tz,
+  });
+  return mapSalaryPayment(row);
+}
+
+export async function rpcMarkSalaryUnpaid(id: string): Promise<SalaryPayment> {
+  const row = await rpc<SalaryPaymentRow>("mark_salary_unpaid", { p_id: id });
+  return mapSalaryPayment(row);
+}
+
+export const rpcDeleteSalaryPayment = (id: string) =>
+  rpc<void>("delete_salary_payment", { p_id: id });

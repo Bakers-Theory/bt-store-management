@@ -13,10 +13,13 @@
 -- application logic — a double-tap or a second device cannot create a duplicate.
 -- Writing an existing day is an *edit*, which is why the RPC upserts.
 --
--- There is deliberately NO 'absent' status: an unmarked day *is* the absence.
--- That keeps the daily flow to marking exceptions only, and means clearing a
--- record and marking someone absent are the same operation. Payroll therefore
--- pays for recorded days only — see `payable_days` below.
+-- There is deliberately NO 'absent' status: every day is Present, Half Day,
+-- Leave or Holiday. Leave is unpaid, so time off is recorded as leave rather
+-- than as an absence.
+--
+-- An UNRECORDED day is therefore not an absence — it is data not yet entered,
+-- and it must never cost anyone money. Payroll deducts from `unpaid_days`
+-- (leave + half days) and warns about gaps instead of charging for them.
 --
 -- Two new permission keys, both grantable: `attendance.view` and
 -- `attendance.edit`. Salary keys arrive with Phase 2 (migration 0030).
@@ -179,9 +182,55 @@ begin
 end $$;
 grant execute on function public.clear_attendance(uuid, date) to authenticated;
 
--- ─── Summary: per-employee status counts over a range ───────────────────────
--- Server-side aggregation so the history screen and (in Phase 2) payroll read
--- the same figures, rather than each re-deriving them client-side.
+-- ─── The weight table, in one place ─────────────────────────────────────────
+-- Present and Holiday pay whole, Half Day pays half, Leave pays nothing.
+-- Deliberately NOT permission-gated and revoked from public: payroll (0030)
+-- must read these tallies even when the caller lacks `attendance.view`, and
+-- both this and `attendance_summary` need the identical weights — a second copy
+-- of the CASE expression is how payroll and attendance drift apart.
+create or replace function public.attendance_tally(p_from date, p_to date)
+returns table (
+  profile_id   uuid,
+  present      bigint,
+  half_day     bigint,
+  leave_days   bigint,
+  holiday      bigint,
+  recorded     bigint,
+  payable_days numeric,
+  unpaid_days  numeric
+)
+language sql stable security definer set search_path = public as $$
+  select
+    a.profile_id,
+    count(*) filter (where a.status = 'present')  as present,
+    count(*) filter (where a.status = 'half_day') as half_day,
+    count(*) filter (where a.status = 'leave')    as leave_days,
+    count(*) filter (where a.status = 'holiday')  as holiday,
+    count(*)                                      as recorded,
+    -- Days that earn pay.
+    coalesce(sum(case a.status
+      when 'present'  then 1
+      when 'holiday'  then 1
+      when 'half_day' then 0.5
+      else 0                              -- leave earns nothing
+    end), 0) as payable_days,
+    -- Days deducted from a fixed monthly salary. Unrecorded days are absent from
+    -- this sum entirely: a gap in data entry is not a deduction.
+    coalesce(sum(case a.status
+      when 'leave'    then 1
+      when 'half_day' then 0.5
+      else 0
+    end), 0) as unpaid_days
+  from public.attendance a
+  where (p_from is null or a.on_date >= p_from)
+    and (p_to   is null or a.on_date <= p_to)
+  group by a.profile_id
+$$;
+revoke execute on function public.attendance_tally(date, date) from public;
+
+-- ─── Summary: per-employee counts over a range ───────────────────────────────
+-- Permission-gated wrapper around attendance_tally, resolving names and keeping
+-- employees with no records in the result (so the roster stays complete).
 -- Return type changes across versions, so drop first: Postgres refuses to
 -- CREATE OR REPLACE a function with a different signature.
 drop function if exists public.attendance_summary(date, date, uuid);
@@ -198,38 +247,25 @@ returns table (
   leave_days    bigint,
   holiday       bigint,
   recorded      bigint,
-  -- Present + Holiday + Leave count whole, Half Day counts a half. Days with no
-  -- record count nothing at all — that is how an absence is expressed.
-  -- Phase 2 multiplies this by the per-day rate.
-  payable_days  numeric
+  payable_days  numeric,
+  unpaid_days   numeric
 )
 language sql stable security definer set search_path = public as $$
   select
     p.id,
     p.name,
-    count(*) filter (where a.status = 'present')  as present,
-    count(*) filter (where a.status = 'half_day') as half_day,
-    count(*) filter (where a.status = 'leave')    as leave_days,
-    count(*) filter (where a.status = 'holiday')  as holiday,
-    count(a.id)                                   as recorded,
-    coalesce(sum(
-      case a.status
-        when 'present'  then 1
-        when 'holiday'  then 1
-        when 'leave'    then 1
-        when 'half_day' then 0.5
-        else 0
-      end
-    ), 0) as payable_days
+    coalesce(t.present, 0)::bigint,
+    coalesce(t.half_day, 0)::bigint,
+    coalesce(t.leave_days, 0)::bigint,
+    coalesce(t.holiday, 0)::bigint,
+    coalesce(t.recorded, 0)::bigint,
+    coalesce(t.payable_days, 0)::numeric,
+    coalesce(t.unpaid_days, 0)::numeric
   from public.profiles p
-  left join public.attendance a
-    on a.profile_id = p.id
-   and (p_from is null or a.on_date >= p_from)
-   and (p_to   is null or a.on_date <= p_to)
+  left join public.attendance_tally(p_from, p_to) t on t.profile_id = p.id
   where public.has_perm('attendance.view')
     and p.role <> 'Owner'
     and (p_profile is null or p.id = p_profile)
-  group by p.id, p.name
   order by p.name
 $$;
 grant execute on function public.attendance_summary(date, date, uuid) to authenticated;

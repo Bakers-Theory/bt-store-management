@@ -11,15 +11,21 @@ export const ATTENDANCE_STATUSES: AttendanceStatus[] = [
 export interface StatusMeta {
   label: string;
   short: string;
-  /** Fraction of a day this status pays. Phase 2 multiplies by the day rate. */
+  /** Fraction of a day this status pays. */
   weight: number;
+  /**
+   * Fraction of a day deducted from a fixed monthly salary. Not simply
+   * `1 - weight`: an unrecorded day has no status at all and deducts nothing,
+   * which is the whole reason these are tracked separately.
+   */
+  unpaidWeight: number;
 }
 
 export const STATUS_META: Record<AttendanceStatus, StatusMeta> = {
-  present:  { label: "Present",  short: "P", weight: 1 },
-  half_day: { label: "Half Day", short: "½", weight: 0.5 },
-  leave:    { label: "Leave",    short: "L", weight: 1 },
-  holiday:  { label: "Holiday",  short: "H", weight: 1 },
+  present:  { label: "Present",  short: "P", weight: 1,   unpaidWeight: 0 },
+  half_day: { label: "Half Day", short: "½", weight: 0.5, unpaidWeight: 0.5 },
+  leave:    { label: "Leave",    short: "L", weight: 0,   unpaidWeight: 1 },
+  holiday:  { label: "Holiday",  short: "H", weight: 1,   unpaidWeight: 0 },
 };
 
 export const statusLabel = (s: AttendanceStatus): string => STATUS_META[s].label;
@@ -32,11 +38,9 @@ export const isAttendanceStatus = (value: unknown): value is AttendanceStatus =>
 /**
  * Days an employee is paid for, given their status tallies.
  *
- * Deliberately mirrors `attendance_summary`'s `payable_days` in SQL: Present,
- * Holiday and Leave count whole, Half Day counts a half. A day with no record
- * contributes nothing — that is how an absence is expressed, so absences never
- * appear in `counts` at all. Kept as a pure function so payroll and the UI can
- * agree without a round-trip — the SQL copy stays the one payroll bills against.
+ * Mirrors `payable_days` in `attendance_tally`: Present and Holiday count whole,
+ * Half Day counts a half, Leave counts nothing. Kept pure so the UI can show the
+ * figure without a round-trip — the SQL copy is the one payroll bills against.
  */
 export function payableDays(counts: Record<AttendanceStatus, number>): number {
   const total = ATTENDANCE_STATUSES.reduce(
@@ -68,9 +72,24 @@ export function totalsOf(rows: AttendanceSummary[]) {
       holiday: acc.holiday + r.holiday,
       recorded: acc.recorded + r.recorded,
       payableDays: Math.round((acc.payableDays + r.payableDays) * 10) / 10,
+      unpaidDays: Math.round((acc.unpaidDays + r.unpaidDays) * 10) / 10,
     }),
-    { present: 0, halfDay: 0, leave: 0, holiday: 0, recorded: 0, payableDays: 0 },
+    { present: 0, halfDay: 0, leave: 0, holiday: 0, recorded: 0, payableDays: 0, unpaidDays: 0 },
   );
+}
+
+/**
+ * Days deducted from a fixed monthly salary — mirrors `unpaid_days` in
+ * `attendance_tally`. Leave costs a whole day, Half Day costs a half, and a day
+ * with no record costs nothing at all (it isn't in `counts`). This is the figure
+ * payroll multiplies by the per-day rate.
+ */
+export function unpaidDays(counts: Record<AttendanceStatus, number>): number {
+  const total = ATTENDANCE_STATUSES.reduce(
+    (sum, s) => sum + counts[s] * STATUS_META[s].unpaidWeight,
+    0,
+  );
+  return Math.round(total * 10) / 10;
 }
 
 /**
@@ -114,7 +133,7 @@ export function attendanceCsv(records: Attendance[]): string {
 /** Summary export: one row per employee. */
 export function summaryCsv(rows: AttendanceSummary[]): string {
   return toCsv([
-    ["Employee", "Present", "Half Day", "Leave", "Holiday", "Days recorded", "Payable days"],
+    ["Employee", "Present", "Half Day", "Leave", "Holiday", "Days recorded", "Payable days", "Unpaid days"],
     ...rows.map((r) => [
       r.employeeName,
       r.present,
@@ -123,6 +142,7 @@ export function summaryCsv(rows: AttendanceSummary[]): string {
       r.holiday,
       r.recorded,
       r.payableDays,
+      r.unpaidDays,
     ]),
   ]);
 }
