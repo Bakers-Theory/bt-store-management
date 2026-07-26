@@ -67,12 +67,19 @@ describe("presets", () => {
     expect(new Set(ROLE_PRESETS.Admin)).toEqual(new Set(ALL_PERMISSIONS));
   });
 
-  it("Cashier is till-only: no cost, no profit, no discount, no stock page", () => {
+  it("Cashier runs the counter end to end: bill, discount, cancel", () => {
     const c = preset("Cashier");
     expect(hasPermission(c, "bill.create")).toBe(true);
-    expect(hasPermission(c, "bill.discount")).toBe(false);
+    expect(hasPermission(c, "bill.discount")).toBe(true);
+    expect(hasPermission(c, "bill.cancel")).toBe(true);
+  });
+
+  it("Cashier still sees no cost, no profit, no stock page, and cannot delete", () => {
+    const c = preset("Cashier");
+    expect(hasPermission(c, "bill.delete")).toBe(false);
     expect(hasPermission(c, "items.cost")).toBe(false);
     expect(hasPermission(c, "dashboard.profit")).toBe(false);
+    expect(hasPermission(c, "dashboard.view")).toBe(false);
     expect(hasPermission(c, "stock.view")).toBe(false);
   });
 
@@ -85,12 +92,35 @@ describe("presets", () => {
     expect(hasPermission(s, "customers.view")).toBe(false);
   });
 
-  it("Manager runs the floor but cannot reconfigure the store or touch staff", () => {
+  it("Manager owns the stockroom, customers, reports and store ops", () => {
     const m = preset("Manager");
-    expect(hasPermission(m, "dashboard.profit")).toBe(true);
+    expect(hasPermission(m, "stock.in")).toBe(true);
+    expect(hasPermission(m, "items.cost")).toBe(true);
+    expect(hasPermission(m, "customers.edit")).toBe(true);
+    expect(hasPermission(m, "reports.view")).toBe(true);
     expect(hasPermission(m, "store.status")).toBe(true);
+    expect(hasPermission(m, "store.lists")).toBe(true);
+  });
+
+  it("Manager has no dashboard and no till, and cannot reconfigure or staff", () => {
+    const m = preset("Manager");
+    expect(hasPermission(m, "dashboard.view")).toBe(false);
+    expect(hasPermission(m, "dashboard.profit")).toBe(false);
+    expect(hasPermission(m, "bill.create")).toBe(false);
+    expect(hasPermission(m, "bill.discount")).toBe(false);
+    expect(hasPermission(m, "bill.cancel")).toBe(false);
+    expect(hasPermission(m, "bill.history")).toBe(false);
     expect(hasPermission(m, "store.settings")).toBe(false);
     expect(hasPermission(m, "staff.manage")).toBe(false);
+  });
+
+  it("Cashier and Manager are disjoint apart from customers and the log", () => {
+    const shared = ROLE_PRESETS.Cashier.filter((k) =>
+      ROLE_PRESETS.Manager.includes(k),
+    );
+    expect(shared.sort()).toEqual([
+      "activity.view", "customers.edit", "customers.view",
+    ]);
   });
 
   it("no preset below Admin can delete bills or items", () => {
@@ -137,6 +167,11 @@ describe("navItems", () => {
       "stock", "history",
     ]);
   });
+  it("gives the Manager stock, customers and history — no dashboard, no bill", () => {
+    expect(navItems(preset("Manager")).map((n) => n.key)).toEqual([
+      "stock", "customers", "history",
+    ]);
+  });
   it("history appears for bill readers and for activity readers alike", () => {
     expect(navItems(staff(["bill.history"])).map((n) => n.key)).toEqual(["history"]);
     expect(navItems(staff(["activity.view"])).map((n) => n.key)).toEqual(["history"]);
@@ -170,7 +205,7 @@ describe("defaultRoute", () => {
   it("lands each preset on a section it can actually open", () => {
     const routes: Record<PresetRole, string> = {
       Admin: "/dashboard",
-      Manager: "/dashboard",
+      Manager: "/stock",
       Cashier: "/bill",
       Storekeeper: "/stock",
     };

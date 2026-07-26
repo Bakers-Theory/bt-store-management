@@ -113,20 +113,17 @@ export const isPermissionKey = (value: unknown): value is PermissionKey =>
  * Starting points, not authorities. Picking a preset copies its set into the
  * user's permissions; the set is then editable and the role becomes `Custom`.
  *
- * Deliberate exclusions: Cashier has no `bill.discount` (the usual shrinkage
- * vector) and no Stock page. Neither Manager nor Storekeeper gets `*.delete` —
- * cancelling and writing off leave an audit trail, deleting does not.
+ * The two staff roles are disjoint by design: Cashier owns the counter (bill,
+ * discount, cancel — but no stock, cost or dashboard), Manager owns the
+ * stockroom, customers, reports and store operations (but never the till or the
+ * dashboard). Storekeeper is Manager narrowed to stock alone.
+ *
+ * No preset below Admin gets `*.delete` — cancelling and writing off leave an
+ * audit trail, deleting does not.
  */
 export const ROLE_PRESETS: Record<PresetRole, PermissionKey[]> = {
   Admin: ALL_PERMISSIONS,
   Manager: [
-    "dashboard.view",
-    "dashboard.profit",
-    "bill.create",
-    "bill.discount",
-    "bill.print",
-    "bill.cancel",
-    "bill.history",
     "stock.view",
     "stock.in",
     "stock.out",
@@ -144,7 +141,9 @@ export const ROLE_PRESETS: Record<PresetRole, PermissionKey[]> = {
   ],
   Cashier: [
     "bill.create",
+    "bill.discount",
     "bill.print",
+    "bill.cancel",
     "bill.history",
     "customers.view",
     "customers.edit",
