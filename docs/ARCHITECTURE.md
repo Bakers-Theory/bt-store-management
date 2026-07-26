@@ -80,7 +80,7 @@ flowchart TD
   subgraph Edge["Next.js server"]
     MW["middleware.ts<br/>session refresh + route guard"]
     RSC["Server components<br/>(app/page.tsx, layouts)"]
-    API["/api/staff route<br/>(Owner-only, service role)"]
+    API["/api/staff route<br/>(staff.manage, service role)"]
   end
 
   subgraph Supabase
@@ -120,7 +120,7 @@ src/
     (app)/                      # authenticated route group
       layout.tsx                # guards session, renders chrome (Sidebar/Topbar/BottomNav)
       dashboard/  stock/  bill/  history/  customers/  settings/  reports/
-    api/staff/route.ts          # Owner-only staff CRUD (service-role, server-only)
+    api/staff/route.ts          # staff CRUD, staff.manage-gated (service-role, server-only)
 
   utils/supabase/               # the four @supabase/ssr clients
     client.ts                   # browser
@@ -294,19 +294,28 @@ Client code never runs `INSERT`/`UPDATE`/`DELETE`. Instead it calls a Postgres
 function declared `SECURITY DEFINER` (runs as the function owner, bypassing the
 caller's RLS) that:
 
-1. Re-checks permission first: `if not public.has_perm('inventory') then raise
-   exception 'forbidden'; end if;` (or `is_owner()` for owner-only ops).
+1. Re-checks its own specific permission first: `if not
+   public.has_perm('stock.in') then raise exception 'forbidden'; end if;` (or
+   `is_owner()` for the two ungrantable ops).
 2. Performs the change **atomically** (multi-step operations like `generate_bill`
    — compute totals, insert bill + lines, decrement stock FIFO, write the
    activity log — happen in one transaction, with `for update` row locks where
    concurrent stock matters).
 3. Returns the affected row (for cache patching) or `void`.
 
-Examples: `create_item`, `update_item`, `delete_item`, `stock_in`, `stock_out`,
-`write_off_batch`, `update_batch_expiry`, `generate_bill`, `cancel_bill`,
-`delete_bill`, `save_settings`, `set_store_status`, `update_logo`,
-`clear_all_data`, `add_list_value`, `delete_list_value`, `set_item_image`,
-`update_customer`. Each is `grant execute … to authenticated`.
+Each RPC checks one key: `create_item` → `items.create`, `update_item` /
+`set_item_image` → `items.edit`, `delete_item` → `items.delete`, `stock_in` →
+`stock.in`, `stock_out` → `stock.out`, `write_off_batch` /
+`update_batch_expiry` → `stock.expiry`, `generate_bill` → `bill.create` (plus
+`bill.discount` when the payload carries one), `cancel_bill` → `bill.cancel`,
+`delete_bill` → `bill.delete`, `update_customer` → `customers.edit`,
+`save_settings` / `update_logo` → `store.settings`, `set_store_status` →
+`store.status`, `add_list_value` / `delete_list_value` → `store.lists`.
+`clear_all_data` stays `is_owner()`. Each is `grant execute … to authenticated`.
+
+`update_item` writes `cost_price` **only** for `items.cost` holders — otherwise it
+preserves the stored value, since `items_v` hands those callers `null` and a blind
+write would zero the purchase price.
 
 ### RLS + permission helpers
 
@@ -327,6 +336,44 @@ readable by any authed user, writable with `store.settings`; profiles readable b
 self-or-`staff.manage`, writable with `staff.manage` and never for the Owner's
 row. Writes on the data tables have **no** client policy — they're unreachable
 except through the definer RPCs.
+
+### Roles are presets, not stored authority
+
+`profiles.role` is only ever `Owner` or `Staff`. **Admin, Manager, Cashier and
+Storekeeper are presets** (`ROLE_PRESETS` in `lib/permissions.ts`): choosing one
+stamps its key set into the user's `perms`, which is the only thing enforced. The
+badge a staff member displays is computed back from their set by
+`presetForPerms()`, so a stored label can never contradict the actual grants — a
+set matching no preset simply reads as `Custom`, and an empty one as `No access`.
+
+Current shape (see `ROLE_PRESETS` for the authoritative lists):
+
+| Area | Admin | Manager | Cashier | Storekeeper |
+|---|:-:|:-:|:-:|:-:|
+| Dashboard (incl. profit) | ✓ | – | – | – |
+| Billing | ✓ | – | ✓ | – |
+| Stock & items | ✓ | ✓ | – | ✓ |
+| Customers | ✓ | ✓ | ✓ | – |
+| Reports | ✓ | ✓ | – | – |
+| Store profile | ✓ | – | – | – |
+| Open/close + lists | ✓ | ✓ | – | – |
+| Activity log | ✓ | ✓ | – | – |
+| Manage staff | – | – | – | – |
+
+Deliberate choices worth preserving:
+
+- **No preset grants `*.delete`** (bills or items) except Admin, and none grants
+  `staff.manage` at all. Cancelling a bill and writing off a batch leave an audit
+  trail; deleting leaves nothing. `staff.manage` remains in the catalogue so the
+  Owner can delegate the roster to one individual by hand.
+- **Cashier and Manager are disjoint** apart from `customers.*` — the counter and
+  the back of house are separate jobs. A test pins that intersection so future
+  edits can't quietly blur them.
+- **Two capabilities have no key at all** and are unreachable by anyone but the
+  Owner: `clear_all_data()` and `activity_log_admin_v` (staff / password /
+  settings events).
+- **Editing a preset does not retro-apply.** Presets are TypeScript; existing
+  staff keep the set they were given and must be re-assigned in Settings.
 
 ### Cost-price privacy
 

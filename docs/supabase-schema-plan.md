@@ -18,8 +18,8 @@ Five decisions were locked in at migration time and still hold:
 
 1. **Auth via Supabase Auth, keyed by a login handle.** Each numeric `userId`
    maps to a synthetic email `<userId>@bt.local`. Supabase stores the password
-   and issues real JWT sessions; `profiles` extends `auth.users` with role +
-   permissions.
+   and issues real JWT sessions; `profiles` extends `auth.users` with a
+   two-value role (`Owner`/`Staff`) plus a `perms text[]` of granular keys.
 2. **Single store (not multi-tenant).** One `store_settings` row (`id = 1`);
    items, bills, customers, and users are global.
 3. **DB-enforced access control.** Row-Level Security (RLS) on every table is the
@@ -29,7 +29,8 @@ Five decisions were locked in at migration time and still hold:
    `SECURITY DEFINER` RPC that re-checks permission server-side and runs
    atomically. Data tables have **no** client write policy.
 5. **`cost_price` is private.** Column-level `SELECT` is revoked from the client
-   role; cost is reachable only through analytics-gated definer functions.
+   role; cost is reachable only through definer functions gated on `items.cost`
+   / `dashboard.profit` / `reports.export`.
 
 **Extensions:** `pgcrypto` (for `gen_random_uuid()`).
 

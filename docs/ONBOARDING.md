@@ -95,8 +95,11 @@ pnpm dev          # http://localhost:3000
 
 Log in with the **User ID handle** you seeded (e.g. `7873557430`) and its
 password. Behind the scenes that handle maps to a Supabase Auth email
-`<handle>@bt.local` — see `lib/auth.ts`. The Owner can then create staff (with
-per-area permissions) under **Settings → Staff & data → Manage Users**.
+`<handle>@bt.local` — see `lib/auth.ts`. The Owner can then create staff under
+**Settings → Staff & data**: pick a role preset (Admin / Manager / Cashier /
+Storekeeper) to fill the permission grid, then tick or untick individual
+permissions. The grid is the whole authority — the role name shown on a staff
+card is *derived* from their permission set, never stored.
 
 ### 3.6 The other scripts
 
@@ -117,14 +120,15 @@ before opening a PR.
 Application code is under `src/`. Start with these, in this order:
 
 1. **`src/lib/types.ts`** — the domain vocabulary (`Item`, `Bill`, `Customer`,
-   `User`, `Permissions`, …). Read this first; every other file speaks in these
+   `User`, `PermissionKey`, …). Read this first; every other file speaks in these
    types.
 2. **`src/lib/store.ts`** — the data store and **all write actions**. This is the
    spine of the client.
 3. **`src/lib/supabase-data.ts`** — every read (fetchers + mappers) and every RPC
    wrapper. The only place that talks to Supabase.
-4. **`src/lib/permissions.ts`** — who can see/do what, on the client (nav + route
-   guards). Its server-side twin is `is_owner()` / `has_perm()` in the SQL.
+4. **`src/lib/permissions.ts`** — the permission catalogue, the role presets, and
+   who can see/do what on the client (nav + route guards). Its server-side twin is
+   `is_owner()` / `has_perm()` in the SQL.
 5. **`src/app/(app)/layout.tsx`** + **`src/components/system/AuthProvider.tsx`** —
    how auth resolves and the app boots.
 6. **`src/components/feature/<section>/`** — one folder per screen (dashboard,
@@ -179,14 +183,29 @@ Everything that writes needs all three layers. Example — imagine adding
 
 ### 5.3 Change permissions or navigation
 
-- **UI behavior** (which nav items show, which routes are reachable, the landing
-  route): edit `lib/permissions.ts` (`navItems`, `canAccessSection`,
-  `defaultRoute`) — and update its test.
-- **Actual enforcement**: the SQL RLS policies and the `has_perm()` checks inside
-  the RPCs. **Changing `permissions.ts` alone changes nothing about security** —
-  it only decides what to render. Always change both sides together and keep them
-  consistent. See
-  [ARCHITECTURE §2](./ARCHITECTURE.md#2-the-one-idea-that-explains-everything).
+Authorization is a catalogue of granular keys (`PermissionKey` in `lib/types.ts`)
+stored per user in `profiles.perms`. Three kinds of change, three places:
+
+- **Add a permission**: add the key to `PermissionKey`, add its label + hint to
+  `PERMISSION_CATALOG` (which makes it appear in the Settings grid), then add the
+  matching `has_perm('your.key')` check in a migration. Both halves, always.
+- **Change a role preset**: edit `ROLE_PRESETS` in `lib/permissions.ts` — and
+  update its test. Presets are plain TypeScript, so **editing one does not
+  retro-apply to existing staff**; they keep the set they were given and must be
+  re-assigned in Settings. Presets are also *not* stored: a staff card's role
+  badge is computed by `presetForPerms()`, so a set matching no preset simply
+  reads as `Custom`.
+- **Change UI behavior** (which nav items show, which routes are reachable, the
+  landing route): edit `navItems` / `canAccessSection` / `defaultRoute`.
+
+**Actual enforcement** is the SQL RLS policies and the `has_perm()` checks inside
+the RPCs. **Changing `permissions.ts` alone changes nothing about security** — it
+only decides what to render. See
+[ARCHITECTURE §2](./ARCHITECTURE.md#2-the-one-idea-that-explains-everything).
+
+Two capabilities are deliberately **not** in the catalogue and can never be
+granted: clearing all data, and the admin audit trail (staff / password /
+settings events). Both stay behind `is_owner()`.
 
 ### 5.4 Change money math
 
@@ -264,7 +283,9 @@ So: **cutting a release is what promotes to production.** Details in
 | **RLS** | Row-Level Security — Postgres policies deciding which rows a role can read. |
 | **`*_v` view** | The read surface the client selects from (`items_v`, `bills_v`, …) — joins/derives fields and scopes rows. |
 | **Base data** | Settings + items + option lists — the bounded, cached-in-`localStorage` client state. |
-| **Owner / Staff** | The two roles. Exactly one Owner; Staff have per-area (sales/inventory/analytics) permissions. |
+| **Owner / Staff** | The two *stored* roles. Exactly one Owner, who implicitly holds every permission; everyone else is `Staff` with an explicit `perms` array. |
+| **Permission key** | One granular grant, e.g. `stock.in`, `bill.discount`, `items.cost`. The catalogue lives in `lib/permissions.ts`; `profiles.perms` holds what each user has. |
+| **Preset** | A named starting set (Admin / Manager / Cashier / Storekeeper) stamped into the permission grid. Not stored — a role badge is derived from the set with `presetForPerms()`. |
 | **User ID handle** | The numeric login (e.g. `7873557430`), mapped to `<handle>@bt.local` for Supabase Auth. |
 | **System host** | A render-null component mounted once in the root layout (`AuthProvider`, `ToastHost`, `PrintHost`, …). |
 | **Batch** | A per-item stock lot with an expiry date; bills consume FIFO and skip expired lots. |

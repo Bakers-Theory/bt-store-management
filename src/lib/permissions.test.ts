@@ -63,8 +63,20 @@ describe("catalogue", () => {
 });
 
 describe("presets", () => {
-  it("Admin holds everything grantable", () => {
-    expect(new Set(ROLE_PRESETS.Admin)).toEqual(new Set(ALL_PERMISSIONS));
+  it("Admin holds everything grantable except staff management", () => {
+    expect(new Set(ROLE_PRESETS.Admin)).toEqual(
+      new Set(ALL_PERMISSIONS.filter((k) => k !== "staff.manage")),
+    );
+    expect(hasPermission(preset("Admin"), "staff.manage")).toBe(false);
+  });
+
+  it("no preset grants staff.manage — it stays with the Owner by default", () => {
+    for (const role of PRESET_ROLES) {
+      expect(ROLE_PRESETS[role].includes("staff.manage"), role).toBe(false);
+    }
+    // Still grantable by hand, so it must remain in the catalogue.
+    expect(ALL_PERMISSIONS.includes("staff.manage")).toBe(true);
+    expect(isPermissionKey("staff.manage")).toBe(true);
   });
 
   it("Cashier runs the counter end to end: bill, discount, cancel", () => {
@@ -114,13 +126,19 @@ describe("presets", () => {
     expect(hasPermission(m, "staff.manage")).toBe(false);
   });
 
-  it("Cashier and Manager are disjoint apart from customers and the log", () => {
+  it("Cashier and Manager overlap only on customers", () => {
     const shared = ROLE_PRESETS.Cashier.filter((k) =>
       ROLE_PRESETS.Manager.includes(k),
     );
-    expect(shared.sort()).toEqual([
-      "activity.view", "customers.edit", "customers.view",
-    ]);
+    expect(shared.sort()).toEqual(["customers.edit", "customers.view"]);
+  });
+
+  it("the activity log is supervisory: Admin and Manager only", () => {
+    expect(hasPermission(preset("Admin"), "activity.view")).toBe(true);
+    expect(hasPermission(owner, "activity.view")).toBe(true);
+    expect(hasPermission(preset("Manager"), "activity.view")).toBe(true);
+    expect(hasPermission(preset("Cashier"), "activity.view")).toBe(false);
+    expect(hasPermission(preset("Storekeeper"), "activity.view")).toBe(false);
   });
 
   it("no preset below Admin can delete bills or items", () => {
@@ -162,10 +180,8 @@ describe("navItems", () => {
       "bill", "customers", "history",
     ]);
   });
-  it("gives the Storekeeper stock and history only", () => {
-    expect(navItems(preset("Storekeeper")).map((n) => n.key)).toEqual([
-      "stock", "history",
-    ]);
+  it("gives the Storekeeper stock alone — no log means no history", () => {
+    expect(navItems(preset("Storekeeper")).map((n) => n.key)).toEqual(["stock"]);
   });
   it("gives the Manager stock, customers and history — no dashboard, no bill", () => {
     expect(navItems(preset("Manager")).map((n) => n.key)).toEqual([
@@ -195,6 +211,10 @@ describe("canAccessSection", () => {
     expect(canAccessSection(preset("Cashier"), "stock")).toBe(false);
     expect(canAccessSection(preset("Storekeeper"), "bill")).toBe(false);
     expect(canAccessSection(preset("Storekeeper"), "customers")).toBe(false);
+    expect(canAccessSection(preset("Storekeeper"), "history")).toBe(false);
+  });
+  it("a Cashier still reaches History via bill.history, without the log", () => {
+    expect(canAccessSection(preset("Cashier"), "history")).toBe(true);
   });
   it("unknown sections are denied", () => {
     expect(canAccessSection(owner, "payroll")).toBe(false);

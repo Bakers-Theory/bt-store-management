@@ -118,11 +118,19 @@ export const isPermissionKey = (value: unknown): value is PermissionKey =>
  * stockroom, customers, reports and store operations (but never the till or the
  * dashboard). Storekeeper is Manager narrowed to stock alone.
  *
+ * The activity log is a supervisory view, so only Admin and Manager get
+ * `activity.view`. A Cashier still reaches History for their own bills via
+ * `bill.history`; a Storekeeper has no History at all.
+ *
  * No preset below Admin gets `*.delete` — cancelling and writing off leave an
  * audit trail, deleting does not.
+ *
+ * `staff.manage` is in no preset at all: staff management stays with the Owner
+ * by default. It remains in the catalogue, so it can still be ticked by hand for
+ * one trusted person without handing over the whole Admin set.
  */
 export const ROLE_PRESETS: Record<PresetRole, PermissionKey[]> = {
-  Admin: ALL_PERMISSIONS,
+  Admin: ALL_PERMISSIONS.filter((k) => k !== "staff.manage"),
   Manager: [
     "stock.view",
     "stock.in",
@@ -147,7 +155,6 @@ export const ROLE_PRESETS: Record<PresetRole, PermissionKey[]> = {
     "bill.history",
     "customers.view",
     "customers.edit",
-    "activity.view",
   ],
   Storekeeper: [
     "stock.view",
@@ -157,7 +164,6 @@ export const ROLE_PRESETS: Record<PresetRole, PermissionKey[]> = {
     "items.create",
     "items.edit",
     "items.cost",
-    "activity.view",
   ],
 };
 
