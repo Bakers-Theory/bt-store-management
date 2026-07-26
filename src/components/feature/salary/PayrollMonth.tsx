@@ -8,6 +8,7 @@ import {
   FileSpreadsheet,
   Loader2,
   Printer,
+  Receipt as ReceiptIcon,
   RotateCcw,
   Trash2,
 } from "lucide-react";
@@ -40,6 +41,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { localDay } from "@/components/feature/attendance/AttendanceDay";
 import { download } from "./download";
 import { payrollReport } from "@/lib/report";
+import { payslipFromPayroll } from "@/lib/payslip";
 import type { PayrollRow, SalaryMode } from "@/lib/types";
 
 const selectCls =
@@ -463,6 +465,16 @@ export function PayrollMonth({
                         <Trash2 size={13} />
                       </button>
                     </>
+                  )}
+                  {r.status !== "none" && (
+                    <button
+                      type="button"
+                      onClick={() => requestReport(payslipFromPayroll(bakery, r, year, month))}
+                      disabled={isBusy}
+                      className="inline-flex items-center gap-1 rounded-lg border border-line bg-warm-white px-2.5 py-1.5 text-[12px] font-bold text-ink-muted disabled:opacity-60"
+                    >
+                      <ReceiptIcon size={13} /> Payslip
+                    </button>
                   )}
                   {r.status === "unpaid" && canPay && (
                     <button

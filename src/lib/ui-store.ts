@@ -3,6 +3,10 @@
 import { create } from "zustand";
 import type { Bill } from "./types";
 import type { PrintReport } from "./report";
+import type { Payslip } from "./payslip";
+
+/** Either printable A4 document. */
+export type PrintDoc = PrintReport | Payslip;
 
 interface OwnerAuthRequest {
   label: string;
@@ -28,9 +32,9 @@ interface UIState {
   printTarget: Bill | null;
   requestPrint: (bill: Bill) => void;
   clearPrint: () => void;
-  /** A built report awaiting the print dialog (ReportPrintHost). */
-  reportTarget: (PrintReport & { generatedAt: string }) | null;
-  requestReport: (report: PrintReport) => void;
+  /** A built report or payslip awaiting the print dialog (ReportPrintHost). */
+  reportTarget: (PrintDoc & { generatedAt: string }) | null;
+  requestReport: (report: PrintDoc) => void;
   clearReport: () => void;
 }
 

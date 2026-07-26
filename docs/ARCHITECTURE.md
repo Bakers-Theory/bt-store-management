@@ -142,6 +142,8 @@ src/
     excel.ts                    # multi-sheet report assembly
     attendance.ts               # status weights, payable/unpaid-day math, CSV
     salary.ts                   # payroll arithmetic, period helpers, report rows
+    report.ts                   # printable report documents (pure builders)
+    payslip.ts                  # payslip document + amount-in-words
     expiry.ts  date-range.ts  format.ts  image.ts   # small pure helpers
     *.test.ts                   # Vitest suites (logic layer only)
 
@@ -150,6 +152,7 @@ src/
       AuthProvider.tsx          # auth context (session + profile)
       StoreHydrator.tsx         # kicks off store.load() once authed
       ToastHost / OwnerAuthHost / PrintHost / ServiceWorkerRegistrar / ...
+      ReportPrintHost.tsx       # prints A4 reports & payslips (vs PrintHost's 80mm receipt)
     layout/                     # Sidebar, Topbar, BottomNav
     feature/                    # one folder per section — the "use client" boundary
       dashboard/ stock/ bill/ history/ customers/ settings/

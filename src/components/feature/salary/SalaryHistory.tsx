@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Download, Loader2, Printer } from "lucide-react";
+import { Download, Printer, Receipt as ReceiptIcon } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { toCsv } from "@/lib/attendance";
@@ -10,6 +10,7 @@ import { fetchEmployees, fetchSalaryPayments } from "@/lib/supabase-data";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { download } from "./download";
 import { salaryHistoryReport } from "@/lib/report";
+import { payslipFromPayment } from "@/lib/payslip";
 import type { Employee, SalaryPayment } from "@/lib/types";
 
 const selectCls =
@@ -210,6 +211,15 @@ export function SalaryHistory() {
               >
                 {r.status === "paid" ? "Paid" : "Unpaid"}
               </span>
+              <button
+                type="button"
+                onClick={() => requestReport(payslipFromPayment(bakery, r))}
+                aria-label={`Payslip for ${r.employeeName}, ${periodLabel(r.periodYear, r.periodMonth)}`}
+                title="Payslip"
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-line bg-warm-white text-ink-muted"
+              >
+                <ReceiptIcon size={14} />
+              </button>
             </div>
           ))}
         </div>

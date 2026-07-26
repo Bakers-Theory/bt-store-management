@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useUIStore } from "@/lib/ui-store";
 import { ReportDocument } from "./ReportDocument";
+import { PayslipDocument } from "./PayslipDocument";
 
 /**
  * Renders the requested report off-screen and opens the print dialog, mirroring
@@ -62,12 +63,13 @@ export function ReportPrintHost() {
 
   return (
     <div className="report-area" style={{ position: "absolute", left: "-9999px", top: 0 }}>
-      <ReportDocument
-        report={report}
-        // Stamped when the print is requested, not during render, so it can't
-        // differ between the server and the client.
-        generatedAt={report.generatedAt}
-      />
+      {/* Stamped when the print is requested, not during render, so it can't
+          differ between the server and the client. */}
+      {report.kind === "payslip" ? (
+        <PayslipDocument slip={report} generatedAt={report.generatedAt} />
+      ) : (
+        <ReportDocument report={report} generatedAt={report.generatedAt} />
+      )}
     </div>
   );
 }

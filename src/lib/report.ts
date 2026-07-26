@@ -31,6 +31,7 @@ export interface ReportTable {
 }
 
 export interface PrintReport {
+  kind: "report";
   /** Shop name, from settings. */
   shop: string;
   shopMeta: string;
@@ -82,6 +83,7 @@ export function attendanceReport(
   const period = rangeLabel(from, to);
 
   return {
+    kind: "report" as const,
     shop: shop.name || "Bakery",
     shopMeta: shopMetaOf(shop),
     title: "Attendance report",
@@ -171,6 +173,7 @@ export function payrollReport(
   const paid = onPayroll.filter((r) => r.status === "paid").length;
 
   return {
+    kind: "report" as const,
     shop: shop.name || "Bakery",
     shopMeta: shopMetaOf(shop),
     title: "Salary report",
@@ -235,6 +238,7 @@ export function salaryHistoryReport(
   );
 
   return {
+    kind: "report" as const,
     shop: shop.name || "Bakery",
     shopMeta: shopMetaOf(shop),
     title: "Salary payment history",

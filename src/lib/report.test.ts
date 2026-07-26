@@ -43,7 +43,7 @@ const payroll = (p: Partial<PayrollRow> = {}): PayrollRow => ({
 const payment = (p: Partial<SalaryPayment> = {}): SalaryPayment => ({
   id: "p1", profileId: "a", employeeName: "Anjali",
   periodYear: 2026, periodMonth: 7, gross: 18000, calendarDays: 31,
-  unpaidDays: 2.5, deduction: 1451.61, computedNet: 16548.39, net: 16548.39,
+  recordedDays: 31, unpaidDays: 2.5, deduction: 1451.61, computedNet: 16548.39, net: 16548.39,
   overrideReason: "", status: "paid", paidOn: "2026-08-01", paymentMode: "UPI",
   recordedByName: "Admin", updatedAt: "2026-08-01T00:00:00Z", ...p,
 });

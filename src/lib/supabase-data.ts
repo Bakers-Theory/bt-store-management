@@ -953,6 +953,7 @@ interface SalaryPaymentRow {
   period_month: number | string;
   gross: number | string;
   calendar_days: number | string;
+  recorded_days: number | string | null;
   unpaid_days: number | string;
   deduction: number | string;
   computed_net: number | string;
@@ -974,6 +975,7 @@ function mapSalaryPayment(r: SalaryPaymentRow): SalaryPayment {
     periodMonth: Number(r.period_month),
     gross: Number(r.gross),
     calendarDays: Number(r.calendar_days),
+    recordedDays: r.recorded_days === null ? null : Number(r.recorded_days),
     unpaidDays: Number(r.unpaid_days),
     deduction: Number(r.deduction),
     computedNet: Number(r.computed_net),

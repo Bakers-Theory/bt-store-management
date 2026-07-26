@@ -291,6 +291,8 @@ export interface SalaryPayment {
   periodMonth: number;
   gross: number;
   calendarDays: number;
+  /** Null for records filed before this was snapshotted — i.e. unknown. */
+  recordedDays: number | null;
   unpaidDays: number;
   deduction: number;
   computedNet: number;

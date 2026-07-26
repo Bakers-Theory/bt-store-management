@@ -64,6 +64,10 @@ create table if not exists public.salary_payment (
   -- Snapshot of the inputs, so a later salary change never rewrites history.
   gross         numeric(12,2) not null,
   calendar_days int           not null,
+  -- Days that had an attendance record when this was prepared. Snapshotted so a
+  -- reprinted payslip states what was actually known, rather than implying a
+  -- complete month.
+  recorded_days int,
   unpaid_days   numeric(5,1)  not null default 0,
   deduction     numeric(12,2) not null default 0,
   computed_net  numeric(12,2) not null,
@@ -89,6 +93,9 @@ create table if not exists public.salary_payment (
     check (status = 'unpaid' or (paid_on is not null and payment_mode <> ''))
 );
 
+-- Added after the table shipped, so existing rows keep a null (= unknown).
+alter table public.salary_payment add column if not exists recorded_days int;
+
 create index if not exists salary_payment_period_idx
   on public.salary_payment (period_year desc, period_month desc);
 
@@ -108,6 +115,12 @@ create policy salary_payment_read on public.salary_payment for select
   using (public.has_perm('salary.view'));
 
 -- ─── Read surface ───────────────────────────────────────────────────────────
+-- NOTE: columns are APPENDED, never inserted mid-list. CREATE OR REPLACE VIEW
+-- cannot rename or reorder existing columns, and this view is the declared
+-- return type of three functions below, so it can't simply be dropped either
+-- (that would need CASCADE and take the functions with it). The client reads
+-- with `select *` and maps by name, so position is irrelevant — same rule as
+-- items_v.
 create or replace view public.salary_payment_v as
   select
     sp.id, sp.profile_id, sp.period_year, sp.period_month,
@@ -115,7 +128,8 @@ create or replace view public.salary_payment_v as
     sp.computed_net, sp.net, sp.override_reason,
     sp.status, sp.paid_on, sp.payment_mode, sp.created_at, sp.updated_at,
     e.name as employee_name,
-    r.name as recorded_by_name
+    r.name as recorded_by_name,
+    sp.recorded_days
   from public.salary_payment sp
   join public.profiles e on e.id = sp.profile_id
   left join public.profiles r on r.id = sp.recorded_by
@@ -277,7 +291,8 @@ declare
   v_row public.salary_payment_v;
   v_name text; v_role text; v_status text;
   v_from date; v_to date; v_days int;
-  v_gross numeric; v_unpaid numeric; v_ded numeric; v_net numeric; v_final numeric;
+  v_gross numeric; v_unpaid numeric; v_recorded int;
+  v_ded numeric; v_net numeric; v_final numeric;
 begin
   if not public.has_perm('salary.edit') then raise exception 'forbidden'; end if;
   if p_month is null or p_month < 1 or p_month > 12 then
@@ -311,9 +326,11 @@ begin
     raise exception 'set a monthly salary for % first', v_name;
   end if;
 
-  select coalesce(t.unpaid_days, 0) into v_unpaid
+  select coalesce(t.unpaid_days, 0), coalesce(t.recorded, 0)
+    into v_unpaid, v_recorded
     from public.attendance_tally(v_from, v_to) t where t.profile_id = p_profile;
   v_unpaid := coalesce(v_unpaid, 0);
+  v_recorded := coalesce(v_recorded, 0);
 
   select c.deduction, c.net into v_ded, v_net
     from public.payroll_compute(v_gross, v_days, v_unpaid) c;
@@ -325,10 +342,10 @@ begin
   end if;
 
   insert into public.salary_payment (
-    profile_id, period_year, period_month, gross, calendar_days, unpaid_days,
-    deduction, computed_net, net, override_reason, status, recorded_by
+    profile_id, period_year, period_month, gross, calendar_days, recorded_days,
+    unpaid_days, deduction, computed_net, net, override_reason, status, recorded_by
   ) values (
-    p_profile, p_year, p_month, v_gross, v_days, v_unpaid,
+    p_profile, p_year, p_month, v_gross, v_days, v_recorded, v_unpaid,
     v_ded, v_net, v_final,
     case when v_final <> v_net then btrim(p_reason) else '' end,
     'unpaid', auth.uid()
@@ -336,6 +353,7 @@ begin
   on conflict (profile_id, period_year, period_month) do update
     set gross = excluded.gross,
         calendar_days = excluded.calendar_days,
+        recorded_days = excluded.recorded_days,
         unpaid_days = excluded.unpaid_days,
         deduction = excluded.deduction,
         computed_net = excluded.computed_net,
