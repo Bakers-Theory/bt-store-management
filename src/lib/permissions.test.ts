@@ -133,6 +133,15 @@ describe("presets", () => {
     expect(shared.sort()).toEqual(["customers.edit", "customers.view"]);
   });
 
+  it("attendance is supervisory: Admin and Manager only", () => {
+    expect(hasPermission(preset("Admin"), "attendance.view")).toBe(true);
+    expect(hasPermission(preset("Admin"), "attendance.edit")).toBe(true);
+    expect(hasPermission(preset("Manager"), "attendance.view")).toBe(true);
+    expect(hasPermission(preset("Manager"), "attendance.edit")).toBe(true);
+    expect(hasPermission(preset("Cashier"), "attendance.view")).toBe(false);
+    expect(hasPermission(preset("Storekeeper"), "attendance.view")).toBe(false);
+  });
+
   it("the activity log is supervisory: Admin and Manager only", () => {
     expect(hasPermission(preset("Admin"), "activity.view")).toBe(true);
     expect(hasPermission(owner, "activity.view")).toBe(true);
@@ -170,9 +179,9 @@ describe("presetForPerms / roleLabel", () => {
 });
 
 describe("navItems", () => {
-  it("orders dashboard, stock, bill, customers, history for the Owner", () => {
+  it("orders dashboard, stock, bill, customers, history, attendance for the Owner", () => {
     expect(navItems(owner).map((n) => n.key)).toEqual([
-      "dashboard", "stock", "bill", "customers", "history",
+      "dashboard", "stock", "bill", "customers", "history", "attendance",
     ]);
   });
   it("gives the Cashier a till, customers and history — but no stock page", () => {
@@ -183,10 +192,16 @@ describe("navItems", () => {
   it("gives the Storekeeper stock alone — no log means no history", () => {
     expect(navItems(preset("Storekeeper")).map((n) => n.key)).toEqual(["stock"]);
   });
-  it("gives the Manager stock, customers and history — no dashboard, no bill", () => {
+  it("gives the Manager stock, customers, history and attendance", () => {
     expect(navItems(preset("Manager")).map((n) => n.key)).toEqual([
-      "stock", "customers", "history",
+      "stock", "customers", "history", "attendance",
     ]);
+  });
+  it("shows Attendance only to attendance.view holders", () => {
+    expect(navItems(staff(["attendance.view"])).map((n) => n.key)).toEqual([
+      "attendance",
+    ]);
+    expect(navItems(staff(["attendance.edit"])).map((n) => n.key)).toEqual([]);
   });
   it("history appears for bill readers and for activity readers alike", () => {
     expect(navItems(staff(["bill.history"])).map((n) => n.key)).toEqual(["history"]);
@@ -206,6 +221,9 @@ describe("canAccessSection", () => {
     expect(canAccessSection(staff(["bill.create"]), "dashboard")).toBe(false);
     expect(canAccessSection(staff(["reports.view"]), "reports")).toBe(true);
     expect(canAccessSection(staff(["reports.export"]), "reports")).toBe(false);
+    expect(canAccessSection(staff(["attendance.view"]), "attendance")).toBe(true);
+    // Edit alone must not open the page — view is what gates the read.
+    expect(canAccessSection(staff(["attendance.edit"]), "attendance")).toBe(false);
   });
   it("keeps the Cashier out of stock and the Storekeeper out of billing", () => {
     expect(canAccessSection(preset("Cashier"), "stock")).toBe(false);
@@ -241,6 +259,7 @@ describe("defaultRoute", () => {
     expect(defaultRoute(staff(["stock.view"]))).toBe("/stock");
     expect(defaultRoute(staff(["customers.view"]))).toBe("/customers");
     expect(defaultRoute(staff(["activity.view"]))).toBe("/history");
+    expect(defaultRoute(staff(["attendance.view"]))).toBe("/attendance");
     expect(defaultRoute(staff(["reports.view"]))).toBe("/reports");
   });
   it("falls back to /dashboard when there is no access at all", () => {
@@ -270,7 +289,8 @@ describe("legacy group aliasing (mirrors has_perm in SQL)", () => {
     const grouped = new Set(Object.values(GROUPS).flat());
     const ungrouped = ALL_PERMISSIONS.filter((k) => !grouped.has(k));
     expect(ungrouped.sort()).toEqual([
-      "activity.view", "staff.manage", "store.lists", "store.settings", "store.status",
+      "activity.view", "attendance.edit", "attendance.view",
+      "staff.manage", "store.lists", "store.settings", "store.status",
     ]);
   });
 

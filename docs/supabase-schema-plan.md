@@ -358,6 +358,10 @@ unless marked *internal*.
 | `assert_store_open()` | `void` | *internal* — raises if store closed (Owner exempt). |
 | `set_updated_at()` | trigger | *internal* — shared `updated_at` bump. |
 | `handle_new_user()` | trigger | *internal* — creates a `profiles` row from `auth.users` metadata. |
+| `attendance_roster()` | `table` | Names of everyone attendance can be recorded against (`attendance.view`). |
+| `set_attendance(...)` | `attendance_v` | Upsert one employee-day (`attendance.edit`); rejects future dates in the caller's tz. |
+| `clear_attendance(...)` | `void` | Remove one employee-day (`attendance.edit`). |
+| `attendance_summary(...)` | `table` | Per-employee status tallies + `payable_days` (`attendance.view`). |
 
 ### Items & inventory — gate: one key each (+ store-open)
 

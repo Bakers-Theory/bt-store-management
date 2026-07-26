@@ -31,6 +31,9 @@ export type PermissionKey =
   // Reports
   | "reports.view"
   | "reports.export"
+  // Attendance
+  | "attendance.view"
+  | "attendance.edit"
   // Store admin
   | "store.settings"
   | "store.status"
@@ -183,6 +186,51 @@ export interface User {
   role: UserRole;
   /** Granular grants. Empty for the Owner, who bypasses the check entirely. */
   permissions: PermissionKey[];
+}
+
+/**
+ * Statuses an employee's day can be recorded as.
+ *
+ * There is no "absent": an unmarked day *is* the absence, so the daily flow is
+ * marking exceptions only, and clearing a record is how you mark someone absent.
+ */
+export type AttendanceStatus = "present" | "half_day" | "leave" | "holiday";
+
+export interface Attendance {
+  id: string;
+  profileId: string;
+  employeeName: string;
+  date: string; // "YYYY-MM-DD"
+  status: AttendanceStatus;
+  note: string;
+  markedByName: string; // "" when the marker's account was since removed
+  updatedAt: string; // ISO
+}
+
+/** One employee's status tallies over a date range, computed server-side. */
+export interface AttendanceSummary {
+  profileId: string;
+  employeeName: string;
+  present: number;
+  halfDay: number;
+  leave: number;
+  holiday: number;
+  recorded: number;
+  /**
+   * Present/Holiday/Leave = 1, Half Day = 0.5, unrecorded = 0. Drives payroll —
+   * an absence costs a day precisely by having no record.
+   */
+  payableDays: number;
+}
+
+/**
+ * A person attendance can be recorded against: a `profiles` row, name only.
+ * The Owner is excluded — they're the proprietor, not an employee — so there is
+ * no role to carry here.
+ */
+export interface Employee {
+  id: string;
+  name: string;
 }
 
 export interface StoreLists {

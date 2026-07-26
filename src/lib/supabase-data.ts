@@ -1,7 +1,8 @@
 "use client";
 
 import { createClient } from "@/utils/supabase/client";
-import type { Bakery, Batch, Bill, BillLine, BillStatus, Customer, Item, Log, PaymentMethod, StoreLists, User } from "./types";
+import type { Attendance, AttendanceStatus, AttendanceSummary, Bakery, Batch, Bill, BillLine, BillStatus, Customer, Employee, Item, Log, PaymentMethod, StoreLists, User } from "./types";
+import { isAttendanceStatus } from "./attendance";
 import type { ProfileRow } from "./auth";
 import { PROFILE_COLUMNS, profileToUser } from "./auth";
 import type { DateRange } from "./date-range";
@@ -713,3 +714,157 @@ export const rpcAddListValue = (kind: string, value: string) =>
   rpc<void>("add_list_value", { p_kind: kind, p_value: value });
 export const rpcDeleteListValue = (id: string) =>
   rpc<void>("delete_list_value", { p_id: id });
+
+// ─── Attendance ─────────────────────────────────────────────────────────────
+
+interface AttendanceRow {
+  id: string;
+  profile_id: string;
+  on_date: string;
+  status: string;
+  note: string | null;
+  updated_at: string;
+  employee_name: string;
+  marked_by_name: string | null;
+}
+
+/**
+ * Returns null for a row whose status isn't in the catalogue. The DB check
+ * constraint makes that unreachable, but there is no longer a safe fallback to
+ * substitute — inventing a status would silently change someone's payable days —
+ * so such a row is dropped rather than guessed at.
+ */
+function mapAttendance(r: AttendanceRow): Attendance | null {
+  if (!isAttendanceStatus(r.status)) return null;
+  return {
+    id: r.id,
+    profileId: r.profile_id,
+    employeeName: r.employee_name,
+    date: r.on_date,
+    status: r.status,
+    note: r.note ?? "",
+    markedByName: r.marked_by_name ?? "",
+    updatedAt: r.updated_at,
+  };
+}
+
+/** Map a batch of rows, dropping any that can't be interpreted. */
+const mapAttendanceRows = (rows: AttendanceRow[]): Attendance[] =>
+  rows.map(mapAttendance).filter((r): r is Attendance => r !== null);
+
+/**
+ * Everyone attendance can be recorded against, name only. The RPC already
+ * excludes the Owner and orders by name.
+ */
+export async function fetchEmployees(): Promise<Employee[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("attendance_roster");
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as { id: string; name: string }[]).map((r) => ({
+    id: r.id,
+    name: r.name,
+  }));
+}
+
+export interface AttendanceFilters {
+  from: string | null;
+  to: string | null;
+  profileId: string | null;
+  status: AttendanceStatus | null;
+}
+
+/** Records for a single day — what the marking screen reads. */
+export async function fetchAttendanceForDate(date: string): Promise<Attendance[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("attendance_v")
+    .select("*")
+    .eq("on_date", date);
+  if (error) throw new Error(error.message);
+  return mapAttendanceRows((data ?? []) as AttendanceRow[]);
+}
+
+/**
+ * Filtered history. Bounded by `limit` so a long range can't pull the whole
+ * table into the browser; the caller shows a "showing first N" note when the
+ * result comes back full.
+ */
+export async function fetchAttendance(
+  filters: AttendanceFilters,
+  limit = 500,
+): Promise<Attendance[]> {
+  const supabase = createClient();
+  let q = supabase.from("attendance_v").select("*");
+  if (filters.from) q = q.gte("on_date", filters.from);
+  if (filters.to) q = q.lte("on_date", filters.to);
+  if (filters.profileId) q = q.eq("profile_id", filters.profileId);
+  if (filters.status) q = q.eq("status", filters.status);
+  const { data, error } = await q
+    .order("on_date", { ascending: false })
+    .order("employee_name")
+    .limit(limit);
+  if (error) throw new Error(error.message);
+  return mapAttendanceRows((data ?? []) as AttendanceRow[]);
+}
+
+interface SummaryRow {
+  profile_id: string;
+  employee_name: string;
+  present: number | string;
+  half_day: number | string;
+  leave_days: number | string;
+  holiday: number | string;
+  recorded: number | string;
+  payable_days: number | string;
+}
+
+/** Server-computed per-employee tallies. `bigint`/`numeric` arrive as strings. */
+export async function fetchAttendanceSummary(
+  from: string | null,
+  to: string | null,
+  profileId: string | null = null,
+): Promise<AttendanceSummary[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("attendance_summary", {
+    p_from: from,
+    p_to: to,
+    p_profile: profileId,
+  });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as SummaryRow[]).map((r) => ({
+    profileId: r.profile_id,
+    employeeName: r.employee_name,
+    present: Number(r.present),
+    halfDay: Number(r.half_day),
+    leave: Number(r.leave_days),
+    holiday: Number(r.holiday),
+    recorded: Number(r.recorded),
+    payableDays: Number(r.payable_days),
+  }));
+}
+
+export async function rpcSetAttendance(
+  profileId: string,
+  date: string,
+  status: AttendanceStatus,
+  note = "",
+): Promise<Attendance> {
+  // Timezone decides what "today" is, so the server's future-date guard agrees
+  // with the date the user actually sees (same convention as dashboard_stats).
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const row = await rpc<AttendanceRow>("set_attendance", {
+    p_profile: profileId,
+    p_date: date,
+    p_status: status,
+    p_note: note,
+    p_tz: tz,
+  });
+  const mapped = mapAttendance(row);
+  // The row we just wrote came from a validated status, so this cannot fail —
+  // throwing beats returning a half-built record if it somehow does.
+  if (!mapped) throw new Error("Saved attendance came back unreadable");
+  return mapped;
+}
+
+export const rpcClearAttendance = (profileId: string, date: string) =>
+  rpc<void>("clear_attendance", { p_profile: profileId, p_date: date });

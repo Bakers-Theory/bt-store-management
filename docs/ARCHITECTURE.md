@@ -120,6 +120,7 @@ src/
     (app)/                      # authenticated route group
       layout.tsx                # guards session, renders chrome (Sidebar/Topbar/BottomNav)
       dashboard/  stock/  bill/  history/  customers/  settings/  reports/
+      attendance/                 # staff attendance: mark a day + history
     api/staff/route.ts          # staff CRUD, staff.manage-gated (service-role, server-only)
 
   utils/supabase/               # the four @supabase/ssr clients
@@ -138,6 +139,7 @@ src/
     bill.ts                     # pure bill math (totals, tax, discount)
     analytics.ts                # pure dashboard aggregation helpers
     excel.ts                    # multi-sheet report assembly
+    attendance.ts               # status weights, payable-days math, CSV
     expiry.ts  date-range.ts  format.ts  image.ts   # small pure helpers
     *.test.ts                   # Vitest suites (logic layer only)
 
@@ -148,7 +150,7 @@ src/
       ToastHost / OwnerAuthHost / PrintHost / ServiceWorkerRegistrar / ...
     layout/                     # Sidebar, Topbar, BottomNav
     feature/                    # one folder per section — the "use client" boundary
-      dashboard/ stock/ bill/ history/ customers/ settings/
+      dashboard/ stock/ bill/ history/ customers/ settings/ attendance/
       Guard.tsx  NoAccess.tsx
     ui/                         # shared primitives (Modal, Skeleton, DateRangePicker, ...)
 
@@ -358,6 +360,7 @@ Current shape (see `ROLE_PRESETS` for the authoritative lists):
 | Store profile | ✓ | – | – | – |
 | Open/close + lists | ✓ | ✓ | – | – |
 | Activity log | ✓ | ✓ | – | – |
+| Attendance | ✓ | ✓ | – | – |
 | Manage staff | – | – | – | – |
 
 Deliberate choices worth preserving:
@@ -424,12 +427,14 @@ Supabase SQL editor or `supabase db push`.
 | `customers` | Directory (added in 0009); visit/spend stats computed via RPC. |
 | `activity_log` | Append-only audit trail — stock moves, bill events, and (later) store/staff/password admin events. |
 | `store_lists` | Admin-managed option lists — categories, emojis, units, stock-out reasons (added in 0006). |
+| `attendance` | One row per employee per day (`0029`). Employees *are* `profiles` rows, minus the Owner (excluded from the roster, the view and the write RPC alike). Statuses are Present / Half Day / Leave / Holiday — there is no `absent`, because an unmarked day *is* the absence. A unique `(profile_id, on_date)` constraint makes "no duplicate entries" a database guarantee, so `set_attendance` upserts — re-marking a day *is* the edit path. |
 
 ### Views (read surface)
 
 `*_v` views are what the client selects from: `items_v` (with `batches` and
 `earliest_expiry`), `bills_v` (with joined `biller_name`), `activity_log_v`
-(stock/bill events), `activity_log_admin_v` (Owner-only admin events).
+(stock/bill events), `activity_log_admin_v` (Owner-only admin events),
+`attendance_v` (with employee + marker names, gated on `attendance.view`).
 
 ### Migration history (chronological highlights)
 
@@ -443,7 +448,8 @@ status · `0018` store admin audit · `0019` closed store blocks inventory ·
 `0020` bills skip expired batches · `0021` dashboard stats by range ·
 `0022`/`0023` product images · `0024` grant bill_items image_url ·
 `0025` dashboard prev-period counts · `0026` flat discount · `0027` update
-customer · `0028` granular RBAC (`perms text[]`, per-key RPC gates, role presets).
+customer · `0028` granular RBAC (`perms text[]`, per-key RPC gates, role presets) ·
+`0029` staff attendance.
 
 > The full consolidated schema — every table's columns, the views, the complete
 > RPC catalog, the privacy/grants model, and deep-dives on the batch/FIFO and
@@ -467,6 +473,11 @@ unit-tested in plain functions. These are the files with `*.test.ts` siblings:
 - **`analytics.ts`** — dashboard aggregation helpers.
 - **`excel.ts`** — multi-sheet report assembly; cancelled bills are excluded from
   aggregates.
+- **`attendance.ts`** — status metadata, `payableDays()` and CSV assembly.
+  `payableDays()` deliberately mirrors `payable_days` in `attendance_summary`
+  (Present/Holiday/Leave = 1, Half Day = 0.5, Absent = 0) so the UI can show the
+  figure without a round-trip — but **the SQL copy is what payroll bills
+  against**, the same client/server mirror rule as `permissions.ts`.
 - **`expiry.ts`** — day-granularity expiry status (fresh / expiring-soon /
   expired) shared by UI and matching server-side batch logic.
 - **`date-range.ts`** — date-range presets and bounds.
