@@ -60,6 +60,14 @@ const ICONS: Record<string, React.ReactNode> = {
       <path d="M9 14l1.8 1.8L15 12" />
     </svg>
   ),
+  salary: (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="6" width="20" height="12" rx="2.5" />
+      <circle cx="12" cy="12" r="2.5" />
+      <path d="M6 10v4" />
+      <path d="M18 10v4" />
+    </svg>
+  ),
   reports: <BarChart3 size={20} strokeWidth={1.8} />,
 };
 

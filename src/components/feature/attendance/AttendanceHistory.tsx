@@ -15,6 +15,7 @@ import {
 import { fetchAttendance, fetchAttendanceSummary } from "@/lib/supabase-data";
 import { DateRangeFilter } from "@/components/ui/DateRangePicker";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { download } from "@/components/feature/salary/download";
 import type {
   Attendance,
   AttendanceStatus,
@@ -26,18 +27,6 @@ import type { DateRange } from "@/lib/date-range";
 const PAGE_LIMIT = 500;
 const selectCls =
   "!w-auto shrink-0 rounded-xl border border-line bg-warm-white px-3 py-[11px] text-[13.5px] font-semibold text-ink-muted focus:border-brown";
-
-/** Trigger a client-side file download without leaving the page. */
-function download(filename: string, content: string, mime: string) {
-  const url = URL.createObjectURL(new Blob([content], { type: `${mime};charset=utf-8;` }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  // Revoke on the next tick — revoking synchronously can cancel the download
-  // in some browsers before it starts.
-  setTimeout(() => URL.revokeObjectURL(url), 0);
-}
 
 export function AttendanceHistory({ employees }: { employees: Employee[] }) {
   const toast = useUIStore((s) => s.toast);
