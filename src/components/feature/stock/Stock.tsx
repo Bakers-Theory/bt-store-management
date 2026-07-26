@@ -6,6 +6,7 @@ import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { expiryStatus } from "@/lib/expiry";
+import { hasPermission } from "@/lib/permissions";
 import { Modal } from "@/components/ui/Modal";
 import { ItemThumb } from "@/components/ui/ItemThumb";
 import { ItemModal } from "./ItemModal";
@@ -60,11 +61,19 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
   // The Owner manages stock regardless of store status; everyone else is
   // locked out of inventory changes while the store is closed.
   const locked = !isOpen && user?.role !== "Owner";
+  // Each action carries its own grant, so a storekeeper who may receive but not
+  // discard stock sees only the button they can use.
+  const canAdd = hasPermission(user, "items.create");
+  const canEdit = hasPermission(user, "items.edit");
+  const canRemove = hasPermission(user, "items.delete");
+  const canStockIn = hasPermission(user, "stock.in");
+  const canStockOut = hasPermission(user, "stock.out");
+  const anyAction = canAdd || canEdit || canRemove || canStockIn || canStockOut;
 
   const [modal, setModal] = useState<ModalState>(
-    initialTab === "in" && !locked
+    initialTab === "in" && !locked && canStockIn
       ? { type: "stockin" }
-      : initialTab === "out" && !locked
+      : initialTab === "out" && !locked && canStockOut
         ? { type: "stockout" }
         : null,
   );
@@ -223,28 +232,34 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
           <option value="qty">Sort by: Stock (low first)</option>
           <option value="expiry">Sort by: Expiry (soonest)</option>
         </select>
-        {!locked && (
-          // Full-width row on phone so the three actions share one line evenly;
+        {!locked && anyAction && (
+          // Full-width row on phone so the actions share one line evenly;
           // dissolves back into the toolbar (auto-width, inline) on desktop.
           <div className="flex w-full gap-2.5 lg:contents">
-            <button
-              className="btn-primary flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap px-2.5 text-[12.5px] lg:flex-none lg:px-[18px] lg:text-[13.5px]"
-              onClick={() => setModal({ type: "add" })}
-            >
-              <Plus size={16} /> Add item
-            </button>
-            <button
-              className="btn-secondary flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap px-2.5 text-[12.5px] lg:flex-none lg:px-[18px] lg:text-[13.5px]"
-              onClick={() => setModal({ type: "stockin" })}
-            >
-              <PackagePlus size={16} /> Add stock
-            </button>
-            <button
-              className="btn-secondary flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap px-2.5 text-[12.5px] lg:flex-none lg:px-[18px] lg:text-[13.5px]"
-              onClick={() => setModal({ type: "stockout" })}
-            >
-              <PackageMinus size={16} /> Stock out
-            </button>
+            {canAdd && (
+              <button
+                className="btn-primary flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap px-2.5 text-[12.5px] lg:flex-none lg:px-[18px] lg:text-[13.5px]"
+                onClick={() => setModal({ type: "add" })}
+              >
+                <Plus size={16} /> Add item
+              </button>
+            )}
+            {canStockIn && (
+              <button
+                className="btn-secondary flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap px-2.5 text-[12.5px] lg:flex-none lg:px-[18px] lg:text-[13.5px]"
+                onClick={() => setModal({ type: "stockin" })}
+              >
+                <PackagePlus size={16} /> Add stock
+              </button>
+            )}
+            {canStockOut && (
+              <button
+                className="btn-secondary flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap px-2.5 text-[12.5px] lg:flex-none lg:px-[18px] lg:text-[13.5px]"
+                onClick={() => setModal({ type: "stockout" })}
+              >
+                <PackageMinus size={16} /> Stock out
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -336,23 +351,23 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
                     </span>
                   </div>
                   <div className="flex justify-end gap-1.5">
-                    {!locked && (
-                      <>
-                        <button
-                          className="flex h-7 w-7 items-center justify-center rounded-lg border border-line bg-warm-white text-sm"
-                          onClick={() => setModal({ type: "edit", id: item.id })}
-                          aria-label={`Edit ${item.name}`}
-                        >
-                          <Pencil size={16} />
-                        </button>
-                        <button
-                          className="flex h-7 w-7 items-center justify-center rounded-lg border-none bg-danger-bg text-sm text-danger"
-                          onClick={() => remove(item.id, item.name)}
-                          aria-label={`Delete ${item.name}`}
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </>
+                    {!locked && canEdit && (
+                      <button
+                        className="flex h-7 w-7 items-center justify-center rounded-lg border border-line bg-warm-white text-sm"
+                        onClick={() => setModal({ type: "edit", id: item.id })}
+                        aria-label={`Edit ${item.name}`}
+                      >
+                        <Pencil size={16} />
+                      </button>
+                    )}
+                    {!locked && canRemove && (
+                      <button
+                        className="flex h-7 w-7 items-center justify-center rounded-lg border-none bg-danger-bg text-sm text-danger"
+                        onClick={() => remove(item.id, item.name)}
+                        aria-label={`Delete ${item.name}`}
+                      >
+                        <Trash2 size={16} />
+                      </button>
                     )}
                   </div>
                 </div>
@@ -388,23 +403,23 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
                     {st.label}
                   </span>
                   <div className="flex shrink-0 gap-1.5">
-                    {!locked && (
-                      <>
-                        <button
-                          className="flex h-11 w-11 items-center justify-center rounded-lg border border-line bg-warm-white text-sm"
-                          onClick={() => setModal({ type: "edit", id: item.id })}
-                          aria-label={`Edit ${item.name}`}
-                        >
-                          <Pencil size={16} />
-                        </button>
-                        <button
-                          className="flex h-11 w-11 items-center justify-center rounded-lg border-none bg-danger-bg text-sm text-danger"
-                          onClick={() => remove(item.id, item.name)}
-                          aria-label={`Delete ${item.name}`}
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </>
+                    {!locked && canEdit && (
+                      <button
+                        className="flex h-11 w-11 items-center justify-center rounded-lg border border-line bg-warm-white text-sm"
+                        onClick={() => setModal({ type: "edit", id: item.id })}
+                        aria-label={`Edit ${item.name}`}
+                      >
+                        <Pencil size={16} />
+                      </button>
+                    )}
+                    {!locked && canRemove && (
+                      <button
+                        className="flex h-11 w-11 items-center justify-center rounded-lg border-none bg-danger-bg text-sm text-danger"
+                        onClick={() => remove(item.id, item.name)}
+                        aria-label={`Delete ${item.name}`}
+                      >
+                        <Trash2 size={16} />
+                      </button>
                     )}
                   </div>
                 </div>

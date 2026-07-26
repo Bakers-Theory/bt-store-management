@@ -45,7 +45,7 @@ export function Topbar() {
   const toast = useUIStore((s) => s.toast);
   const { signOut } = useAuth();
 
-  const isOwner = user?.role === "Owner";
+  const canToggleStatus = hasPermission(user, "store.status");
 
   const [title, subtitle] = TITLES[pathname] ?? [
     "Dashboard",
@@ -95,7 +95,7 @@ export function Topbar() {
         <div className="truncate text-[12.5px] font-semibold text-ink-light">{subtitle}</div>
       </div>
 
-      {isOwner ? (
+      {canToggleStatus ? (
         <button
           type="button"
           onClick={() => setConfirming(true)}
@@ -112,7 +112,7 @@ export function Topbar() {
         </span>
       )}
 
-      {hasPermission(user, "sales") && (
+      {hasPermission(user, "bill.create") && (
         <button
           onClick={() => router.push("/bill")}
           className="hidden flex-shrink-0 items-center gap-[7px] rounded-[11px] bg-brown px-4 py-2.5 text-[13.5px] font-bold text-warm-white lg:flex cursor-pointer hover:bg-brown/90 focus:outline-none focus:ring-2 focus:ring-brown focus:ring-offset-2"

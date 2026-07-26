@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { usePathname } from "next/navigation";
-import { navItems, type NavItem } from "@/lib/permissions";
+import { hasPermission, navItems, type NavItem } from "@/lib/permissions";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 
 // Destinations that stay as always-visible bottom tabs (in this order). Anything
@@ -88,7 +88,7 @@ export function BottomNav() {
   // Settings (which has no route in navItems but is always reachable here).
   const sheetItems = [
     ...items.filter((it) => it.key !== "bill" && !PRIMARY_KEYS.includes(it.key)),
-    ...(user?.role === "Owner" ? [REPORTS_ITEM] : []),
+    ...(hasPermission(user, "reports.view") ? [REPORTS_ITEM] : []),
     SETTINGS_ITEM,
   ];
   const moreActive = sheetItems.some((it) => it.href === pathname);

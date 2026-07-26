@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { navItems } from "@/lib/permissions";
+import { hasPermission, navItems, roleLabel } from "@/lib/permissions";
 import { useAuth, useCurrentUser } from "@/components/system/AuthProvider";
 import { useBakeryStore } from "@/lib/store";
 import { BarChart3, Croissant, Loader2 } from "lucide-react";
@@ -70,7 +70,7 @@ export function Sidebar() {
 
   const items = [
     ...navItems(user),
-    ...(user?.role === "Owner"
+    ...(hasPermission(user, "reports.view")
       ? [{ key: "reports", href: "/reports", icon: "📈", label: "Reports" }]
       : []),
     { key: "settings", href: "/settings", icon: "⚙", label: "Settings" },
@@ -134,7 +134,7 @@ export function Sidebar() {
             <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[13.5px] font-bold text-ink">
               {user.name}
             </div>
-            <div className="text-[11.5px] font-semibold text-ink-light">{user.role}</div>
+            <div className="text-[11.5px] font-semibold text-ink-light">{roleLabel(user)}</div>
           </div>
           <button
             onClick={doSignOut}

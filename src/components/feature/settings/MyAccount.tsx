@@ -2,6 +2,7 @@
 
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { ChangePasswordCard } from "./ChangePasswordCard";
+import { PERMISSION_CATALOG, permissionLabel, roleLabel } from "@/lib/permissions";
 
 const labelCls = "mb-[5px] block text-xs font-bold text-[#8a6a3c]";
 const permOnCls = "rounded-lg border border-[#cfe6d3] bg-success-bg px-3 py-[5px] text-xs font-bold text-success";
@@ -10,11 +11,19 @@ const permOffCls = "rounded-lg border border-[#ece0cd] bg-[#f4ece0] px-3 py-[5px
 export function MyAccount() {
   const user = useCurrentUser();
   if (!user) return null;
-  const p = user.permissions;
 
   const badge = (label: string, on: boolean) => (
-    <span className={on ? permOnCls : permOffCls}>{label}</span>
+    <span key={label} className={on ? permOnCls : permOffCls}>
+      {label}
+    </span>
   );
+
+  // Show the grants themselves, grouped — a staff member reading their own
+  // account wants to know what they can do, not which flags are set.
+  const granted = PERMISSION_CATALOG.map((g) => ({
+    title: g.title,
+    keys: g.perms.filter((p) => user.permissions.includes(p.key)).map((p) => p.key),
+  })).filter((g) => g.keys.length > 0);
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -34,15 +43,28 @@ export function MyAccount() {
             <div className="text-[11.5px] text-ink-light">ID · {user.userId}</div>
           </div>
           <span className="rounded-full bg-[#f4e7d2] px-[11px] py-[3px] text-[11px] font-bold text-[#8a6a3c]">
-            {user.role}
+            {roleLabel(user)}
           </span>
         </div>
         <label className={labelCls}>Your access</label>
-        <div className="flex flex-wrap gap-[7px]">
-          {badge("Sales", p.sales)}
-          {badge("Inventory", p.inventory)}
-          {badge("Analytics", p.analytics)}
-        </div>
+        {user.role === "Owner" ? (
+          <div className="flex flex-wrap gap-[7px]">{badge("All access", true)}</div>
+        ) : granted.length === 0 ? (
+          <div className="flex flex-wrap gap-[7px]">{badge("No access", false)}</div>
+        ) : (
+          <div className="flex flex-col gap-2.5">
+            {granted.map((g) => (
+              <div key={g.title}>
+                <div className="mb-1.5 text-[10.5px] font-bold tracking-[.09em] text-line-strong">
+                  {g.title.toUpperCase()}
+                </div>
+                <div className="flex flex-wrap gap-[7px]">
+                  {g.keys.map((k) => badge(permissionLabel(k), true))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <ChangePasswordCard />

@@ -68,8 +68,11 @@ comments flag columns added after `0001`.
 
 ### 3.1 `profiles` — users, roles, permissions
 
-Extends `auth.users`. Permissions are three booleans (cleaner for RLS than JSONB).
-A partial unique index enforces **at most one Owner**.
+Extends `auth.users`. Permissions are a `text[]` of granular keys from the
+catalogue in `src/lib/permissions.ts` (`0028`); the stored `role` stays a
+two-value flag, because Admin / Manager / Cashier / Storekeeper are **presets
+that stamp a permission set**, not stored roles. A partial unique index enforces
+**at most one Owner**, who implicitly holds every permission.
 
 ```sql
 create table public.profiles (
@@ -77,17 +80,15 @@ create table public.profiles (
   user_id        text    not null unique,        -- login handle, e.g. '7873557430'
   name           text    not null,
   role           text    not null default 'Staff' check (role in ('Owner','Staff')),
-  perm_sales     boolean not null default false,
-  perm_inventory boolean not null default false,
-  perm_analytics boolean not null default false,
+  perms          text[]  not null default '{}',   -- granular permission keys
   created_at     timestamptz not null default now()
 );
 create unique index one_owner on public.profiles ((role)) where role = 'Owner';
 ```
 
 Rows are created automatically: the `handle_new_user` trigger on `auth.users`
-copies `user_id` / `name` / `role` / `perm_*` out of `raw_user_meta_data` (set at
-admin-create time).
+copies `user_id` / `name` / `role` / `perms` out of `raw_user_meta_data` (set at
+admin-create time; `perms` arrives as a JSON array).
 
 ### 3.2 `store_settings` — the singleton
 
@@ -294,9 +295,9 @@ clause.
 
 | View | Adds / does | Visibility gate |
 |---|---|---|
-| `items_v` | Appends `tracks_expiry`, `earliest_expiry`, `batches` (jsonb, in-stock only, FIFO-ordered), `image_url`; returns `cost_price` **only** to inventory/analytics (else `null`). | `SELECT` granted to `authenticated`; cost masked per-row. |
-| `bills_v` | `b.* + biller_name` (joined from `profiles.created_by`). | `has_perm('sales') or has_perm('inventory')`. |
-| `activity_log_v` | Log rows + `actor_name` (joined from `profiles`). | `has_perm('sales') or has_perm('inventory')`. |
+| `items_v` | Appends `tracks_expiry`, `earliest_expiry`, `batches` (jsonb, in-stock only, FIFO-ordered), `image_url`; returns `cost_price` **only** to `items.cost` / `dashboard.profit` holders (else `null`). | `SELECT` granted to `authenticated`; cost masked per-row. |
+| `bills_v` | `b.* + biller_name` (joined from `profiles.created_by`). | `bill.history`, `bill.create`, `dashboard.view` or `reports.view`. |
+| `activity_log_v` | Log rows + `actor_name` (joined from `profiles`). | `has_perm('activity.view')`. |
 | `activity_log_admin_v` | Same shape as `activity_log_v`, but **only** admin event types (`open`/`close`/`settings`/`staff_*`/`password`). | `is_owner()` — returns zero rows to non-owners. |
 
 > `CREATE OR REPLACE VIEW` can only **append** columns, never reorder. Later
@@ -328,8 +329,8 @@ Consequences that must be respected:
   the revoked `cost_price` for non-privileged roles. Read `items_v` (cost masked)
   or list columns explicitly.
 - **Cost reaches analytics only through gated definer functions:**
-  `bill_lines_with_cost()` and `dashboard_stats(...)` check `has_perm('analytics')`
-  and return cost / COGS as `null` otherwise.
+  `bill_lines_with_cost()` checks `dashboard.profit` / `reports.export`, and
+  `dashboard_stats(...)` returns COGS as `null` without `dashboard.profit`.
 - **The client type has no cost field to leak into** — mappers hard-code
   `costPrice: 0` on bill lines.
 - **Adding a readable column requires a matching grant.** `0022` added
@@ -352,12 +353,18 @@ unless marked *internal*.
 |---|---|---|
 | `my_role()` | `text` | Caller's role from `profiles`. |
 | `is_owner()` | `boolean` | `my_role() = 'Owner'`. |
-| `has_perm(perm text)` | `boolean` | Owner ⇒ true; else the matching `perm_*` flag. |
+| `has_perm(perm text)` | `boolean` | Owner ⇒ true; else `perm = any(perms)`. Also resolves the three legacy group keys (`sales` / `inventory` / `analytics`) as "holds any permission in that area", so pre-`0028` policies keep working. |
 | `assert_store_open()` | `void` | *internal* — raises if store closed (Owner exempt). |
 | `set_updated_at()` | trigger | *internal* — shared `updated_at` bump. |
 | `handle_new_user()` | trigger | *internal* — creates a `profiles` row from `auth.users` metadata. |
 
-### Items & inventory — gate: `inventory` (+ store-open)
+### Items & inventory — gate: one key each (+ store-open)
+
+`create_item` → `items.create` · `update_item` / `set_item_image` → `items.edit` ·
+`delete_item` → `items.delete` · `stock_in` → `stock.in` · `stock_out` →
+`stock.out` · `write_off_batch` / `update_batch_expiry` → `stock.expiry`.
+`update_item` writes `cost_price` only for `items.cost` holders — otherwise it
+leaves the stored cost untouched, since the view hands them `null`.
 
 | Function | Returns | Purpose |
 |---|---|---|
@@ -447,7 +454,8 @@ it sells/shows only fresh stock. Cancel/delete restore returns stock as a
 The one function where several invariants meet. Current signature:
 `generate_bill(customer jsonb, lines jsonb, p_tz text default 'UTC')`. In order:
 
-1. **Gate:** `has_perm('sales')`, then reject if the store is closed.
+1. **Gate:** `has_perm('bill.create')` (plus `bill.discount` when the payload
+   carries a discount), then reject if the store is closed.
 2. **Price pass:** loop `lines`, `select … for update` each item (row-lock against
    concurrent stock changes), sum `qty * price` → `subtotal` (rounded to 2dp).
 3. **Customer upsert:** only when a phone is present (`0010` made phone optional —
@@ -509,6 +517,6 @@ Apply in order via the Supabase SQL editor or `supabase db push`.
    needs a `drop view` + recreate.
 5. **Never expose `cost_price`** to the client role — route any cost-aware feature
    through an analytics-gated definer function.
-6. **Keep `permissions.ts` in sync** with the SQL policy/helper model — but
+6. **Keep the catalogue in `permissions.ts` in sync** with the SQL policy/helper model — but
    remember RLS is the boundary, not the client mirror.
 ```

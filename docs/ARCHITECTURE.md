@@ -314,40 +314,48 @@ RLS is enabled on every table. Policies read the SQL helpers:
 
 - `my_role()` — the caller's role from `profiles`.
 - `is_owner()` — `my_role() = 'Owner'`.
-- `has_perm(perm)` — Owner implicitly has all; otherwise checks the matching
-  `perm_sales` / `perm_inventory` / `perm_analytics` column.
+- `has_perm(perm)` — Owner implicitly has all; otherwise `perm = any(profiles.perms)`.
+  It also resolves the three legacy group keys (`sales` / `inventory` /
+  `analytics`) as "holds any permission in that area", so policies written before
+  the granular migration (`0028`) keep behaving as they did.
 
-Read policies: items readable by sales/inventory/analytics; bills / bill_items /
-activity_log readable by sales or inventory; store_settings readable by any
-authed user, writable only by Owner; profiles readable by self-or-Owner, writable
-only by Owner. Writes on the data tables have **no** client policy — they're
-unreachable except through the definer RPCs.
+Read policies: items / stock_batches readable by `stock.view`, `bill.create`,
+`dashboard.view` or `reports.view` (a cashier has no Stock page but must still
+read the catalogue to bill); bills / bill_items likewise; activity_log gated on
+`activity.view`; customers on `customers.view` or `bill.create`; store_settings
+readable by any authed user, writable with `store.settings`; profiles readable by
+self-or-`staff.manage`, writable with `staff.manage` and never for the Owner's
+row. Writes on the data tables have **no** client policy — they're unreachable
+except through the definer RPCs.
 
 ### Cost-price privacy
 
 `cost_price` is commercially sensitive. It is **revoked at the column level** from
 `authenticated`/`anon` on both `items` and `bill_items` (see migration 0002).
-Analytics that need cost (dashboard P&L, report COGS/profit) get it only through
-gated definer functions — e.g. `bill_lines_with_cost()` returns rows *only when*
-`has_perm('analytics')`, and `dashboard_stats` returns `cogs: null` for non-
-analytics users. The client mappers hard-code `costPrice: 0` on bill lines so
+Two separate permissions govern it: `items.cost` (see and set a purchase price)
+and `dashboard.profit` (see margin / COGS / P&L), so a storekeeper can record
+supplier prices without ever seeing profitability. `bill_lines_with_cost()`
+returns rows only to `dashboard.profit` / `reports.export` holders, and
+`dashboard_stats` returns `cogs: null` without `dashboard.profit`. The client mappers hard-code `costPrice: 0` on bill lines so
 cost never even has a client-side field to leak into.
 
-### The Owner-only staff API
+### The staff API
 
 Creating/editing/deleting staff needs the Supabase **admin** API (create auth
 users, reset passwords). That can't happen from the browser, so
 `app/api/staff/route.ts` is a server route that:
 
-- calls `requireOwner()` (validates the session server-side and checks the
-  `profiles.role`), returning `403` otherwise;
+- calls `requireStaffManager()` (validates the session server-side; the Owner
+  always passes, anyone else needs `staff.manage`), returning `403` otherwise;
+- validates the submitted permission array against the catalogue, rejecting
+  unknown keys rather than silently dropping them;
 - uses `createAdminClient()` (service-role key, server-only) to create/patch/
   delete the auth user;
 - refuses to ever touch the Owner (`.eq('role','Staff')`, explicit guards);
 - writes an audit entry to `activity_log` with a field-level diff of what changed.
 
 New auth users get their `profiles` row from the `handle_new_user` trigger, which
-reads `user_metadata` (name, role, permissions) set at admin-create time.
+reads `user_metadata` (name, role, `perms` array) set at admin-create time.
 
 ---
 
@@ -361,7 +369,7 @@ Supabase SQL editor or `supabase db push`.
 
 | Table | Purpose |
 |---|---|
-| `profiles` | Extends `auth.users`; login handle, name, role, per-area permission flags. A partial unique index enforces **at most one Owner**. |
+| `profiles` | Extends `auth.users`; login handle, name, role (`Owner`/`Staff`), and `perms text[]` of granular permission keys. A partial unique index enforces **at most one Owner**, who implicitly holds everything. |
 | `store_settings` | Singleton row (`id = 1`) — bakery profile, tax rate, thresholds, open/closed status. |
 | `items` | Item catalogue. `name_key` (generated, lower/trim) is unique to dedupe. `cost_price` is private. |
 | `stock_batches` | Per-item expiry batches (added in 0011). FIFO consumption + expiry tracking. |
@@ -388,7 +396,7 @@ status · `0018` store admin audit · `0019` closed store blocks inventory ·
 `0020` bills skip expired batches · `0021` dashboard stats by range ·
 `0022`/`0023` product images · `0024` grant bill_items image_url ·
 `0025` dashboard prev-period counts · `0026` flat discount · `0027` update
-customer.
+customer · `0028` granular RBAC (`perms text[]`, per-key RPC gates, role presets).
 
 > The full consolidated schema — every table's columns, the views, the complete
 > RPC catalog, the privacy/grants model, and deep-dives on the batch/FIFO and
@@ -402,9 +410,12 @@ customer.
 `src/lib/` isolates business logic from React and Supabase so it can be
 unit-tested in plain functions. These are the files with `*.test.ts` siblings:
 
-- **`permissions.ts`** — `hasPermission`, `navItems`, `canAccessSection`,
-  `defaultRoute`. Drives nav visibility and route guarding (client mirror of the
-  SQL policy model).
+- **`permissions.ts`** — the permission catalogue (`PERMISSION_CATALOG`,
+  `ALL_PERMISSIONS`), the role presets (`ROLE_PRESETS`, `presetForPerms`,
+  `roleLabel`), and `hasPermission` / `navItems` / `canAccessSection` /
+  `defaultRoute`. Drives nav visibility, the Settings permission grid and route
+  guarding (client mirror of the SQL policy model). Role badges are **derived**
+  from the permission set, never stored, so a label can't contradict the grants.
 - **`bill.ts`** — bill math: subtotal, tax, percent/flat discount, rounding.
 - **`analytics.ts`** — dashboard aggregation helpers.
 - **`excel.ts`** — multi-sheet report assembly; cancelled bills are excluded from
@@ -434,8 +445,8 @@ without a browser or a database.
   `canAccessSection(user, section)` is false — defense-in-depth on top of RLS
   (which is the real gate).
 - **Chrome**: `Sidebar` (desktop), `Topbar`, `BottomNav` (mobile). The nav items
-  are computed from the user's permissions via `navItems()`, with Reports and
-  Settings appended (Reports Owner-only).
+  are computed from the user's permissions via `navItems()`, with Reports
+  (`reports.view`) and Settings (always reachable, for My Account) appended.
 
 ### Styling — Tailwind v4
 
@@ -504,6 +515,7 @@ key). See ONBOARDING for the exact steps.
 | Single-store (`store_settings` singleton) | The product is one bakery | Not multi-tenant without rework |
 | Base data cached in `localStorage`, bills/logs not | Keeps the always-loaded cache bounded and fast | Bills/dashboard always hit the network |
 | Client permission mirror (`permissions.ts`) | Fast UI decisions without a round-trip | Must be kept in sync with SQL policies; it is **not** the security boundary |
+| Granular `perms text[]`, role labels derived not stored | One authority; a badge can never disagree with the grants; a new permission needs no schema change | Preset definitions live in TS, so editing one doesn't retro-apply to existing staff |
 | Column-level revoke on `cost_price` | Hard privacy guarantee, not app-enforced | Any cost-aware feature must go through a gated RPC |
 | Local-day↔UTC handled explicitly with client tz | Correct "today's sales" across timezones | Every timestamp filter must remember to convert |
 | Preserve original app types across the rewrite | UI + tests stayed stable through two migrations | Some DB shapes are mapped to legacy-shaped types |
@@ -517,7 +529,7 @@ key). See ONBOARDING for the exact steps.
 | Understand a screen | `components/feature/<section>/` |
 | Change how data is read | `lib/supabase-data.ts` (fetcher) |
 | Add/alter a mutation | new migration RPC **+** `rpc*` wrapper in `supabase-data.ts` **+** store action |
-| Change permissions/nav | `lib/permissions.ts` (UI) **and** the SQL policy/helper (enforcement) |
+| Add or change a permission | `PermissionKey` in `lib/types.ts` + `PERMISSION_CATALOG`/`ROLE_PRESETS` in `lib/permissions.ts` (UI) **and** the SQL policy/RPC check (enforcement) |
 | Change money math | `lib/bill.ts` (+ its test) |
 | Change the schema | a new numbered file in `supabase/migrations/` |
 | Debug auth/blank page | `AuthProvider.tsx` (keep the callback synchronous!) |

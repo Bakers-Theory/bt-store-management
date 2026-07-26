@@ -8,6 +8,7 @@ import { exportReports, REPORT_META, type ReportType } from "@/lib/excel";
 import { fetchReportCounts, fetchReportData, type ReportCounts } from "@/lib/supabase-data";
 import { NoAccess } from "@/components/feature/NoAccess";
 import { DateRangePicker } from "@/components/ui/DateRangePicker";
+import { hasPermission } from "@/lib/permissions";
 
 const labelCls = "mb-[5px] block text-xs font-bold text-[#8a6a3c]";
 
@@ -40,7 +41,8 @@ export function Reports() {
     };
   }, [from, to]);
 
-  if (user && user.role !== "Owner") return <NoAccess />;
+  if (user && !hasPermission(user, "reports.view")) return <NoAccess />;
+  const canExport = hasPermission(user, "reports.export");
 
   const toggle = (t: ReportType) =>
     setSelected((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
@@ -142,14 +144,20 @@ export function Reports() {
           always export the full current snapshot.
         </p>
 
-        <button
-          className="mt-5 inline-flex w-full items-center justify-center gap-1.5 rounded-xl border-none bg-success p-3 text-sm font-bold text-warm-white disabled:cursor-not-allowed disabled:opacity-60"
-          onClick={doExport}
-          disabled={exporting || selected.length === 0}
-        >
-          {exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}{" "}
-          {exporting ? "Preparing…" : `Download Excel${selected.length ? ` (${selected.length})` : ""}`}
-        </button>
+        {canExport ? (
+          <button
+            className="mt-5 inline-flex w-full items-center justify-center gap-1.5 rounded-xl border-none bg-success p-3 text-sm font-bold text-warm-white disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={doExport}
+            disabled={exporting || selected.length === 0}
+          >
+            {exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}{" "}
+            {exporting ? "Preparing…" : `Download Excel${selected.length ? ` (${selected.length})` : ""}`}
+          </button>
+        ) : (
+          <p className="mt-5 rounded-xl bg-cream p-3 text-center text-[12.5px] font-semibold text-ink-muted">
+            You don&apos;t have permission to export reports.
+          </p>
+        )}
       </div>
     </div>
   );

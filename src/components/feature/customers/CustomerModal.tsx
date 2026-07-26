@@ -8,6 +8,8 @@ import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { fetchCustomerBills, rpcUpdateCustomer } from "@/lib/supabase-data";
 import { formatDateFull, relativeDay } from "@/lib/format";
+import { hasPermission } from "@/lib/permissions";
+import { useCurrentUser } from "@/components/system/AuthProvider";
 import type { Bill, Customer } from "@/lib/types";
 
 export function CustomerModal({
@@ -29,6 +31,8 @@ export function CustomerModal({
 
   // Inline edit of name/phone — the directory was otherwise read-only, so a
   // typo made at billing time was permanent.
+  const user = useCurrentUser();
+  const canEdit = hasPermission(user, "customers.edit");
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(customer.name);
   const [phone, setPhone] = useState(customer.phone);
@@ -121,7 +125,7 @@ export function CustomerModal({
               </button>
             </div>
           </div>
-        ) : (
+        ) : canEdit ? (
           <div className="mb-3 flex justify-end">
             <button
               type="button"
@@ -131,7 +135,7 @@ export function CustomerModal({
               <Pencil size={13} /> Edit details
             </button>
           </div>
-        )}
+        ) : null}
         <div className="mb-4 grid grid-cols-2 gap-2.5">
           <div className="rounded-[14px] border border-line bg-cream p-3 text-center">
             <div className="text-[11px] font-semibold text-ink-muted">Visits</div>

@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import { persist, createJSONStorage, type StateStorage } from "zustand/middleware";
-import type { Bakery, Bill, BillLine, Item, PaymentMethod, Permissions, StoreLists } from "./types";
+import type { Bakery, Bill, BillLine, Item, PaymentMethod, StoreLists } from "./types";
 import {
   fetchBaseData,
   fetchItems,
@@ -400,5 +400,3 @@ export const useBakeryStore = create<StoreState>()(
     },
   ),
 );
-
-export type { Permissions };

@@ -7,10 +7,21 @@ import { useUIStore } from "@/lib/ui-store";
 import { Modal } from "@/components/ui/Modal";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { UserModal } from "./UserModal";
-import type { Permissions, User } from "@/lib/types";
+import { PERMISSION_CATALOG, roleLabel } from "@/lib/permissions";
+import type { User } from "@/lib/types";
 
 const permOnCls = "rounded-lg border border-[#cfe6d3] bg-success-bg px-3 py-[5px] text-xs font-bold text-success";
 const permOffCls = "rounded-lg border border-[#ece0cd] bg-[#f4ece0] px-3 py-[5px] text-xs font-bold text-[#b3987a]";
+
+/**
+ * A staff member's grants summarised as the areas they touch, so a card stays
+ * readable at 25 possible permissions. The full set lives in the edit modal.
+ */
+function permAreas(user: User): string[] {
+  return PERMISSION_CATALOG.filter((g) =>
+    g.perms.some((p) => user.permissions.includes(p.key)),
+  ).map((g) => g.title);
+}
 
 function initials(name: string): string {
   return name
@@ -94,12 +105,14 @@ export function UserManagement() {
   };
 
   const permPill = (label: string, on: boolean) => (
-    <span className={on ? permOnCls : permOffCls}>{label}</span>
+    <span key={label} className={on ? permOnCls : permOffCls}>
+      {label}
+    </span>
   );
 
   const staffCard = (u: User) => {
-    const p: Permissions = u.permissions;
     const isOwner = u.role === "Owner";
+    const areas = permAreas(u);
     return (
       <div key={u.id} className="rounded-[14px] border border-[#f0e2cc] p-3.5">
         <div className="mb-[11px] flex items-center gap-[11px]">
@@ -119,18 +132,21 @@ export function UserManagement() {
               isOwner ? "bg-brown text-warm-white" : "bg-[#f4e7d2] text-[#8a6a3c]"
             }`}
           >
-            {u.role}
+            {roleLabel(u)}
           </span>
         </div>
 
         <div className="flex flex-wrap gap-[7px]">
           {isOwner ? (
             permPill("All access", true)
+          ) : areas.length === 0 ? (
+            permPill("No access", false)
           ) : (
             <>
-              {permPill("Sales", p.sales)}
-              {permPill("Inventory", p.inventory)}
-              {permPill("Analytics", p.analytics)}
+              {areas.map((a) => permPill(a, true))}
+              <span className={permOffCls}>
+                {u.permissions.length} permission{u.permissions.length === 1 ? "" : "s"}
+              </span>
             </>
           )}
         </div>

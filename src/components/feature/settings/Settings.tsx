@@ -11,6 +11,7 @@ import { UserManagement } from "./UserManagement";
 import { ChangePasswordCard } from "./ChangePasswordCard";
 import { ListManager } from "./ListManager";
 import { tabCls } from "@/components/ui/tabClass";
+import { hasPermission } from "@/lib/permissions";
 
 const inputCls =
   "w-full rounded-[11px] border border-line bg-cream px-[13px] py-[11px] text-sm outline-none focus:border-brown";
@@ -41,8 +42,20 @@ export function Settings() {
   const [savingSettings, setSavingSettings] = useState(false);
   const [clearing, setClearing] = useState(false);
 
-  // Non-owners get the account view.
-  if (user && user.role !== "Owner") return <MyAccount />;
+  // Each card is gated on its own permission, so an Admin can manage staff and
+  // lists without also being handed the store profile or the danger zone.
+  const canProfile = hasPermission(user, "store.settings");
+  const canLists = hasPermission(user, "store.lists");
+  const canStaff = hasPermission(user, "staff.manage");
+  const isOwner = user?.role === "Owner";
+  const storeTab = canProfile || canLists;
+  const staffTab = canStaff || isOwner;
+
+  // Nothing administrative to show — this is just their own account.
+  if (user && !storeTab && !staffTab) return <MyAccount />;
+
+  // A manager granted only staff access shouldn't land on an empty Store tab.
+  const activeTab = tab === "store" && !storeTab ? "staff" : tab;
 
   const dirty =
     name !== bakery.name ||
@@ -101,18 +114,21 @@ export function Settings() {
 
   return (
     <>
-      <div className="mb-4 flex w-fit gap-1.5 rounded-xl bg-[#f4e7d2] p-1">
-        <button className={tabCls(tab === "store")} onClick={() => setTab("store")}>
-          Store
-        </button>
-        <button className={tabCls(tab === "staff")} onClick={() => setTab("staff")}>
-          Staff &amp; data
-        </button>
-      </div>
+      {storeTab && staffTab && (
+        <div className="mb-4 flex w-fit gap-1.5 rounded-xl bg-[#f4e7d2] p-1">
+          <button className={tabCls(activeTab === "store")} onClick={() => setTab("store")}>
+            Store
+          </button>
+          <button className={tabCls(activeTab === "staff")} onClick={() => setTab("staff")}>
+            Staff &amp; data
+          </button>
+        </div>
+      )}
 
-      {tab === "store" && (
+      {activeTab === "store" && storeTab && (
       <div className="grid items-start gap-4 lg:grid-cols-2">
         {/* Bakery profile */}
+        {canProfile && (
         <div className="rounded-[18px] border border-line bg-warm-white p-[22px] shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
           <h3 className="mb-4 text-[15.5px] font-extrabold">Bakery profile</h3>
 
@@ -249,21 +265,23 @@ export function Settings() {
             </button>
           </div>
         </div>
+        )}
 
         {/* Item options */}
-        <ListManager />
+        {canLists && <ListManager />}
       </div>
       )}
 
-      {tab === "staff" && (
+      {activeTab === "staff" && staffTab && (
         <>
       <div className="grid items-start gap-4 lg:grid-cols-2">
         {/* Staff & permissions */}
-        <UserManagement />
+        {canStaff && <UserManagement />}
         <div className="flex flex-col gap-4">
           <ChangePasswordCard />
 
-          {/* Danger zone */}
+          {/* Danger zone — never delegated */}
+          {isOwner && (
           <div className="rounded-[18px] border border-line bg-warm-white p-[22px] shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
             <h3 className="mb-1.5 text-[15.5px] font-extrabold text-danger">Danger zone</h3>
             <p className="mb-3 text-xs text-ink-muted">
@@ -282,6 +300,7 @@ export function Settings() {
               {clearing ? "Clearing…" : "Clear all data"}
             </button>
           </div>
+          )}
         </div>
       </div>
         </>

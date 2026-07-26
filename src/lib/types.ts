@@ -1,10 +1,42 @@
-export type PermissionKey = "sales" | "inventory" | "analytics";
-
-export interface Permissions {
-  sales: boolean;
-  inventory: boolean;
-  analytics: boolean;
-}
+/**
+ * The granular permission catalogue. Mirrored by `has_perm()` in SQL — the SQL
+ * copy is the actual enforcement; this one only decides what the UI renders.
+ *
+ * Clearing all data and the admin audit trail are deliberately absent: they are
+ * Owner-only and never grantable, so they have no key to hand out.
+ */
+export type PermissionKey =
+  // Dashboard
+  | "dashboard.view"
+  | "dashboard.profit"
+  // Billing
+  | "bill.create"
+  | "bill.discount"
+  | "bill.print"
+  | "bill.cancel"
+  | "bill.delete"
+  | "bill.history"
+  // Inventory
+  | "stock.view"
+  | "stock.in"
+  | "stock.out"
+  | "stock.expiry"
+  | "items.create"
+  | "items.edit"
+  | "items.delete"
+  | "items.cost"
+  // Customers
+  | "customers.view"
+  | "customers.edit"
+  // Reports
+  | "reports.view"
+  | "reports.export"
+  // Store admin
+  | "store.settings"
+  | "store.status"
+  | "store.lists"
+  | "staff.manage"
+  | "activity.view";
 
 export interface Bakery {
   name: string;
@@ -127,14 +159,30 @@ export interface Log {
   user?: string;
 }
 
+/**
+ * The stored role stays a two-value flag: `Owner` is unique (partial unique
+ * index) and implicitly holds every permission; everyone else is `Staff`.
+ *
+ * Admin / Manager / Cashier / Storekeeper are **presets, not stored roles** —
+ * choosing one stamps its permission set into `User.permissions`, which is the
+ * only thing ever enforced. The badge a staff member displays is *derived* from
+ * their set (`presetForPerms`), so a stored label can never disagree with what
+ * they can actually do.
+ */
 export type UserRole = "Owner" | "Staff";
+
+export type PresetRole = "Admin" | "Manager" | "Cashier" | "Storekeeper";
+
+/** What the UI shows as someone's role. Derived, never stored. */
+export type RoleLabel = "Owner" | PresetRole | "Custom" | "No access";
 
 export interface User {
   id: string;
   name: string;
   userId: string;
   role: UserRole;
-  permissions: Permissions;
+  /** Granular grants. Empty for the Owner, who bypasses the check entirely. */
+  permissions: PermissionKey[];
 }
 
 export interface StoreLists {
