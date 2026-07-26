@@ -16,6 +16,7 @@ import { fetchAttendance, fetchAttendanceSummary } from "@/lib/supabase-data";
 import { DateRangeFilter } from "@/components/ui/DateRangePicker";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { download } from "@/components/feature/salary/download";
+import { attendanceReport } from "@/lib/report";
 import type {
   Attendance,
   AttendanceStatus,
@@ -30,7 +31,9 @@ const selectCls =
 
 export function AttendanceHistory({ employees }: { employees: Employee[] }) {
   const toast = useUIStore((s) => s.toast);
-  const bakeryName = useBakeryStore((s) => s.bakery.name);
+  const requestReport = useUIStore((s) => s.requestReport);
+  const bakery = useBakeryStore((s) => s.bakery);
+  const bakeryName = bakery.name;
 
   const [range, setRange] = useState<DateRange>({ from: null, to: null });
   const [profileId, setProfileId] = useState("");
@@ -156,6 +159,24 @@ export function AttendanceHistory({ employees }: { employees: Employee[] }) {
     }
   };
 
+  /** Builds a report document and hands it to ReportPrintHost. */
+  const printPdf = () => {
+    if (!records.length && !summary.length) {
+      toast("Nothing to print for these filters", "error");
+      return;
+    }
+    requestReport(
+      attendanceReport(
+        bakery,
+        summary,
+        records,
+        range.from,
+        range.to,
+        profileId ? employees.find((e) => e.id === profileId)?.name ?? null : null,
+      ),
+    );
+  };
+
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -238,7 +259,7 @@ export function AttendanceHistory({ employees }: { employees: Employee[] }) {
         </button>
         <button
           type="button"
-          onClick={() => window.print()}
+          onClick={printPdf}
           disabled={!loaded}
           className="inline-flex items-center gap-1.5 rounded-[9px] border border-line bg-warm-white px-3 py-[7px] text-[12.5px] font-bold text-ink-muted disabled:opacity-60"
         >

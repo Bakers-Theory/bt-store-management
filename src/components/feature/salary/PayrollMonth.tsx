@@ -39,6 +39,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { localDay } from "@/components/feature/attendance/AttendanceDay";
 import { download } from "./download";
+import { payrollReport } from "@/lib/report";
 import type { PayrollRow, SalaryMode } from "@/lib/types";
 
 const selectCls =
@@ -51,9 +52,11 @@ export function PayrollMonth({
   canEdit: boolean;
   canPay: boolean;
 }) {
-  const currency = useBakeryStore((s) => s.bakery.currency);
-  const bakeryName = useBakeryStore((s) => s.bakery.name);
+  const bakery = useBakeryStore((s) => s.bakery);
+  const currency = bakery.currency;
+  const bakeryName = bakery.name;
   const toast = useUIStore((s) => s.toast);
+  const requestReport = useUIStore((s) => s.requestReport);
 
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -182,6 +185,14 @@ export function PayrollMonth({
     }
   };
 
+  const printPdf = () => {
+    if (!onPayroll.length) {
+      toast("Nobody on the payroll for this month", "error");
+      return;
+    }
+    requestReport(payrollReport(bakery, rows, year, month));
+  };
+
   const money = (n: number) => `${currency}${n.toFixed(2)}`;
 
   return (
@@ -294,7 +305,7 @@ export function PayrollMonth({
         </button>
         <button
           type="button"
-          onClick={() => window.print()}
+          onClick={printPdf}
           disabled={!loaded}
           className="inline-flex items-center gap-1.5 rounded-[9px] border border-line bg-warm-white px-3 py-[7px] text-[12.5px] font-bold text-ink-muted disabled:opacity-60"
         >

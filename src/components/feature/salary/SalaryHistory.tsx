@@ -9,15 +9,18 @@ import { periodLabel, periodSlug, round2 } from "@/lib/salary";
 import { fetchEmployees, fetchSalaryPayments } from "@/lib/supabase-data";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { download } from "./download";
+import { salaryHistoryReport } from "@/lib/report";
 import type { Employee, SalaryPayment } from "@/lib/types";
 
 const selectCls =
   "!w-auto shrink-0 rounded-xl border border-line bg-warm-white px-3 py-[11px] text-[13.5px] font-semibold text-ink-muted focus:border-brown";
 
 export function SalaryHistory() {
-  const currency = useBakeryStore((s) => s.bakery.currency);
-  const bakeryName = useBakeryStore((s) => s.bakery.name);
+  const bakery = useBakeryStore((s) => s.bakery);
+  const currency = bakery.currency;
+  const bakeryName = bakery.name;
   const toast = useUIStore((s) => s.toast);
+  const requestReport = useUIStore((s) => s.requestReport);
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [profileId, setProfileId] = useState("");
@@ -90,6 +93,20 @@ export function SalaryHistory() {
     );
   };
 
+  const printPdf = () => {
+    if (!rows.length) {
+      toast("Nothing to print", "error");
+      return;
+    }
+    requestReport(
+      salaryHistoryReport(
+        bakery,
+        rows,
+        profileId ? employees.find((e) => e.id === profileId)?.name ?? null : null,
+      ),
+    );
+  };
+
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -116,7 +133,7 @@ export function SalaryHistory() {
         </button>
         <button
           type="button"
-          onClick={() => window.print()}
+          onClick={printPdf}
           disabled={!loaded}
           className="inline-flex items-center gap-1.5 rounded-[9px] border border-line bg-warm-white px-3 py-[7px] text-[12.5px] font-bold text-ink-muted disabled:opacity-60"
         >

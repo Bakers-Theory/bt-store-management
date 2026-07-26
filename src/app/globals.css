@@ -291,13 +291,25 @@
   }
 }
 
-/* Print — only the receipt inside .print-area is visible */
+/* Print — two documents, never the screen.
+ *
+ * RECEIPT: `.print-area` on 80mm thermal paper (PrintHost).
+ * REPORT:  `.report-area` on A4 (ReportPrintHost) — a purpose-built document,
+ *          not a printout of the UI. Whichever host has content sets
+ *          `data-print` on <html>, which selects the page size, since @page
+ *          cannot be scoped by selector. */
 @media print {
   @page {
     size: 80mm auto;
     margin: 0;
   }
-  body > *:not(.print-area) {
+  body > *:not(.print-area):not(.report-area) {
+    display: none !important;
+  }
+  html[data-print="report"] .print-area {
+    display: none !important;
+  }
+  html:not([data-print="report"]) .report-area {
     display: none !important;
   }
   .print-area {
@@ -326,5 +338,115 @@
   .print-area .receipt-logo-placeholder {
     width: 20mm;
     height: 20mm;
+  }
+
+  /* ─── The report document ─────────────────────────────────────────────── */
+  .report-area {
+    display: block !important;
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    width: auto;
+    background: #fff;
+    color: #000;
+    font-family: var(--font-sans), system-ui, sans-serif;
+  }
+  .report-doc {
+    font-size: 10pt;
+    line-height: 1.35;
+  }
+  .report-doc .r-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12mm;
+    border-bottom: 1.5pt solid #000;
+    padding-bottom: 3mm;
+    margin-bottom: 4mm;
+  }
+  .report-doc .r-shop {
+    font-size: 15pt;
+    font-weight: 800;
+    line-height: 1.1;
+  }
+  .report-doc .r-sub {
+    font-size: 8.5pt;
+    color: #444;
+  }
+  .report-doc .r-title {
+    text-align: right;
+  }
+  .report-doc .r-title strong {
+    font-size: 12pt;
+    display: block;
+  }
+  .report-doc .r-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3mm 8mm;
+    border: 0.75pt solid #999;
+    padding: 2.5mm 3mm;
+    margin-bottom: 4mm;
+  }
+  .report-doc .r-summary div {
+    min-width: 22mm;
+  }
+  .report-doc .r-summary span {
+    display: block;
+    font-size: 7.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #555;
+  }
+  .report-doc .r-summary b {
+    font-size: 11pt;
+  }
+  .report-doc h3 {
+    font-size: 10pt;
+    font-weight: 700;
+    margin: 5mm 0 1.5mm;
+  }
+  .report-doc table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  /* Repeat the header on every page and never split a row. */
+  .report-doc thead {
+    display: table-header-group;
+  }
+  .report-doc tr {
+    break-inside: avoid;
+  }
+  .report-doc th {
+    text-align: left;
+    font-size: 8pt;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1pt solid #000;
+    padding: 1.5mm 2mm;
+  }
+  .report-doc td {
+    font-size: 9pt;
+    border-bottom: 0.5pt solid #ccc;
+    padding: 1.5mm 2mm;
+  }
+  .report-doc .r-num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .report-doc tfoot td {
+    font-weight: 700;
+    border-top: 1pt solid #000;
+    border-bottom: none;
+  }
+  .report-doc .r-note {
+    margin-top: 5mm;
+    font-size: 8pt;
+    color: #444;
+  }
+  .report-doc .r-empty {
+    padding: 4mm 0;
+    font-size: 9pt;
+    color: #555;
   }
 }

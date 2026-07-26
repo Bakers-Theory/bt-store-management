@@ -9,17 +9,18 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { NoAccess } from "@/components/feature/NoAccess";
 import { AttendanceDay } from "./AttendanceDay";
 import { AttendanceHistory } from "./AttendanceHistory";
+import { AttendanceMonth } from "./AttendanceMonth";
 import type { Employee } from "@/lib/types";
 
 export function Attendance() {
   const user = useCurrentUser();
-  const [tab, setTab] = useState<"day" | "history">("day");
+  const [tab, setTab] = useState<"day" | "month" | "history">("day");
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
   const [retry, setRetry] = useState(0);
 
-  // The roster is shared by both tabs, so it's fetched once here.
+  // The roster is shared by all three tabs, so it's fetched once here.
   useEffect(() => {
     let alive = true;
     setLoaded(false);
@@ -50,6 +51,9 @@ export function Attendance() {
         <button className={tabCls(tab === "day")} onClick={() => setTab("day")}>
           Mark day
         </button>
+        <button className={tabCls(tab === "month")} onClick={() => setTab("month")}>
+          Month
+        </button>
         <button className={tabCls(tab === "history")} onClick={() => setTab("history")}>
           History
         </button>
@@ -74,6 +78,8 @@ export function Attendance() {
         </div>
       ) : tab === "day" ? (
         <AttendanceDay employees={employees} canEdit={canEdit} />
+      ) : tab === "month" ? (
+        <AttendanceMonth employees={employees} />
       ) : (
         <AttendanceHistory employees={employees} />
       )}
