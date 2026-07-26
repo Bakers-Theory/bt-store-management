@@ -3,7 +3,7 @@
 import { createClient } from "@/utils/supabase/client";
 import type { Bakery, Batch, Bill, BillLine, BillStatus, Customer, Item, Log, PaymentMethod, StoreLists, User } from "./types";
 import type { ProfileRow } from "./auth";
-import { profileToUser } from "./auth";
+import { PROFILE_COLUMNS, profileToUser } from "./auth";
 import type { DateRange } from "./date-range";
 
 // ─── Row shapes (DB) ────────────────────────────────────────────────────────
@@ -599,7 +599,7 @@ export async function fetchStaff(): Promise<User[]> {
   const supabase = createClient();
   const { data } = await supabase
     .from("profiles")
-    .select("id,user_id,name,role,perm_sales,perm_inventory,perm_analytics")
+    .select(PROFILE_COLUMNS)
     .order("created_at");
   return ((data ?? []) as ProfileRow[]).map(profileToUser);
 }

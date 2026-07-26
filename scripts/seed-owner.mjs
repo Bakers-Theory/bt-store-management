@@ -40,9 +40,8 @@ const { data, error } = await admin.auth.admin.createUser({
     user_id: userId,
     name,
     role: "Owner",
-    perm_sales: true,
-    perm_inventory: true,
-    perm_analytics: true,
+    // No perms needed: the Owner short-circuits every permission check.
+    perms: [],
   },
 });
 

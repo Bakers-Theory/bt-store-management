@@ -6,6 +6,7 @@ import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { computeTotals } from "@/lib/bill";
+import { hasPermission } from "@/lib/permissions";
 import { expiryStatus } from "@/lib/expiry";
 import { formatDate } from "@/lib/format";
 import { fetchCustomerByPhone } from "@/lib/supabase-data";
@@ -65,6 +66,10 @@ export function Bill() {
   const [clearArmed, setClearArmed] = useState(false);
   const [discount, setDiscount] = useState("");
   const [discountMode, setDiscountMode] = useState<"percent" | "flat">("percent");
+  // generate_bill rejects a discount from a caller without this grant, so the
+  // control is hidden rather than shown-and-failing.
+  const canDiscount = hasPermission(currentUser, "bill.discount");
+  const canPrint = hasPermission(currentUser, "bill.print");
   const [phoneErr, setPhoneErr] = useState("");
   const [nameErr, setNameErr] = useState("");
   const [returning, setReturning] = useState<Customer | null>(null);
@@ -716,6 +721,7 @@ export function Bill() {
                     {subtotal.toFixed(2)}
                   </span>
                 </div>
+                {canDiscount && (
                 <div className="flex items-center justify-between py-0.5 text-[13px] font-semibold text-ink-muted">
                   <span className="flex items-center gap-1.5">
                     Discount
@@ -760,6 +766,7 @@ export function Bill() {
                     {discountAmt > 0 ? `−${currency}${discountAmt.toFixed(2)}` : `${currency}0.00`}
                   </span>
                 </div>
+                )}
                 {tax > 0 && (
                   <div className="flex justify-between py-0.5 text-[13px] font-semibold text-ink-muted">
                     <span>Tax ({taxRate}%)</span>
@@ -863,19 +870,23 @@ export function Bill() {
         <Modal title={`Bill #${receipt.billNo}`} onClose={done}>
           <Receipt bill={receipt} />
           <div className="mt-4 flex gap-2.5">
-            <button
-              className="btn-primary flex flex-1 items-center justify-center gap-2"
-              onClick={() => requestPrint(receipt)}
-            >
-              <Printer size={16} /> Print
-            </button>
+            {canPrint && (
+              <button
+                className="btn-primary flex flex-1 items-center justify-center gap-2"
+                onClick={() => requestPrint(receipt)}
+              >
+                <Printer size={16} /> Print
+              </button>
+            )}
             <button className="btn-secondary flex flex-1 items-center justify-center gap-2" onClick={done}>
               <Check size={16} /> Done
             </button>
           </div>
-          <div className="mt-2.5 text-center text-xs text-ink-muted">
-            Print to a 3&quot; (80mm) thermal printer
-          </div>
+          {canPrint && (
+            <div className="mt-2.5 text-center text-xs text-ink-muted">
+              Print to a 3&quot; (80mm) thermal printer
+            </div>
+          )}
         </Modal>
       )}
     </>

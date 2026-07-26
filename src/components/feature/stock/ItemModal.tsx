@@ -10,6 +10,8 @@ import { fetchItemBatches } from "@/lib/supabase-data";
 import { compressImage, uploadProductImage, deleteProductImage, MAX_UPLOAD_BYTES } from "@/lib/image";
 import dynamic from "next/dynamic";
 import { expiryStatus, type ExpiryStatus } from "@/lib/expiry";
+import { hasPermission } from "@/lib/permissions";
+import { useCurrentUser } from "@/components/system/AuthProvider";
 import type { Batch } from "@/lib/types";
 
 // The cropper pulls in react-easy-crop, only needed once a user picks an image
@@ -33,6 +35,11 @@ export function ItemModal({
   const cats = useBakeryStore((s) => s.lists.categories);
   const emojis = useBakeryStore((s) => s.lists.emojis);
   const units = useBakeryStore((s) => s.lists.units);
+  const user = useCurrentUser();
+  // Without items.cost the view hands back a null purchase price, so the field
+  // is hidden and update_item leaves the stored cost untouched.
+  const canCost = hasPermission(user, "items.cost");
+  const canExpiry = hasPermission(user, "stock.expiry");
 
   const editing = itemId ? items.find((i) => i.id === itemId) : undefined;
 
@@ -285,7 +292,8 @@ export function ItemModal({
         </div>
       </div>
 
-      <div className="mb-3.5 grid grid-cols-2 gap-2.5">
+      <div className={`mb-3.5 grid gap-2.5 ${canCost ? "grid-cols-2" : "grid-cols-1"}`}>
+        {canCost && (
         <div>
           <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Bought Price ({currency})</label>
           <input
@@ -297,6 +305,7 @@ export function ItemModal({
             onChange={(e) => setCostPrice(e.target.value)}
           />
         </div>
+        )}
         <div>
           <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Selling Price ({currency})</label>
           <input
@@ -388,7 +397,8 @@ export function ItemModal({
                     <input
                       type="date"
                       value={b.expiryDate}
-                      disabled={busyBatchId === b.id}
+                      disabled={busyBatchId === b.id || !canExpiry}
+                      readOnly={!canExpiry}
                       onKeyDown={(e) => { if (e.key !== "Tab") e.preventDefault(); }}
                       aria-label={`Edit expiry date for batch of ${b.qty} ${unit}`}
                       onChange={async (e) => {
@@ -413,24 +423,26 @@ export function ItemModal({
                       {status === "expired" ? "Expired" : status === "expiring" ? "Expiring" : "Fresh"}
                     </span>
                   )}
-                  <button
-                    type="button"
-                    disabled={busyBatchId === b.id}
-                    className="ml-auto btn-danger inline-flex items-center gap-1 px-2.5 py-1 text-[11px] disabled:cursor-not-allowed disabled:opacity-50"
-                    onClick={async () => {
-                      setBusyBatchId(b.id);
-                      try {
-                        const r = await writeOffBatch(b.id);
-                        if (r.ok) { toast("Batch written off", "success"); loadBatches(); }
-                        else toast(r.error ?? "Could not write off batch", "error");
-                      } finally {
-                        setBusyBatchId(null);
-                      }
-                    }}
-                  >
-                    {busyBatchId === b.id && <Loader2 size={12} className="animate-spin" />}
-                    Write off
-                  </button>
+                  {canExpiry && (
+                    <button
+                      type="button"
+                      disabled={busyBatchId === b.id}
+                      className="ml-auto btn-danger inline-flex items-center gap-1 px-2.5 py-1 text-[11px] disabled:cursor-not-allowed disabled:opacity-50"
+                      onClick={async () => {
+                        setBusyBatchId(b.id);
+                        try {
+                          const r = await writeOffBatch(b.id);
+                          if (r.ok) { toast("Batch written off", "success"); loadBatches(); }
+                          else toast(r.error ?? "Could not write off batch", "error");
+                        } finally {
+                          setBusyBatchId(null);
+                        }
+                      }}
+                    >
+                      {busyBatchId === b.id && <Loader2 size={12} className="animate-spin" />}
+                      Write off
+                    </button>
+                  )}
                 </div>
               );
             })}

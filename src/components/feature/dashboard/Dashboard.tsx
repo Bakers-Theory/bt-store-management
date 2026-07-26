@@ -152,13 +152,13 @@ export function Dashboard() {
     };
   }, [user?.id, range, statsRetryToken, invalidRange]);
 
-  // Top customers by lifetime spend — analytics-gated, computed on read. Fetched
+  // Top customers by lifetime spend — needs directory access, computed on read. Fetched
   // separately from the aggregate stats payload. On failure `custError` is set
   // so the card can show a distinct "couldn't load" state instead of reading as
   // "this store has no customers."
   const [custError, setCustError] = useState(false);
   useEffect(() => {
-    if (!hasPermission(user, "analytics")) return;
+    if (!hasPermission(user, "customers.view")) return;
     let alive = true;
     fetchCustomers()
       .then((rows) => {
@@ -411,7 +411,7 @@ export function Dashboard() {
         {/* Hero row — primary chart + quick actions kept equal height so the
             cards beneath them line up across the two columns. */}
         <div className="grid gap-4 lg:grid-cols-[1fr_372px] lg:items-stretch">
-          {hasPermission(user, "analytics") ? (
+          {hasPermission(user, "dashboard.view") ? (
             <div className="card">
               <div className="card-header">
                 <h3>{range.from === range.to && range.from ? "Sales" : "Sales over range"}</h3>
@@ -427,7 +427,7 @@ export function Dashboard() {
               <h3>Quick Actions</h3>
             </div>
             <div className="flex flex-col gap-2.5">
-              {hasPermission(user, "sales") && (
+              {hasPermission(user, "bill.create") && (
                 <button
                   className="btn-primary flex items-center justify-center gap-2 p-3.5 text-sm"
                   onClick={() => router.push("/bill")}
@@ -435,7 +435,7 @@ export function Dashboard() {
                   <Receipt size={16} /> Create new bill
                 </button>
               )}
-              {hasPermission(user, "inventory") && (
+              {hasPermission(user, "stock.in") && (
                 <button
                   className="btn-secondary flex items-center justify-center gap-2 p-3.5 text-sm"
                   onClick={() => {
@@ -446,7 +446,7 @@ export function Dashboard() {
                   <Plus size={16} /> Add stock
                 </button>
               )}
-              {hasPermission(user, "inventory") && (
+              {hasPermission(user, "items.create") && (
                 <button
                   className="btn-secondary flex items-center justify-center gap-2 p-3.5 text-sm"
                   onClick={() => setAddOpen(true)}
@@ -462,7 +462,7 @@ export function Dashboard() {
         <div className="grid gap-4 lg:grid-cols-[1fr_372px] lg:items-start">
           {/* LEFT COLUMN */}
           <div className="flex min-w-0 flex-col gap-4">
-            {hasPermission(user, "analytics") && (
+            {hasPermission(user, "dashboard.view") && (
               <>
                 <div className="card">
                   <div className="card-header">
@@ -579,7 +579,7 @@ export function Dashboard() {
 
           {/* RIGHT COLUMN */}
           <div className="flex min-w-0 flex-col gap-4">
-            {hasPermission(user, "analytics") && (
+            {hasPermission(user, "customers.view") && (
               <TopCustomersCard
                 loaded={custLoaded}
                 error={custError}
@@ -587,7 +587,7 @@ export function Dashboard() {
                 currency={currency}
               />
             )}
-            {hasPermission(user, "inventory") && (
+            {hasPermission(user, "stock.view") && (
               <StockHealthCard
                 loading={loading}
                 health={health}

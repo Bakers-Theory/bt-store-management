@@ -253,10 +253,13 @@ export function History() {
   const toast = useUIStore((s) => s.toast);
   const requireOwnerAuth = useUIStore((s) => s.requireOwnerAuth);
 
-  const canSales = hasPermission(user, "sales");
-  const canInv = hasPermission(user, "inventory");
+  const canBills = hasPermission(user, "bill.history");
+  const canLogs = hasPermission(user, "activity.view");
+  const canCancel = hasPermission(user, "bill.cancel");
+  const canDelete = hasPermission(user, "bill.delete");
+  // The Store tab is the admin audit trail — Owner-only and never grantable.
   const isOwner = user?.role === "Owner";
-  const [tab, setTab] = useState<"bills" | "logs" | "store">(canSales ? "bills" : "logs");
+  const [tab, setTab] = useState<"bills" | "logs" | "store">(canBills ? "bills" : "logs");
   const [viewBill, setViewBill] = useState<Bill | null>(null);
   const [confirmCancel, setConfirmCancel] = useState<Bill | null>(null);
 
@@ -343,7 +346,7 @@ export function History() {
   // the first-ever paint — filter reloads keep the current list visible until
   // the new data lands, and never flash the skeleton over cached rows.
   useEffect(() => {
-    if (!canSales) return;
+    if (!canBills) return;
     let alive = true;
     setBillsError(false);
     const window = billsFiltered ? PAGE_SIZE : Math.max(billsCache?.bills.length ?? 0, PAGE_SIZE);
@@ -365,11 +368,11 @@ export function History() {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canSales, billFilters, billsRetry]);
+  }, [canBills, billFilters, billsRetry]);
 
   // Load stock-log (page 0) on filter change.
   useEffect(() => {
-    if (!canInv) return;
+    if (!canLogs) return;
     let alive = true;
     setLogsError(false);
     const window = logsFiltered ? PAGE_SIZE : Math.max(logsCache?.logs.length ?? 0, PAGE_SIZE);
@@ -391,7 +394,7 @@ export function History() {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canInv, logFilters, logsRetry]);
+  }, [canLogs, logFilters, logsRetry]);
 
   // Load store/admin log (page 0) on filter change.
   useEffect(() => {
@@ -461,7 +464,7 @@ export function History() {
   const refreshLoaded = async () => {
     const [bp, lp] = await Promise.all([
       fetchBillsPage(0, Math.max(bills.length, PAGE_SIZE), billFilters),
-      canInv ? fetchLogsPage(0, Math.max(logs.length, PAGE_SIZE), logFilters) : Promise.resolve(null),
+      canLogs ? fetchLogsPage(0, Math.max(logs.length, PAGE_SIZE), logFilters) : Promise.resolve(null),
     ]);
     setBills(bp.bills);
     setBillsMore(bp.hasMore);
@@ -547,10 +550,10 @@ export function History() {
   return (
     <>
       <div className="mb-4 flex w-fit gap-1.5 rounded-xl bg-[#f4e7d2] p-1">
-        {canSales && (
+        {canBills && (
           <button className={tabCls(tab === "bills")} onClick={() => setTab("bills")}>Bills</button>
         )}
-        {canInv && (
+        {canLogs && (
           <button className={tabCls(tab === "logs")} onClick={() => setTab("logs")}>Stock Log</button>
         )}
         {isOwner && (
@@ -640,7 +643,7 @@ export function History() {
                         >
                           <ReceiptIcon size={16} />
                         </button>
-                        {!cancelled && (
+                        {!cancelled && canCancel && (
                           <button
                             className="inline-flex cursor-pointer items-center justify-center rounded-lg border-none bg-warn px-2.5 py-1.5 text-xs text-white disabled:cursor-not-allowed disabled:opacity-60"
                             onClick={() => doCancel(b)}
@@ -650,14 +653,16 @@ export function History() {
                             {busyBill.has(b.id) ? <Loader2 size={16} className="animate-spin" /> : <Ban size={16} />}
                           </button>
                         )}
-                        <button
-                          className="inline-flex cursor-pointer items-center justify-center rounded-lg border-none bg-danger px-2.5 py-1.5 text-xs text-white disabled:cursor-not-allowed disabled:opacity-60"
-                          onClick={() => doDelete(b)}
-                          disabled={busyBill.has(b.id)}
-                          aria-label="Delete bill"
-                        >
-                          {busyBill.has(b.id) ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
-                        </button>
+                        {canDelete && (
+                          <button
+                            className="inline-flex cursor-pointer items-center justify-center rounded-lg border-none bg-danger px-2.5 py-1.5 text-xs text-white disabled:cursor-not-allowed disabled:opacity-60"
+                            onClick={() => doDelete(b)}
+                            disabled={busyBill.has(b.id)}
+                            aria-label="Delete bill"
+                          >
+                            {busyBill.has(b.id) ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
