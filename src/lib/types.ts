@@ -38,6 +38,10 @@ export type PermissionKey =
   | "salary.view"
   | "salary.edit"
   | "salary.pay"
+  // Advances
+  | "advance.view"
+  | "advance.request"
+  | "advance.approve"
   // Store admin
   | "store.settings"
   | "store.status"
@@ -281,6 +285,12 @@ export interface PayrollRow {
   overrideReason: string;
   paidOn: string | null;
   paymentMode: SalaryMode | "";
+  /** Outstanding advance balance, excluding this record's own recovery. */
+  advanceBalance: number;
+  /** Recovery set on this period's record; 0 when no record exists. */
+  advanceRecovery: number;
+  /** `net − advanceRecovery` — what is actually handed over. */
+  netPayable: number;
 }
 
 export interface SalaryPayment {
@@ -303,6 +313,8 @@ export interface SalaryPayment {
   paymentMode: SalaryMode | "";
   recordedByName: string;
   updatedAt: string;
+  advanceRecovery: number;
+  netPayable: number;
 }
 
 export interface StoreLists {
@@ -310,4 +322,43 @@ export interface StoreLists {
   emojis: string[];
   units: string[];
   reasons: string[];
+}
+
+// ─── Advances ───────────────────────────────────────────────────────────────
+
+export type AdvanceStatus = "pending" | "approved" | "rejected";
+
+/** One advance request, at whatever stage it has reached. */
+export interface StaffAdvance {
+  id: string;
+  profileId: string;
+  employeeName: string;
+  amount: number;
+  note: string;
+  status: AdvanceStatus;
+  requestedOn: string;
+  requestedByName: string;
+  /** Null until approved. Approval and disbursement are one step. */
+  approvedOn: string | null;
+  paymentMode: SalaryMode | "";
+  rejectReason: string;
+  decidedByName: string;
+  updatedAt: string;
+}
+
+/**
+ * One employee's advance position. `balance` is "still owed after everything
+ * prepared" — recoveries on unpaid payroll records are already subtracted, so
+ * the same money is never suggested for recovery twice.
+ */
+export interface AdvanceBalance {
+  profileId: string;
+  employeeName: string;
+  totalAdvanced: number;
+  totalRecovered: number;
+  balance: number;
+  pendingAmount: number;
+  /** Earliest approved advance while anything is outstanding, else null. */
+  oldestOpen: string | null;
+  monthlySalary: number;
 }

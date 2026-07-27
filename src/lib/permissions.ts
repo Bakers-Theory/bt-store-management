@@ -94,6 +94,14 @@ export const PERMISSION_CATALOG: PermissionGroup[] = [
     ],
   },
   {
+    title: "Advances",
+    perms: [
+      { key: "advance.view", label: "View advances & balances", hint: "See what each employee owes and their advance history" },
+      { key: "advance.request", label: "Record advances", hint: "Put in a request for an advance against salary" },
+      { key: "advance.approve", label: "Approve & hand over advances", hint: "Approve or refuse a request, with date and payment mode" },
+    ],
+  },
+  {
     title: "Store admin",
     perms: [
       { key: "store.settings", label: "Store profile & tax", hint: "Name, address, GST, tax rate, thresholds, logo" },
@@ -154,6 +162,10 @@ const OWNER_BY_DEFAULT: PermissionKey[] = [
   "salary.view",
   "salary.edit",
   "salary.pay",
+  // Advances are money against a salary, so they get the same treatment.
+  "advance.view",
+  "advance.request",
+  "advance.approve",
 ];
 
 export const ROLE_PRESETS: Record<PresetRole, PermissionKey[]> = {
@@ -240,7 +252,9 @@ export function navItems(user: User | null): NavItem[] {
     items.push({ key: "history", href: "/history", icon: "📋", label: "History" });
   if (hasPermission(user, "attendance.view"))
     items.push({ key: "attendance", href: "/attendance", icon: "🗓️", label: "Attendance" });
-  if (hasPermission(user, "salary.view"))
+  // advance.view alone must reach the page too — Salary.tsx renders only the
+  // tabs the holder can actually open.
+  if (hasAnyPermission(user, ["salary.view", "advance.view"]))
     items.push({ key: "salary", href: "/salary", icon: "💰", label: "Salary" });
   return items;
 }
@@ -261,7 +275,7 @@ export function canAccessSection(user: User | null, section: string): boolean {
     case "attendance":
       return hasPermission(user, "attendance.view");
     case "salary":
-      return hasPermission(user, "salary.view");
+      return hasAnyPermission(user, ["salary.view", "advance.view"]);
     case "reports":
       return hasPermission(user, "reports.view");
     case "settings":
@@ -279,7 +293,7 @@ export function defaultRoute(user: User | null): string {
   if (hasPermission(user, "customers.view")) return "/customers";
   if (hasAnyPermission(user, ["bill.history", "activity.view"])) return "/history";
   if (hasPermission(user, "attendance.view")) return "/attendance";
-  if (hasPermission(user, "salary.view")) return "/salary";
+  if (hasAnyPermission(user, ["salary.view", "advance.view"])) return "/salary";
   if (hasPermission(user, "reports.view")) return "/reports";
   return "/dashboard"; // no access — page renders the "No Access" state
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@/utils/supabase/client";
-import type { Attendance, AttendanceStatus, AttendanceSummary, Bakery, Batch, Bill, BillLine, BillStatus, Customer, Employee, EmployeeSalary, Item, Log, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, StoreLists, User } from "./types";
+import type { Attendance, AttendanceStatus, AttendanceSummary, AdvanceBalance, Bakery, Batch, Bill, BillLine, BillStatus, Customer, Employee, EmployeeSalary, Item, Log, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, StaffAdvance, StoreLists, User } from "./types";
 import { isAttendanceStatus } from "./attendance";
 import { isSalaryMode } from "./salary";
 import type { ProfileRow } from "./auth";
@@ -920,6 +920,9 @@ interface PayrollPreviewRow {
   override_reason: string | null;
   paid_on: string | null;
   payment_mode: string | null;
+  advance_balance: number | string | null;
+  advance_recovery: number | string | null;
+  net_payable: number | string | null;
 }
 
 /**
@@ -953,6 +956,11 @@ export async function fetchPayroll(
     overrideReason: r.override_reason ?? "",
     paidOn: r.paid_on,
     paymentMode: isSalaryMode(r.payment_mode) ? r.payment_mode : "",
+    advanceBalance: Number(r.advance_balance ?? 0),
+    advanceRecovery: Number(r.advance_recovery ?? 0),
+    // Falls back to the net when no record exists yet, so the field is never
+    // a misleading zero on an unprepared row.
+    netPayable: Number(r.net_payable ?? r.net ?? r.computed_net),
   }));
 }
 
@@ -975,6 +983,8 @@ interface SalaryPaymentRow {
   payment_mode: string | null;
   recorded_by_name: string | null;
   updated_at: string;
+  advance_recovery: number | string | null;
+  net_payable: number | string | null;
 }
 
 function mapSalaryPayment(r: SalaryPaymentRow): SalaryPayment {
@@ -997,6 +1007,8 @@ function mapSalaryPayment(r: SalaryPaymentRow): SalaryPayment {
     paymentMode: isSalaryMode(r.payment_mode) ? r.payment_mode : "",
     recordedByName: r.recorded_by_name ?? "",
     updatedAt: r.updated_at,
+    advanceRecovery: Number(r.advance_recovery ?? 0),
+    netPayable: Number(r.net_payable ?? r.net),
   };
 }
 
@@ -1059,3 +1071,130 @@ export async function rpcMarkSalaryUnpaid(id: string): Promise<SalaryPayment> {
 
 export const rpcDeleteSalaryPayment = (id: string) =>
   rpc<void>("delete_salary_payment", { p_id: id });
+
+// ─── Advances ───────────────────────────────────────────────────────────────
+
+/** Every non-Owner employee's advance position (Owner excluded by the view). */
+export async function fetchAdvanceBalances(): Promise<AdvanceBalance[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("staff_advance_balance_v")
+    .select("*");
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as {
+    profile_id: string; employee_name: string;
+    total_advanced: number | string; total_recovered: number | string;
+    balance: number | string; pending_amount: number | string;
+    oldest_open: string | null; monthly_salary: number | string;
+  }[]).map((r) => ({
+    profileId: r.profile_id,
+    employeeName: r.employee_name,
+    totalAdvanced: Number(r.total_advanced),
+    totalRecovered: Number(r.total_recovered),
+    balance: Number(r.balance),
+    pendingAmount: Number(r.pending_amount),
+    oldestOpen: r.oldest_open,
+    monthlySalary: Number(r.monthly_salary),
+  }));
+}
+
+interface StaffAdvanceRow {
+  id: string;
+  profile_id: string;
+  employee_name: string;
+  amount: number | string;
+  note: string | null;
+  status: string;
+  requested_on: string;
+  approved_on: string | null;
+  payment_mode: string | null;
+  reject_reason: string | null;
+  requested_by_name: string | null;
+  decided_by_name: string | null;
+  updated_at: string;
+}
+
+function mapAdvance(r: StaffAdvanceRow): StaffAdvance {
+  return {
+    id: r.id,
+    profileId: r.profile_id,
+    employeeName: r.employee_name,
+    amount: Number(r.amount),
+    note: r.note ?? "",
+    status:
+      r.status === "approved" ? "approved" : r.status === "rejected" ? "rejected" : "pending",
+    requestedOn: r.requested_on,
+    requestedByName: r.requested_by_name ?? "",
+    approvedOn: r.approved_on,
+    paymentMode: isSalaryMode(r.payment_mode) ? r.payment_mode : "",
+    rejectReason: r.reject_reason ?? "",
+    decidedByName: r.decided_by_name ?? "",
+    updatedAt: r.updated_at,
+  };
+}
+
+/** Advances, newest first. Pass a profile id for one employee's ledger. */
+export async function fetchAdvances(profileId?: string): Promise<StaffAdvance[]> {
+  const supabase = createClient();
+  let q = supabase.from("staff_advance_v").select("*");
+  if (profileId) q = q.eq("profile_id", profileId);
+  const { data, error } = await q
+    .order("requested_on", { ascending: false })
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as StaffAdvanceRow[]).map(mapAdvance);
+}
+
+export async function rpcRequestAdvance(
+  profileId: string,
+  amount: number,
+  note: string,
+): Promise<StaffAdvance> {
+  const row = await rpc<StaffAdvanceRow>("request_advance", {
+    p_profile: profileId,
+    p_amount: amount,
+    p_note: note,
+    p_tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+  });
+  return mapAdvance(row);
+}
+
+export async function rpcApproveAdvance(
+  id: string,
+  approvedOn: string,
+  mode: SalaryMode,
+): Promise<StaffAdvance> {
+  const row = await rpc<StaffAdvanceRow>("approve_advance", {
+    p_id: id,
+    p_approved_on: approvedOn,
+    p_mode: mode,
+    p_tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+  });
+  return mapAdvance(row);
+}
+
+export async function rpcRejectAdvance(
+  id: string,
+  reason: string,
+): Promise<StaffAdvance> {
+  const row = await rpc<StaffAdvanceRow>("reject_advance", {
+    p_id: id,
+    p_reason: reason,
+  });
+  return mapAdvance(row);
+}
+
+export const rpcDeleteAdvance = (id: string) =>
+  rpc<void>("delete_advance", { p_id: id });
+
+/** Set the recovery on an unpaid payroll record. Gated on `salary.edit`. */
+export async function rpcSetAdvanceRecovery(
+  paymentId: string,
+  amount: number,
+): Promise<SalaryPayment> {
+  const row = await rpc<SalaryPaymentRow>("set_advance_recovery", {
+    p_payment_id: paymentId,
+    p_amount: amount,
+  });
+  return mapSalaryPayment(row);
+}

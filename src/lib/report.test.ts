@@ -37,7 +37,8 @@ const payroll = (p: Partial<PayrollRow> = {}): PayrollRow => ({
   profileId: "a", employeeName: "Anjali", gross: 18000, calendarDays: 31,
   recorded: 31, unpaidDays: 2.5, deduction: 1451.61, computedNet: 16548.39,
   paymentId: null, status: "none", net: null, storedComputedNet: null,
-  overrideReason: "", paidOn: null, paymentMode: "", ...p,
+  overrideReason: "", paidOn: null, paymentMode: "",
+  advanceBalance: 0, advanceRecovery: 0, netPayable: 16548.39, ...p,
 });
 
 const payment = (p: Partial<SalaryPayment> = {}): SalaryPayment => ({
@@ -45,7 +46,8 @@ const payment = (p: Partial<SalaryPayment> = {}): SalaryPayment => ({
   periodYear: 2026, periodMonth: 7, gross: 18000, calendarDays: 31,
   recordedDays: 31, unpaidDays: 2.5, deduction: 1451.61, computedNet: 16548.39, net: 16548.39,
   overrideReason: "", status: "paid", paidOn: "2026-08-01", paymentMode: "UPI",
-  recordedByName: "Admin", updatedAt: "2026-08-01T00:00:00Z", ...p,
+  recordedByName: "Admin", updatedAt: "2026-08-01T00:00:00Z",
+  advanceRecovery: 0, netPayable: 16548.39, ...p,
 });
 
 describe("rangeLabel", () => {

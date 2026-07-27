@@ -34,6 +34,9 @@ const row = (p: Partial<PayrollRow> = {}): PayrollRow => ({
   overrideReason: "",
   paidOn: null,
   paymentMode: "",
+  advanceBalance: 0,
+  advanceRecovery: 0,
+  netPayable: 18000,
   ...p,
 });
 

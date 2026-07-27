@@ -64,7 +64,10 @@ describe("catalogue", () => {
 
 describe("presets", () => {
   it("Admin holds everything grantable except staff management and salary", () => {
-    const ownerOnly = ["staff.manage", "salary.view", "salary.edit", "salary.pay"];
+    const ownerOnly = [
+      "staff.manage", "salary.view", "salary.edit", "salary.pay",
+      "advance.view", "advance.request", "advance.approve",
+    ];
     expect(new Set(ROLE_PRESETS.Admin)).toEqual(
       new Set(ALL_PERMISSIONS.filter((k) => !ownerOnly.includes(k))),
     );
@@ -306,7 +309,8 @@ describe("legacy group aliasing (mirrors has_perm in SQL)", () => {
     const grouped = new Set(Object.values(GROUPS).flat());
     const ungrouped = ALL_PERMISSIONS.filter((k) => !grouped.has(k));
     expect(ungrouped.sort()).toEqual([
-      "activity.view", "attendance.edit", "attendance.view",
+      "activity.view", "advance.approve", "advance.request", "advance.view",
+      "attendance.edit", "attendance.view",
       "salary.edit", "salary.pay", "salary.view",
       "staff.manage", "store.lists", "store.settings", "store.status",
     ]);
@@ -329,5 +333,54 @@ describe("PERMISSION_CATALOG shape", () => {
         expect(p.hint.length, p.key).toBeGreaterThan(0);
       }
     }
+  });
+});
+
+describe("advance permissions", () => {
+  const staff = (perms: PermissionKey[]): User => ({
+    id: "u1",
+    userId: "staff1",
+    name: "Staff",
+    role: "Staff",
+    permissions: perms,
+  });
+
+  it("puts all three keys in the catalogue", () => {
+    expect(ALL_PERMISSIONS).toContain("advance.view");
+    expect(ALL_PERMISSIONS).toContain("advance.request");
+    expect(ALL_PERMISSIONS).toContain("advance.approve");
+  });
+
+  // Advances stay with the Owner until deliberately delegated — the same
+  // treatment as salary.* and staff.manage. Admin is explicitly included.
+  it("grants them in no preset, Admin included", () => {
+    for (const role of PRESET_ROLES) {
+      expect(ROLE_PRESETS[role]).not.toContain("advance.view");
+      expect(ROLE_PRESETS[role]).not.toContain("advance.request");
+      expect(ROLE_PRESETS[role]).not.toContain("advance.approve");
+    }
+  });
+
+  it("still gives the Owner everything", () => {
+    const owner: User = {
+      id: "o", userId: "owner", name: "Owner", role: "Owner", permissions: [],
+    };
+    expect(hasPermission(owner, "advance.approve")).toBe(true);
+  });
+
+  // Without this, someone granted advance.view but not salary.view could not
+  // reach the page their permission is for.
+  it("opens the salary section for advance.view alone", () => {
+    expect(canAccessSection(staff(["advance.view"]), "salary")).toBe(true);
+    expect(navItems(staff(["advance.view"])).some((i) => i.key === "salary")).toBe(true);
+    expect(defaultRoute(staff(["advance.view"]))).toBe("/salary");
+  });
+
+  it("still opens it for salary.view alone", () => {
+    expect(canAccessSection(staff(["salary.view"]), "salary")).toBe(true);
+  });
+
+  it("keeps it shut for someone with neither", () => {
+    expect(canAccessSection(staff(["bill.create"]), "salary")).toBe(false);
   });
 });
