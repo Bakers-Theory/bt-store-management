@@ -117,6 +117,8 @@ function build(
   status: "paid" | "unpaid" | "none",
   paidOn: string | null,
   paymentMode: string,
+  advanceRecovery: number,
+  advanceBalance: number,
 ): Payslip {
   const cur = shop.currency || "₹";
   const money = (v: number) => `${cur}${v.toFixed(2)}`;
@@ -140,7 +142,17 @@ function build(
       minus: net < computedNet,
     });
   }
-  lines.push({ label: "Net pay", value: money(net), strong: true });
+
+  const recovery = round2(Math.max(0, advanceRecovery));
+  const payable = round2(net - recovery);
+
+  if (recovery > 0) {
+    lines.push({ label: "Net salary", value: money(net), strong: true });
+    lines.push({ label: "Less: advance recovery", value: money(recovery), minus: true });
+    lines.push({ label: "Amount paid", value: money(payable), strong: true });
+  } else {
+    lines.push({ label: "Net pay", value: money(net), strong: true });
+  }
 
   return {
     kind: "payslip",
@@ -157,19 +169,25 @@ function build(
         : [{ label: "Days recorded", value: String(recorded) }]),
       { label: "Unpaid days", value: String(unpaidDays) },
       { label: "Per-day rate", value: money(round2(perDay)) },
+      ...(advanceBalance > 0
+        ? [{ label: "Advance balance carried", value: money(round2(advanceBalance)) }]
+        : []),
     ],
     lines,
-    net: money(net),
-    netInWords: amountInWords(net),
+    net: money(payable),
+    netInWords: amountInWords(payable),
     statusLine:
       status === "paid" && paidOn
         ? `Paid on ${paidOn}${paymentMode ? ` by ${paymentMode}` : ""}`
         : status === "unpaid"
           ? "Payment pending"
           : "Payroll not yet prepared",
-    note:
+     note:
       "Leave is unpaid and a half day pays half. Days with no attendance record " +
-      "are excluded from the calculation and paid in full.",
+      "are excluded from the calculation and paid in full." +
+      (recovery > 0
+        ? " The advance recovery above is deducted from an advance already received."
+        : ""),
     fileName: `${slug(shop.name)}-payslip-${slug(employeeName)}-${periodSlug(year, month)}`,
   };
 }
@@ -190,6 +208,7 @@ export const payslipFromPayroll = (
     row.storedComputedNet ?? row.computedNet,
     row.overrideReason,
     row.status, row.paidOn, row.paymentMode,
+    row.advanceRecovery, row.advanceBalance,
   );
 
 /** Payslip from a filed payment record (reprinting an old month). */
@@ -199,4 +218,5 @@ export const payslipFromPayment = (shop: ShopInfo, p: SalaryPayment): Payslip =>
     p.gross, p.calendarDays, p.recordedDays, p.unpaidDays,
     p.deduction, p.net, p.computedNet, p.overrideReason,
     p.status, p.paidOn, p.paymentMode,
+    p.advanceRecovery, 0
   );
