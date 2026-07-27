@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, LayoutGrid, List, Loader2, Phone, Printer, Receipt as ReceiptIcon, ShoppingBasket, User, UserCheck, X } from "lucide-react";
+import { Check, LayoutGrid, List, Loader2, MessageCircle, Phone, Printer, Receipt as ReceiptIcon, ShoppingBasket, User, UserCheck, X } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
+import { shareBillOnWhatsApp } from "@/lib/whatsapp";
 import { useUIStore } from "@/lib/ui-store";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { computeTotals } from "@/lib/bill";
@@ -45,6 +46,7 @@ function ExpiryBadge({
 
 export function Bill() {
   const items = useBakeryStore((s) => s.items);
+  const bakery = useBakeryStore((s) => s.bakery);
   const currency = useBakeryStore((s) => s.bakery.currency);
   const taxRate = useBakeryStore((s) => s.bakery.taxRate);
   const expiringSoonDays = useBakeryStore((s) => s.bakery.expiringSoonDays);
@@ -869,16 +871,24 @@ export function Bill() {
       {receipt && (
         <Modal title={`Bill #${receipt.billNo}`} onClose={done}>
           <Receipt bill={receipt} />
-          <div className="mt-4 flex gap-2.5">
+          <div className="mt-4 flex flex-col gap-2.5">
             {canPrint && (
-              <button
-                className="btn-primary flex flex-1 items-center justify-center gap-2"
-                onClick={() => requestPrint(receipt)}
-              >
-                <Printer size={16} /> Print
-              </button>
+              <div className="flex gap-2.5">
+                <button
+                  className="btn-primary flex flex-1 items-center justify-center gap-2"
+                  onClick={() => requestPrint(receipt)}
+                >
+                  <Printer size={16} /> Print
+                </button>
+                <button
+                  className="btn-secondary flex flex-1 items-center justify-center gap-2"
+                  onClick={() => shareBillOnWhatsApp(receipt, bakery)}
+                >
+                  <MessageCircle size={16} /> Share
+                </button>
+              </div>
             )}
-            <button className="btn-secondary flex flex-1 items-center justify-center gap-2" onClick={done}>
+            <button className="btn-secondary flex w-full items-center justify-center gap-2" onClick={done}>
               <Check size={16} /> Done
             </button>
           </div>
