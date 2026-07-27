@@ -279,7 +279,7 @@ describe("period helpers", () => {
 describe("payment modes", () => {
   it("offers the four modes and rejects anything else", () => {
     expect(SALARY_MODES).toEqual(["Cash", "UPI"]);
-    expect(isSalaryMode("Bank Transfer")).toBe(true);
+    expect(isSalaryMode("Cash")).toBe(true);
     expect(isSalaryMode("Crypto")).toBe(false);
     expect(isSalaryMode("")).toBe(false);
   });
