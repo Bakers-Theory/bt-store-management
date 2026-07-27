@@ -99,6 +99,10 @@ export interface PayrollTotals {
   paid: number;
   unpaid: number;
   notCreated: number;
+  /** Total recovered against advances this period. */
+  advanceRecovery: number;
+  /** `net − advanceRecovery` — what actually gets handed over. */
+  netPayable: number;
 }
 
 /**
@@ -117,6 +121,10 @@ export function payrollTotals(rows: PayrollRow[]): PayrollTotals {
     paid: onPayroll.filter((r) => r.status === "paid").length,
     unpaid: onPayroll.filter((r) => r.status === "unpaid").length,
     notCreated: onPayroll.filter((r) => r.status === "none").length,
+    advanceRecovery: round2(onPayroll.reduce((s, r) => s + r.advanceRecovery, 0)),
+    netPayable: round2(
+      onPayroll.reduce((s, r) => s + ((r.net ?? r.computedNet) - r.advanceRecovery), 0),
+    ),
   };
 }
 

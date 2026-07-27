@@ -240,6 +240,34 @@ describe("payrollTotals", () => {
   });
 });
 
+describe("payrollTotals with advances", () => {
+  it("is unchanged when nobody has a recovery", () => {
+    const rows = [row({ net: 18000, netPayable: 18000 })];
+    const t = payrollTotals(rows);
+    expect(t.net).toBe(18000);
+    expect(t.advanceRecovery).toBe(0);
+    // With no recovery, the payable is the net — the existing behaviour.
+    expect(t.netPayable).toBe(18000);
+  });
+
+  it("sums recoveries and reports the payable separately from the net", () => {
+    const rows = [
+      row({ net: 18000, advanceRecovery: 3000, netPayable: 15000 }),
+      row({ profileId: "b", net: 12000, advanceRecovery: 1000, netPayable: 11000 }),
+    ];
+    const t = payrollTotals(rows);
+    // `net` keeps its meaning: salary net of leave, before any recovery.
+    expect(t.net).toBe(30000);
+    expect(t.advanceRecovery).toBe(4000);
+    expect(t.netPayable).toBe(26000);
+  });
+
+  it("ignores employees with no salary set, as it already does for net", () => {
+    const rows = [row({ gross: 0, net: 0, advanceRecovery: 500, netPayable: 0 })];
+    expect(payrollTotals(rows).advanceRecovery).toBe(0);
+  });
+});
+
 describe("period helpers", () => {
   it("labels and slugs a period", () => {
     expect(periodLabel(2026, 7)).toBe("July 2026");
