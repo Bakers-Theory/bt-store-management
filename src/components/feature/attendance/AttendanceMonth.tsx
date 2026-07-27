@@ -117,7 +117,7 @@ export function AttendanceMonth({
     <div className="min-w-0">
       {/* With no roster there's nothing to draw — the panel beside says why. */}
       {!employeeId ? null : !loaded ? (
-        <Skeleton className="h-[360px] rounded-[18px]" />
+        <Skeleton className="h-[300px] rounded-[18px] sm:h-[360px]" />
       ) : error ? (
         <div className="py-8 text-center text-sm text-ink-muted">
           <p className="mb-3">Couldn&apos;t load the month.</p>
@@ -131,7 +131,7 @@ export function AttendanceMonth({
         </div>
       ) : (
         <>
-          <div className="w-full rounded-[18px] border border-line bg-warm-white p-3 shadow-[0_2px_12px_rgba(100,60,20,0.04)]">
+          <div className="w-full rounded-[18px] border border-line bg-warm-white p-2.5 shadow-[0_2px_12px_rgba(100,60,20,0.04)] sm:p-3">
             <div className="mb-2 flex items-center justify-between gap-2">
               <button
                 type="button"
@@ -169,7 +169,7 @@ export function AttendanceMonth({
               </button>
             </div>
 
-            <div className="mb-1 grid grid-cols-7 gap-1">
+            <div className="mb-1 grid grid-cols-7 gap-[3px] sm:gap-1">
               {WEEKDAY.map((w, i) => (
                 <div
                   key={i}
@@ -182,7 +182,7 @@ export function AttendanceMonth({
               ))}
             </div>
 
-            <div className="grid grid-cols-7 gap-1">
+            <div className="grid grid-cols-7 gap-[3px] sm:gap-1">
               {Array.from({ length: lead }, (_, i) => (
                 <div key={`lead-${i}`} />
               ))}
@@ -202,7 +202,9 @@ export function AttendanceMonth({
                         ? `${iso} · ${STATUS_META[rec.status].label}${rec.note ? ` — ${rec.note}` : ""}`
                         : `${iso} · not marked`
                     }
-                    className={`flex aspect-square flex-col items-center justify-center gap-[1px] rounded-[9px] border text-center disabled:opacity-40 ${
+                    // Fixed height, not aspect-square: full-bleed squares on a
+                    // phone push the marking panel off the bottom of the screen.
+                    className={`flex h-11 flex-col items-center justify-center gap-[1px] rounded-[8px] border text-center disabled:opacity-40 sm:h-12 sm:rounded-[9px] ${
                       rec
                         ? `border-transparent ${CELL[rec.status]}`
                         : sunday
@@ -216,8 +218,10 @@ export function AttendanceMonth({
                           : ""
                     }`}
                   >
-                    <span className="text-[12.5px] font-bold leading-[1.15]">{d}</span>
-                    <span className="text-[10.5px] font-bold leading-[1.15]">
+                    <span className="text-[11px] font-bold leading-[1.15] sm:text-[12.5px]">
+                      {d}
+                    </span>
+                    <span className="text-[9.5px] font-bold leading-[1.15] sm:text-[10.5px]">
                       {rec ? STATUS_META[rec.status].short : future ? "" : "·"}
                     </span>
                   </button>
