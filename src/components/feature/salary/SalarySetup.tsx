@@ -6,7 +6,11 @@ import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { initials } from "@/lib/format";
 import { calendarDays, round2 } from "@/lib/salary";
-import { fetchEmployeeSalaries, rpcSetEmployeeSalary } from "@/lib/supabase-data";
+import {
+  fetchAdvanceBalances,
+  fetchEmployeeSalaries,
+  rpcSetEmployeeSalary,
+} from "@/lib/supabase-data";
 import { Skeleton } from "@/components/ui/Skeleton";
 import type { EmployeeSalary } from "@/lib/types";
 
@@ -36,6 +40,25 @@ export function SalarySetup({ canEdit }: { canEdit: boolean }) {
         if (!alive) return;
         setError(true);
         setLoaded(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [retry]);
+
+  const [balances, setBalances] = useState<Record<string, number>>({});
+
+  // Advance balances are a separate permission, so a failure here must not
+  // break the salary list — the line simply doesn't appear.
+  useEffect(() => {
+    let alive = true;
+    fetchAdvanceBalances()
+      .then((rows) => {
+        if (!alive) return;
+        setBalances(Object.fromEntries(rows.map((r) => [r.profileId, r.balance])));
+      })
+      .catch(() => {
+        /* no advance.view — the line is simply omitted */
       });
     return () => {
       alive = false;
@@ -132,6 +155,12 @@ export function SalarySetup({ canEdit }: { canEdit: boolean }) {
                       ? `${currency}${perDay.toFixed(2)} per day this month (${daysThisMonth} days)`
                       : "No salary set — not on the payroll"}
                   </div>
+                  {(balances[r.profileId] ?? 0) > 0 && (
+                    <div className="mt-0.5 text-[11.5px] font-semibold text-warn">
+                      {currency}
+                      {(balances[r.profileId] ?? 0).toFixed(2)} advance outstanding
+                    </div>
+                  )}
                 </div>
               </div>
 

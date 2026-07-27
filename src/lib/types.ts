@@ -250,7 +250,7 @@ export interface Employee {
 export type PaymentStatus = "unpaid" | "paid";
 
 /** How a salary was handed over. Wider than a bill's `PaymentMethod`. */
-export type SalaryMode = "Cash" | "UPI" | "Bank Transfer" | "Cheque";
+export type SalaryMode = "Cash" | "UPI"
 
 export interface EmployeeSalary {
   profileId: string;

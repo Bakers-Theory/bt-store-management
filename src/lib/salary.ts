@@ -1,7 +1,7 @@
 import type { PayrollRow, SalaryMode } from "./types";
 
 /** The four ways a salary can be handed over, in picker order. */
-export const SALARY_MODES: SalaryMode[] = ["Cash", "UPI", "Bank Transfer", "Cheque"];
+export const SALARY_MODES: SalaryMode[] = ["Cash", "UPI"];
 
 export const isSalaryMode = (v: unknown): v is SalaryMode =>
   typeof v === "string" && (SALARY_MODES as string[]).includes(v);

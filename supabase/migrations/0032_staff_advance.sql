@@ -106,7 +106,7 @@ create table if not exists public.staff_advance (
   -- approved advance is money that has left the till.
   approved_on   date,
   payment_mode  text not null default ''
-                  check (payment_mode in ('', 'Cash', 'UPI', 'Bank Transfer', 'Cheque')),
+                  check (payment_mode in ('', 'Cash', 'UPI')),
   decided_by    uuid references public.profiles(id) on delete set null,
   reject_reason text not null default '',
   created_at    timestamptz not null default now(),
@@ -315,7 +315,7 @@ begin
   if not public.has_perm('advance.view') then
     raise exception 'approving an advance also needs the "view advances" permission';
   end if;
-  if p_mode is null or p_mode not in ('Cash','UPI','Bank Transfer','Cheque') then
+  if p_mode is null or p_mode not in ('Cash','UPI') then
     raise exception 'choose a payment mode';
   end if;
   if p_approved_on is null then raise exception 'approval date required'; end if;
