@@ -10,9 +10,11 @@ import { MONTHS, periodLabel, periodSlug, round2 } from "./salary";
 import type {
   Attendance,
   AttendanceSummary,
+  AdvanceBalance,
   PayrollRow,
   SalaryPayment,
 } from "./types";
+import { advanceReportRows, advanceTotals } from "./advance";
 
 export interface ReportColumn {
   label: string;
@@ -290,3 +292,68 @@ export const padTotals = (
   totals: (string | number)[],
   width: number,
 ): (string | number)[] => [...totals, ...Array(Math.max(0, width - totals.length)).fill("")];
+
+// ─── Advances ───────────────────────────────────────────────────────────────
+
+/**
+ * Outstanding advance balances, as they stand right now. A snapshot, not a
+ * ledger: employees who owe nothing are omitted, because a report of zeroes is
+ * a report of nothing.
+ *
+ * "Outstanding" is net of every recovery already prepared, including on unpaid
+ * payroll records — so this figure and the Payroll tab always agree.
+ */
+export function advanceReport(
+  shop: ShopInfo,
+  balances: AdvanceBalance[],
+): PrintReport {
+  const cur = shop.currency || "₹";
+  const money = (v: number) => `${cur}${v.toFixed(2)}`;
+  const totals = advanceTotals(balances);
+  const rows = advanceReportRows(balances).map(([name, advanced, recovered, balance, oldest]) => [
+    name,
+    money(Number(advanced)),
+    money(Number(recovered)),
+    money(Number(balance)),
+    oldest || "—",
+  ]);
+
+  return {
+    kind: "report" as const,
+    shop: shop.name || "Bakery",
+    shopMeta: shopMetaOf(shop),
+    title: "Staff advances outstanding",
+    period: "As of today",
+    scope: "Employees with an advance still to recover",
+    summary: [
+      { label: "Employees owing", value: String(totals.employees) },
+      { label: "Total advanced", value: money(totals.advanced) },
+      { label: "Total recovered", value: money(totals.recovered) },
+      { label: "Outstanding", value: money(totals.outstanding) },
+    ],
+    tables: [
+      {
+        columns: [
+          { label: "Employee" },
+          { label: "Total advanced", num: true },
+          { label: "Total recovered", num: true },
+          { label: "Outstanding", num: true },
+          { label: "Oldest open" },
+        ],
+        rows,
+        totals: [
+          "Total",
+          money(totals.advanced),
+          money(totals.recovered),
+          money(totals.outstanding),
+          "",
+        ],
+        empty: "Nobody has an advance outstanding.",
+      },
+    ],
+    note:
+      "Outstanding is net of every recovery already entered on a payroll " +
+      "record, whether or not that salary has been paid.",
+    fileName: `${slug(shop.name)}-advances-outstanding`,
+  };
+}
