@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useUIStore } from "@/lib/ui-store";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import {
   ATTENDANCE_STATUSES,
   STATUS_META,
@@ -11,12 +11,9 @@ import {
 import { MONTHS, calendarDays } from "@/lib/salary";
 import { fetchAttendance } from "@/lib/supabase-data";
 import { Skeleton } from "@/components/ui/Skeleton";
-import type { Attendance, AttendanceStatus, Employee } from "@/lib/types";
+import type { Attendance, AttendanceStatus } from "@/lib/types";
 
-const selectCls =
-  "!w-auto shrink-0 rounded-xl border border-line bg-warm-white px-3 py-[11px] text-[13.5px] font-semibold text-ink-muted focus:border-brown";
-
-/** Compact cell colours — the grid is dense, so these carry the pattern. */
+/** Cell colours — the calendar reads as a pattern first, letters second. */
 const CELL: Record<AttendanceStatus, string> = {
   present:  "bg-success-bg text-success",
   half_day: "bg-warn-bg text-warn",
@@ -28,19 +25,30 @@ const pad = (n: number) => String(n).padStart(2, "0");
 const WEEKDAY = ["S", "M", "T", "W", "T", "F", "S"];
 
 /**
- * One row per employee, one column per day of the month. Deliberately generous
- * with the roster: an employee with nothing recorded still gets a row, because
- * an all-blank row is exactly the gap this view exists to make obvious.
- *
- * A high fetch limit rather than the history screen's 500: a full month across a
- * sizeable roster is legitimately more than that, and a truncated grid would
- * silently read as absence.
+ * One employee's month as an actual calendar, next to the panel that marks it:
+ * it is the date picker for that panel, and the month-at-a-glance record for
+ * whoever the chip row has selected. A calendar has a single cell per date, so
+ * this view is per-person by design. An unmarked day is still drawn, because a
+ * blank square in a week is exactly the gap this view exists to make obvious.
  */
-export function AttendanceMonth({ employees }: { employees: Employee[] }) {
-  const toast = useUIStore((s) => s.toast);
+export function AttendanceMonth({
+  employeeId,
+  selected,
+  onSelect,
+  version,
+}: {
+  /** Whose month this is — shared with the marking panel. */
+  employeeId: string;
+  /** The date the panel is showing — ISO, controlled by the parent. */
+  selected: string;
+  onSelect: (date: string) => void;
+  /** Changes whenever a day is saved below, to re-read the month. */
+  version: number;
+}) {
   const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth() + 1);
+  // Opens on the selected day's month, then navigates independently of it.
+  const [year, setYear] = useState(() => Number(selected.slice(0, 4)));
+  const [month, setMonth] = useState(() => Number(selected.slice(5, 7)));
   const [records, setRecords] = useState<Attendance[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
@@ -50,11 +58,20 @@ export function AttendanceMonth({ employees }: { employees: Employee[] }) {
   const from = `${year}-${pad(month)}-01`;
   const to = `${year}-${pad(month)}-${pad(days)}`;
 
+  // Which month/employee is on screen. A refetch that isn't a change of these —
+  // i.e. a save below — keeps the grid up rather than flashing a skeleton.
+  const shape = `${from}|${to}|${employeeId}`;
+  const shownShape = useRef("");
+
   useEffect(() => {
+    if (!employeeId) return;
     let alive = true;
-    setLoaded(false);
+    if (shownShape.current !== shape) {
+      shownShape.current = shape;
+      setLoaded(false);
+    }
     setError(false);
-    fetchAttendance({ from, to, profileId: null, status: null }, 4000)
+    fetchAttendance({ from, to, profileId: employeeId, status: null }, 100)
       .then((rows) => {
         if (!alive) return;
         setRecords(rows);
@@ -68,81 +85,39 @@ export function AttendanceMonth({ employees }: { employees: Employee[] }) {
     return () => {
       alive = false;
     };
-  }, [from, to, retry]);
+  }, [from, to, employeeId, shape, retry, version]);
 
-  /** profileId → day-of-month → record. */
-  const byEmployee = useMemo(() => {
-    const map = new Map<string, Map<number, Attendance>>();
-    for (const r of records) {
-      const day = Number(r.date.slice(8, 10));
-      if (!map.has(r.profileId)) map.set(r.profileId, new Map());
-      map.get(r.profileId)!.set(day, r);
-    }
+  /** day-of-month → record. */
+  const byDay = useMemo(() => {
+    const map = new Map<number, Attendance>();
+    for (const r of records) map.set(Number(r.date.slice(8, 10)), r);
     return map;
   }, [records]);
 
+  const counts = tally(records);
+  const unpaid = unpaidDays(counts);
+
+  const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const thisMonth = year === now.getFullYear() && month === now.getMonth() + 1;
+
+  /** Move `by` months, rolling the year over. Forward stops at this month. */
+  const step = (by: number) => {
+    const d = new Date(year, month - 1 + by, 1);
+    setYear(d.getFullYear());
+    setMonth(d.getMonth() + 1);
+  };
+
+  // Blank cells before the 1st so the month starts on its real weekday.
+  const lead = new Date(year, month - 1, 1).getDay();
   const dayNumbers = Array.from({ length: days }, (_, i) => i + 1);
-  const isFuture = (day: number) =>
-    new Date(year, month - 1, day) > new Date(new Date().toDateString());
 
+  // One element, not a fragment: the parent lays this out as a single grid
+  // cell, and loose children would each be placed as a cell of their own.
   return (
-    <>
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <select
-          className={selectCls}
-          value={month}
-          onChange={(e) => setMonth(Number(e.target.value))}
-          aria-label="Month"
-        >
-          {MONTHS.map((m, i) => (
-            <option key={m} value={i + 1}>
-              {m}
-            </option>
-          ))}
-        </select>
-        <select
-          className={selectCls}
-          value={year}
-          onChange={(e) => setYear(Number(e.target.value))}
-          aria-label="Year"
-        >
-          {[0, 1, 2, 3].map((back) => {
-            const y = now.getFullYear() - back;
-            return (
-              <option key={y} value={y}>
-                {y}
-              </option>
-            );
-          })}
-        </select>
-
-        {/* Legend — the codes are unreadable without it. */}
-        <div className="flex flex-wrap items-center gap-2 text-[11.5px] font-semibold">
-          {ATTENDANCE_STATUSES.map((s) => (
-            <span key={s} className="inline-flex items-center gap-1">
-              <span
-                className={`inline-flex h-5 w-5 items-center justify-center rounded-[6px] text-[10.5px] font-bold ${CELL[s]}`}
-              >
-                {STATUS_META[s].short}
-              </span>
-              <span className="text-ink-muted">{STATUS_META[s].label}</span>
-            </span>
-          ))}
-          <span className="inline-flex items-center gap-1">
-            <span className="inline-flex h-5 w-5 items-center justify-center rounded-[6px] bg-cream text-[10.5px] font-bold text-ink-light">
-              ·
-            </span>
-            <span className="text-ink-muted">Not marked</span>
-          </span>
-        </div>
-      </div>
-
-      {!loaded ? (
-        <div className="flex flex-col gap-2">
-          {[0, 1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-9 rounded-lg" />
-          ))}
-        </div>
+    <div className="min-w-0">
+      {/* With no roster there's nothing to draw — the panel beside says why. */}
+      {!employeeId ? null : !loaded ? (
+        <Skeleton className="h-[300px] rounded-[18px] sm:h-[360px]" />
       ) : error ? (
         <div className="py-8 text-center text-sm text-ink-muted">
           <p className="mb-3">Couldn&apos;t load the month.</p>
@@ -154,112 +129,136 @@ export function AttendanceMonth({ employees }: { employees: Employee[] }) {
             Retry
           </button>
         </div>
-      ) : employees.length === 0 ? (
-        <p className="py-8 text-center text-sm text-ink-muted">
-          No staff yet — add people under Settings → Staff first.
-        </p>
       ) : (
-        <div className="overflow-x-auto rounded-[18px] border border-line bg-warm-white">
-          <table className="border-separate border-spacing-0 text-[11.5px]">
-            <thead>
-              <tr>
-                {/* Sticky so the name stays visible while scrolling 31 columns. */}
-                <th className="sticky left-0 z-10 border-b border-line-soft bg-warm-white px-3 py-2 text-left text-[10.5px] font-bold tracking-[.06em] text-line-strong">
-                  EMPLOYEE
-                </th>
-                {dayNumbers.map((d) => {
-                  const dow = new Date(year, month - 1, d).getDay();
-                  const weekend = dow === 0;
-                  return (
-                    <th
-                      key={d}
-                      className={`border-b border-line-soft px-0 py-1.5 text-center font-bold ${
-                        weekend ? "bg-cream text-brown" : "text-ink-light"
-                      }`}
-                      style={{ minWidth: 26 }}
-                    >
-                      <div className="text-[10px] leading-tight">{WEEKDAY[dow]}</div>
-                      <div className="text-[11px] leading-tight">{d}</div>
-                    </th>
-                  );
-                })}
-                <th className="border-b border-l border-line-soft px-2 py-2 text-right text-[10.5px] font-bold tracking-[.06em] text-line-strong">
-                  REC
-                </th>
-                <th className="border-b border-line-soft px-2 py-2 text-right text-[10.5px] font-bold tracking-[.06em] text-line-strong">
-                  UNPAID
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {employees.map((e) => {
-                const row = byEmployee.get(e.id) ?? new Map<number, Attendance>();
-                const mine = [...row.values()];
-                const unpaid = unpaidDays(tally(mine));
+        <>
+          <div className="w-full rounded-[18px] border border-line bg-warm-white p-2.5 shadow-[0_2px_12px_rgba(100,60,20,0.04)] sm:p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => step(-1)}
+                aria-label="Previous month"
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-line bg-warm-white text-ink-muted"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <div className="flex items-center gap-2">
+                <span className="text-[13.5px] font-bold">
+                  {MONTHS[month - 1]} {year}
+                </span>
+                {!thisMonth && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setYear(now.getFullYear());
+                      setMonth(now.getMonth() + 1);
+                    }}
+                    className="rounded-full bg-cream-dark px-2 py-[3px] text-[10.5px] font-bold text-brown"
+                  >
+                    This month
+                  </button>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => step(1)}
+                disabled={thisMonth}
+                aria-label="Next month"
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-line bg-warm-white text-ink-muted disabled:opacity-40"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+
+            <div className="mb-1 grid grid-cols-7 gap-[3px] sm:gap-1">
+              {WEEKDAY.map((w, i) => (
+                <div
+                  key={i}
+                  className={`text-center text-[10.5px] font-bold tracking-[.06em] ${
+                    i === 0 ? "text-brown" : "text-line-strong"
+                  }`}
+                >
+                  {w}
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-7 gap-[3px] sm:gap-1">
+              {Array.from({ length: lead }, (_, i) => (
+                <div key={`lead-${i}`} />
+              ))}
+              {dayNumbers.map((d) => {
+                const iso = `${year}-${pad(month)}-${pad(d)}`;
+                const rec = byDay.get(d);
+                const future = iso > todayStr;
+                const sunday = new Date(year, month - 1, d).getDay() === 0;
                 return (
-                  <tr key={e.id}>
-                    <td className="sticky left-0 z-10 border-b border-line-soft bg-warm-white px-3 py-1.5 font-bold">
-                      <span className="block max-w-[140px] truncate">{e.name}</span>
-                    </td>
-                    {dayNumbers.map((d) => {
-                      const rec = row.get(d);
-                      const dow = new Date(year, month - 1, d).getDay();
-                      return (
-                        <td
-                          key={d}
-                          className={`border-b border-line-soft p-[3px] text-center ${
-                            dow === 0 && !rec ? "bg-cream/60" : ""
-                          }`}
-                          title={
-                            rec
-                              ? `${e.name} · ${rec.date} · ${STATUS_META[rec.status].label}${rec.note ? ` — ${rec.note}` : ""}`
-                              : `${e.name} · ${year}-${pad(month)}-${pad(d)} · not marked`
-                          }
-                        >
-                          {rec ? (
-                            <span
-                              className={`inline-flex h-[22px] w-[22px] items-center justify-center rounded-[6px] font-bold ${CELL[rec.status]}`}
-                            >
-                              {STATUS_META[rec.status].short}
-                            </span>
-                          ) : (
-                            <span
-                              className={`inline-flex h-[22px] w-[22px] items-center justify-center rounded-[6px] font-bold ${
-                                isFuture(d) ? "text-line" : "bg-cream text-ink-light"
-                              }`}
-                            >
-                              ·
-                            </span>
-                          )}
-                        </td>
-                      );
-                    })}
-                    <td className="num border-b border-l border-line-soft px-2 py-1.5 text-right font-semibold">
-                      {mine.length}
-                    </td>
-                    <td
-                      className={`num border-b border-line-soft px-2 py-1.5 text-right font-bold ${
-                        unpaid > 0 ? "text-danger" : "text-ink-light"
-                      }`}
-                    >
-                      {unpaid}
-                    </td>
-                  </tr>
+                  <button
+                    key={d}
+                    type="button"
+                    disabled={future}
+                    onClick={() => onSelect(iso)}
+                    title={
+                      rec
+                        ? `${iso} · ${STATUS_META[rec.status].label}${rec.note ? ` — ${rec.note}` : ""}`
+                        : `${iso} · not marked`
+                    }
+                    // Fixed height, not aspect-square: full-bleed squares on a
+                    // phone push the marking panel off the bottom of the screen.
+                    className={`flex h-11 flex-col items-center justify-center gap-[1px] rounded-[8px] border text-center disabled:opacity-40 sm:h-12 sm:rounded-[9px] ${
+                      rec
+                        ? `border-transparent ${CELL[rec.status]}`
+                        : sunday
+                          ? "border-line-soft bg-cream text-ink-light"
+                          : "border-line-soft bg-warm-white text-ink-light"
+                    } ${
+                      iso === selected
+                        ? "!border-brown ring-2 ring-brown/25"
+                        : iso === todayStr
+                          ? "!border-line-strong"
+                          : ""
+                    }`}
+                  >
+                    <span className="text-[11px] font-bold leading-[1.15] sm:text-[12.5px]">
+                      {d}
+                    </span>
+                    <span className="text-[9.5px] font-bold leading-[1.15] sm:text-[10.5px]">
+                      {rec ? STATUS_META[rec.status].short : future ? "" : "·"}
+                    </span>
+                  </button>
                 );
               })}
-            </tbody>
-          </table>
-        </div>
-      )}
+            </div>
+          </div>
 
-      {loaded && !error && employees.length > 0 && (
-        <p className="mt-3 text-center text-[12px] text-ink-light">
-          Sundays are shaded. Unmarked days deduct nothing — the{" "}
-          <span className="font-semibold">unpaid</span> column is what payroll
-          charges for. Mark or correct a day on the{" "}
-          <span className="font-semibold">Mark day</span> tab.
-        </p>
+          {/* Legend doubles as the month tally — the counts are the point. */}
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-[11.5px] font-semibold">
+            {ATTENDANCE_STATUSES.map((s) => (
+              <span key={s} className="inline-flex items-center gap-1">
+                <span
+                  className={`inline-flex h-5 w-5 items-center justify-center rounded-[6px] text-[10.5px] font-bold ${CELL[s]}`}
+                >
+                  {STATUS_META[s].short}
+                </span>
+                <span className="text-ink-muted">
+                  {STATUS_META[s].label} {counts[s]}
+                </span>
+              </span>
+            ))}
+            <span className="text-ink-muted">
+              Recorded <span className="num font-bold">{records.length}</span>
+            </span>
+            <span className={unpaid > 0 ? "text-danger" : "text-ink-muted"}>
+              Unpaid <span className="num font-bold">{unpaid}</span>
+            </span>
+          </div>
+
+          <p className="mt-2.5 text-[12px] text-ink-light">
+            Tap a day to mark or correct it. Unmarked days deduct nothing —{" "}
+            <span className="font-semibold">unpaid</span> is what payroll charges
+            for.
+          </p>
+        </>
       )}
-    </>
+    </div>
   );
 }
