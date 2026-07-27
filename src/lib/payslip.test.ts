@@ -16,7 +16,8 @@ const row = (p: Partial<PayrollRow> = {}): PayrollRow => ({
   profileId: "a", employeeName: "Anjali", gross: 18000, calendarDays: 31,
   recorded: 31, unpaidDays: 2.5, deduction: 1451.61, computedNet: 16548.39,
   paymentId: null, status: "none", net: null, storedComputedNet: null,
-  overrideReason: "", paidOn: null, paymentMode: "", ...p,
+  overrideReason: "", paidOn: null, paymentMode: "",
+  advanceBalance: 0, advanceRecovery: 0, netPayable: 16548.39, ...p,
 });
 
 const payment = (p: Partial<SalaryPayment> = {}): SalaryPayment => ({
@@ -24,7 +25,8 @@ const payment = (p: Partial<SalaryPayment> = {}): SalaryPayment => ({
   periodMonth: 7, gross: 18000, calendarDays: 31, recordedDays: 31,
   unpaidDays: 2.5, deduction: 1451.61, computedNet: 16548.39, net: 16548.39,
   overrideReason: "", status: "paid", paidOn: "2026-08-01", paymentMode: "UPI",
-  recordedByName: "Admin", updatedAt: "2026-08-01T00:00:00Z", ...p,
+  recordedByName: "Admin", updatedAt: "2026-08-01T00:00:00Z",
+  advanceRecovery: 0, netPayable: 16548.39, ...p,
 });
 
 describe("numberToWords (Indian system)", () => {
@@ -157,5 +159,64 @@ describe("payslipFromPayment", () => {
   it("includes days-recorded when the snapshot has it", () => {
     const slip = payslipFromPayment(shop, payment({ recordedDays: 28 }));
     expect(slip.facts).toContainEqual({ label: "Days recorded", value: "28" });
+  });
+});
+
+describe("payslip with an advance recovery", () => {
+  const shop = { name: "BT", address: "", phone: "", currency: "₹" };
+
+  it("is byte-identical to before when there is no recovery", () => {
+    const slip = payslipFromPayroll(shop, row({ advanceRecovery: 0 }), 2026, 7);
+    expect(slip.lines.map((l) => l.label)).not.toContain("Less: advance recovery");
+    // The final row keeps its original wording when nothing is recovered.
+    expect(slip.lines[slip.lines.length - 1].label).toBe("Net pay");
+  });
+
+  it("adds a recovery line and renames the final row", () => {
+    const slip = payslipFromPayroll(
+      shop,
+      row({ net: 18000, computedNet: 18000, storedComputedNet: 18000, paymentId: "p1", advanceRecovery: 3000 }),
+      2026,
+      7,
+    );
+    const labels = slip.lines.map((l) => l.label);
+    expect(labels).toContain("Less: advance recovery");
+    expect(slip.lines[slip.lines.length - 1].label).toBe("Amount paid");
+  });
+
+  // The whole point: the document must state the amount actually handed over.
+  it("states the payable amount, not the net salary", () => {
+    const slip = payslipFromPayroll(
+      shop,
+      row({ net: 18000, computedNet: 18000, storedComputedNet: 18000, paymentId: "p1", advanceRecovery: 3000 }),
+      2026,
+      7,
+    );
+    expect(slip.net).toBe("₹15000.00");
+    expect(slip.netInWords).toContain("Fifteen Thousand");
+  });
+
+  it("adds up: every minus line subtracted from the gross gives the payable", () => {
+    const slip = payslipFromPayroll(
+      shop,
+      row({ gross: 20000, net: 18000, computedNet: 18000, storedComputedNet: 18000, paymentId: "p1", deduction: 2000, advanceRecovery: 3000 }),
+      2026,
+      7,
+    );
+    const num = (s: string) => Number(s.replace(/[^0-9.]/g, ""));
+    const total = slip.lines
+      .filter((l) => !l.strong)
+      .reduce((sum, l) => sum + (l.minus ? -num(l.value) : num(l.value)), 0);
+    expect(total).toBeCloseTo(15000, 2);
+  });
+
+  it("shows the balance carried when something remains", () => {
+    const slip = payslipFromPayroll(
+      shop,
+      row({ net: 18000, computedNet: 18000, storedComputedNet: 18000, paymentId: "p1", advanceRecovery: 3000, advanceBalance: 2000 }),
+      2026,
+      7,
+    );
+    expect(slip.facts.map((f) => f.label)).toContain("Advance balance carried");
   });
 });

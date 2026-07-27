@@ -77,7 +77,7 @@ create table if not exists public.salary_payment (
   status        text not null default 'unpaid' check (status in ('unpaid','paid')),
   paid_on       date,
   payment_mode  text not null default ''
-    check (payment_mode in ('', 'Cash', 'UPI', 'Bank Transfer', 'Cheque')),
+    check (payment_mode in ('', 'Cash', 'UPI')),
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now(),
   recorded_by   uuid references public.profiles(id) on delete set null,
@@ -384,7 +384,7 @@ language plpgsql security definer set search_path = public as $$
 declare v_row public.salary_payment_v; v_name text; v_status text; v_net numeric;
 begin
   if not public.has_perm('salary.pay') then raise exception 'forbidden'; end if;
-  if p_mode is null or p_mode not in ('Cash','UPI','Bank Transfer','Cheque') then
+  if p_mode is null or p_mode not in ('Cash','UPI') then
     raise exception 'choose a payment mode';
   end if;
   if p_paid_on is null then raise exception 'payment date required'; end if;

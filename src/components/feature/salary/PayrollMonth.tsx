@@ -8,9 +8,6 @@ import {
   FileSpreadsheet,
   Loader2,
   Printer,
-  Receipt as ReceiptIcon,
-  RotateCcw,
-  Trash2,
 } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
@@ -19,8 +16,6 @@ import {
   MONTHS,
   PAYROLL_REPORT_HEADER,
   SALARY_MODES,
-  isAdjusted,
-  isStale,
   missingDays,
   payrollReportRows,
   payrollTotals,
@@ -35,6 +30,7 @@ import {
   rpcMarkSalaryPaid,
   rpcMarkSalaryUnpaid,
   rpcSaveSalaryPayment,
+  rpcSetAdvanceRecovery,
 } from "@/lib/supabase-data";
 import { Modal } from "@/components/ui/Modal";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -42,6 +38,7 @@ import { localDay } from "@/components/feature/attendance/AttendanceDay";
 import { download } from "./download";
 import { payrollReport } from "@/lib/report";
 import { payslipFromPayroll } from "@/lib/payslip";
+import { PayrollRowCard } from "./PayrollRowCard";
 import type { PayrollRow, SalaryMode } from "@/lib/types";
 
 const selectCls =
@@ -241,12 +238,14 @@ export function PayrollMonth({
       </div>
 
       {/* Totals */}
-      <div className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-7">
         {[
           ["On payroll", String(totals.employees)],
           ["Gross", money(totals.gross)],
           ["Deductions", money(totals.deduction)],
           ["Net", money(totals.net)],
+          ["Recovered", money(totals.advanceRecovery)],
+          ["Payable", money(totals.netPayable)],
           ["Paid", `${totals.paid} / ${totals.employees}`],
         ].map(([label, value]) => (
           <div
@@ -338,170 +337,34 @@ export function PayrollMonth({
         </p>
       ) : (
         <div className="flex flex-col gap-2.5">
-          {onPayroll.map((r) => {
-            const isBusy = busy === r.profileId || busy === "all";
-            const gap = missingDays(r);
-            const net = r.net ?? r.computedNet;
-            return (
-              <div
-                key={r.profileId}
-                className="rounded-[14px] border border-line bg-warm-white p-3.5 shadow-[0_2px_12px_rgba(100,60,20,0.04)]"
-              >
-                <div className="mb-2.5 flex items-center gap-2.5">
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-bold">{r.employeeName}</div>
-                    <div className="text-[11.5px] text-ink-light">
-                      {r.recorded}/{r.calendarDays} days recorded
-                      {gap > 0 ? ` · ${gap} missing` : ""}
-                      {r.unpaidDays > 0 ? ` · ${r.unpaidDays} unpaid` : ""}
-                    </div>
-                  </div>
-                  <span
-                    className={`shrink-0 rounded-full px-[11px] py-1 text-[11px] font-bold ${
-                      r.status === "paid"
-                        ? "bg-success-bg text-success"
-                        : r.status === "unpaid"
-                          ? "bg-warn-bg text-warn"
-                          : "bg-cream-dark text-ink-muted"
-                    }`}
-                  >
-                    {r.status === "none" ? "Not prepared" : r.status === "paid" ? "Paid" : "Unpaid"}
-                  </span>
-                </div>
-
-                <div className="mb-2.5 grid grid-cols-3 gap-2 rounded-[11px] bg-cream p-2.5 text-center">
-                  <div>
-                    <div className="text-[10.5px] font-semibold text-ink-muted">Gross</div>
-                    <div className="num text-[13px] font-bold">{money(r.gross)}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10.5px] font-semibold text-ink-muted">Deduction</div>
-                    <div className="num text-[13px] font-bold text-danger">
-                      {r.deduction > 0 ? `−${money(r.deduction)}` : money(0)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[10.5px] font-semibold text-ink-muted">Net</div>
-                    <div className="num text-[13px] font-extrabold">{money(net)}</div>
-                  </div>
-                </div>
-
-                {/*
-                  Two different things, deliberately worded differently: someone
-                  changed the figure, versus the days beneath it moved. Conflating
-                  them was the original defect.
-                */}
-                {isAdjusted(r) && r.storedComputedNet !== null && (
-                  <div className="mb-2.5 text-[11.5px] font-semibold text-warn">
-                    Adjusted from {money(r.storedComputedNet)}
-                    {r.overrideReason ? ` — ${r.overrideReason}` : ""}
-                  </div>
-                )}
-                {isStale(r) && (
-                  <div className="mb-2.5 flex flex-wrap items-center gap-2 rounded-[10px] bg-warn-bg px-2.5 py-2 text-[11.5px] text-ink-muted">
-                    <AlertTriangle size={13} className="shrink-0 text-warn" />
-                    <span>
-                      Attendance changed since this was prepared — recalculated
-                      net is <span className="num font-bold">{money(r.computedNet)}</span>.
-                    </span>
-                    {r.status === "unpaid" && canEdit && (
-                      <button
-                        type="button"
-                        onClick={() => createFor(r)}
-                        disabled={isBusy}
-                        className="ml-auto rounded-lg bg-brown px-2.5 py-1 text-[11px] font-bold text-warm-white disabled:opacity-60"
-                      >
-                        Recalculate
-                      </button>
-                    )}
-                    {r.status === "paid" && (
-                      <span className="ml-auto font-semibold text-warn">
-                        Reopen to recalculate
-                      </span>
-                    )}
-                  </div>
-                )}
-                {r.status === "paid" && r.paidOn && (
-                  <div className="mb-2.5 text-[11.5px] text-ink-light">
-                    Paid {r.paidOn} by {r.paymentMode}
-                  </div>
-                )}
-
-                <div className="flex flex-wrap items-center justify-end gap-1.5 border-t border-line-soft pt-2.5">
-                  {isBusy && <Loader2 size={15} className="animate-spin text-ink-light" />}
-                  {r.status === "none" && canEdit && (
-                    <button
-                      type="button"
-                      onClick={() => createFor(r)}
-                      disabled={isBusy}
-                      className="rounded-lg bg-brown px-3 py-1.5 text-[12px] font-bold text-warm-white disabled:opacity-60"
-                    >
-                      Prepare
-                    </button>
-                  )}
-                  {r.status === "unpaid" && canEdit && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => setOverrideFor(r)}
-                        disabled={isBusy}
-                        className="rounded-lg border border-line bg-warm-white px-3 py-1.5 text-[12px] font-bold text-ink-muted disabled:opacity-60"
-                      >
-                        Adjust net
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          act(
-                            r.profileId,
-                            () => rpcDeleteSalaryPayment(r.paymentId!),
-                            "Record removed",
-                          )
-                        }
-                        disabled={isBusy}
-                        aria-label={`Remove payroll record for ${r.employeeName}`}
-                        className="inline-flex items-center gap-1 rounded-lg bg-danger-bg px-2.5 py-1.5 text-[12px] font-bold text-danger disabled:opacity-60"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </>
-                  )}
-                  {r.status !== "none" && (
-                    <button
-                      type="button"
-                      onClick={() => requestReport(payslipFromPayroll(bakery, r, year, month))}
-                      disabled={isBusy}
-                      className="inline-flex items-center gap-1 rounded-lg border border-line bg-warm-white px-2.5 py-1.5 text-[12px] font-bold text-ink-muted disabled:opacity-60"
-                    >
-                      <ReceiptIcon size={13} /> Payslip
-                    </button>
-                  )}
-                  {r.status === "unpaid" && canPay && (
-                    <button
-                      type="button"
-                      onClick={() => setPayFor(r)}
-                      disabled={isBusy}
-                      className="rounded-lg bg-success px-3 py-1.5 text-[12px] font-bold text-warm-white disabled:opacity-60"
-                    >
-                      Mark paid
-                    </button>
-                  )}
-                  {r.status === "paid" && canPay && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        act(r.profileId, () => rpcMarkSalaryUnpaid(r.paymentId!), "Reopened")
-                      }
-                      disabled={isBusy}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-warm-white px-3 py-1.5 text-[12px] font-bold text-ink-muted disabled:opacity-60"
-                    >
-                      <RotateCcw size={13} /> Reopen
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+          {onPayroll.map((r) => (
+            <PayrollRowCard
+              key={r.profileId}
+              row={r}
+              currency={currency}
+              canEdit={canEdit}
+              canPay={canPay}
+              canRecover={canEdit}
+              busy={busy === r.profileId || busy === "all"}
+              onPrepare={() => createFor(r)}
+              onAdjust={() => setOverrideFor(r)}
+              onDelete={() =>
+                act(r.profileId, () => rpcDeleteSalaryPayment(r.paymentId!), "Record removed")
+              }
+              onPayslip={() => requestReport(payslipFromPayroll(bakery, r, year, month))}
+              onMarkPaid={() => setPayFor(r)}
+              onReopen={() =>
+                act(r.profileId, () => rpcMarkSalaryUnpaid(r.paymentId!), "Reopened")
+              }
+              onSetRecovery={(amount) =>
+                act(
+                  r.profileId,
+                  () => rpcSetAdvanceRecovery(r.paymentId!, amount),
+                  amount > 0 ? "Advance recovery saved" : "Advance recovery cleared",
+                )
+              }
+            />
+          ))}
 
           {noSalary.length > 0 && (
             <p className="mt-1 text-center text-[12px] text-ink-light">
