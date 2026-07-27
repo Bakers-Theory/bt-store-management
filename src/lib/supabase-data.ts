@@ -678,22 +678,33 @@ export async function rpcUpdateBatchExpiry(batchId: string, expiry: string): Pro
   );
 }
 
-interface GeneratedBillRow {
-  id: string; bill_no: number; subtotal: number; tax: number;
-  total: number; tax_rate: number; created_at: string;
-  discount_percent: number; discount_type: "percent" | "flat"; discount_amount: number;
+interface GeneratedBillPayload {
+  bill: BillRow;
+  items: BillItemRow[];
 }
-export const rpcGenerateBill = (
+/**
+ * `clientRef` is the idempotency key for one checkout attempt. Reusing it on a
+ * retry returns the bill that already committed instead of ringing up a second
+ * one, which is what a lost response over flaky counter wifi used to cause.
+ *
+ * The returned bill is built from the stored rows, not from the caller's cart,
+ * so the receipt lines can never disagree with the total the customer paid.
+ */
+export const rpcGenerateBill = async (
   customer: {
     name: string; phone: string; payment: PaymentMethod;
     discount: number; discountType: "percent" | "flat";
   },
   lines: { itemId: string; qty: number }[],
-) => {
+  clientRef: string,
+): Promise<Bill> => {
   // Timezone drives which batches count as expired server-side — must match the
   // client's day-granularity expiryStatus (same convention as dashboard_stats).
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-  return rpc<GeneratedBillRow>("generate_bill", { customer, lines, p_tz: tz });
+  const res = await rpc<GeneratedBillPayload>("generate_bill", {
+    customer, lines, p_tz: tz, p_client_ref: clientRef,
+  });
+  return mapBill(res.bill, res.items.map(mapLine));
 };
 
 export const rpcCancelBill = (id: string, by: string) =>

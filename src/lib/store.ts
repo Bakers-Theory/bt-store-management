@@ -105,7 +105,8 @@ interface StoreState {
     lines: BillLine[],
     paymentMethod: PaymentMethod,
     discount: { mode: "percent" | "flat"; value: number },
-    billerName: string,
+    /** Idempotency key for this checkout attempt; reuse it when retrying. */
+    clientRef: string,
   ) => Promise<Bill>;
   cancelBill: (id: string, byName: string) => Promise<Result>;
   deleteBill: (id: string, byName: string) => Promise<Result>;
@@ -292,29 +293,14 @@ export const useBakeryStore = create<StoreState>()(
     // A bill can consume stock across many items at once (FIFO, per line), so
     // it refreshes the item list rather than patching a single row — still far
     // cheaper than the old full reload, since settings/lists never change here.
-    generateBill: async (customer, lines, paymentMethod, discount, billerName) => {
-      const row = await rpcGenerateBill(
+    generateBill: async (customer, lines, paymentMethod, discount, clientRef) => {
+      // The bill comes back built from the stored rows — prices, lines and
+      // biller included — so nothing here is reconstructed from the cart.
+      const bill = await rpcGenerateBill(
         { ...customer, payment: paymentMethod, discount: discount.value, discountType: discount.mode },
         lines.map((l) => ({ itemId: l.itemId, qty: l.qty })),
+        clientRef,
       );
-      const bill: Bill = {
-        id: row.id,
-        billNo: row.bill_no,
-        customerName: customer.name,
-        customerPhone: customer.phone,
-        items: lines.map((l) => ({ ...l })),
-        subtotal: row.subtotal,
-        tax: row.tax,
-        total: row.total,
-        taxRate: row.tax_rate,
-        paymentMethod,
-        discountPercent: row.discount_percent,
-        discountType: row.discount_type,
-        discountAmount: row.discount_amount,
-        billerName,
-        date: row.created_at,
-        status: "active",
-      };
       await refreshItems();
       return bill;
     },
