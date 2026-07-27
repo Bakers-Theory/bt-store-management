@@ -80,6 +80,8 @@ export function Bill() {
   const [receipt, setReceipt] = useState<BillType | null>(null);
 
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Idempotency key for the checkout in flight; see submit().
+  const clientRef = useRef<string | null>(null);
 
   const discountValue = Math.max(0, parseFloat(discount) || 0);
   const { subtotal, discount: discountAmt, tax, total } = computeTotals(
@@ -248,6 +250,10 @@ export function Bill() {
       setPhoneErr("Phone number must be exactly 10 digits");
       return;
     }
+    // Held across retries: if a previous attempt committed the bill but the
+    // response never made it back, reusing the ref returns that same bill
+    // instead of ringing up a second one. Cleared only once we have the bill.
+    clientRef.current ??= crypto.randomUUID();
     setGenerating(true);
     try {
       const bill = await generateBill(
@@ -255,8 +261,9 @@ export function Bill() {
         lines,
         payment,
         { mode: discountMode, value: discountValue },
-        currentUser?.name ?? "",
+        clientRef.current,
       );
+      clientRef.current = null;
       setLines([]);
       setCustomer({ name: "", phone: "" });
       setPayment("Cash");
