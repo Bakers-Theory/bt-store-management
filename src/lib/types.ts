@@ -42,6 +42,7 @@ export type PermissionKey =
   | "advance.view"
   | "advance.request"
   | "advance.approve"
+  | "advance.delete"
   // Store admin
   | "store.settings"
   | "store.status"

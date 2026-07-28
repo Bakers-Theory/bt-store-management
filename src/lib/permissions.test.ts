@@ -66,7 +66,7 @@ describe("presets", () => {
   it("Admin holds everything grantable except staff management and salary", () => {
     const ownerOnly = [
       "staff.manage", "salary.view", "salary.edit", "salary.pay",
-      "advance.view", "advance.request", "advance.approve",
+      "advance.view", "advance.request", "advance.approve", "advance.delete",
     ];
     expect(new Set(ROLE_PRESETS.Admin)).toEqual(
       new Set(ALL_PERMISSIONS.filter((k) => !ownerOnly.includes(k))),
@@ -309,7 +309,8 @@ describe("legacy group aliasing (mirrors has_perm in SQL)", () => {
     const grouped = new Set(Object.values(GROUPS).flat());
     const ungrouped = ALL_PERMISSIONS.filter((k) => !grouped.has(k));
     expect(ungrouped.sort()).toEqual([
-      "activity.view", "advance.approve", "advance.request", "advance.view",
+      "activity.view", "advance.approve", "advance.delete",
+      "advance.request", "advance.view",
       "attendance.edit", "attendance.view",
       "salary.edit", "salary.pay", "salary.view",
       "staff.manage", "store.lists", "store.settings", "store.status",
@@ -345,10 +346,11 @@ describe("advance permissions", () => {
     permissions: perms,
   });
 
-  it("puts all three keys in the catalogue", () => {
+  it("puts all four keys in the catalogue", () => {
     expect(ALL_PERMISSIONS).toContain("advance.view");
     expect(ALL_PERMISSIONS).toContain("advance.request");
     expect(ALL_PERMISSIONS).toContain("advance.approve");
+    expect(ALL_PERMISSIONS).toContain("advance.delete");
   });
 
   // Advances stay with the Owner until deliberately delegated — the same
@@ -358,6 +360,7 @@ describe("advance permissions", () => {
       expect(ROLE_PRESETS[role]).not.toContain("advance.view");
       expect(ROLE_PRESETS[role]).not.toContain("advance.request");
       expect(ROLE_PRESETS[role]).not.toContain("advance.approve");
+      expect(ROLE_PRESETS[role]).not.toContain("advance.delete");
     }
   });
 
@@ -366,6 +369,7 @@ describe("advance permissions", () => {
       id: "o", userId: "owner", name: "Owner", role: "Owner", permissions: [],
     };
     expect(hasPermission(owner, "advance.approve")).toBe(true);
+    expect(hasPermission(owner, "advance.delete")).toBe(true);
   });
 
   // Without this, someone granted advance.view but not salary.view could not
