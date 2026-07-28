@@ -99,6 +99,7 @@ export const PERMISSION_CATALOG: PermissionGroup[] = [
       { key: "advance.view", label: "View advances & balances", hint: "See what each employee owes and their advance history" },
       { key: "advance.request", label: "Record advances", hint: "Put in a request for an advance against salary" },
       { key: "advance.approve", label: "Approve & hand over advances", hint: "Approve or refuse a request, with date and payment mode" },
+      { key: "advance.delete", label: "Delete decided advances", hint: "Undo a mistaken approval or refusal — leaves no trail" },
     ],
   },
   {
@@ -166,6 +167,7 @@ const OWNER_BY_DEFAULT: PermissionKey[] = [
   "advance.view",
   "advance.request",
   "advance.approve",
+  "advance.delete",
 ];
 
 export const ROLE_PRESETS: Record<PresetRole, PermissionKey[]> = {

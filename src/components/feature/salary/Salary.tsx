@@ -23,6 +23,7 @@ export function Salary() {
   const canPay = hasPermission(user, "salary.pay");
   const canRequest = hasPermission(user, "advance.request");
   const canApprove = hasPermission(user, "advance.approve");
+  const canDeleteAdvance = hasPermission(user, "advance.delete");
 
   // Someone may hold advance.view without salary.view, so the default tab is
   // whichever they can actually open.
@@ -85,11 +86,19 @@ export function Salary() {
       ) : tab === "salaries" && canSalary ? (
         <SalarySetup canEdit={canEdit} />
       ) : tab === "advances" && canAdvance ? (
-        <Advances canRequest={canRequest} canApprove={canApprove} />
+        <Advances
+          canRequest={canRequest}
+          canApprove={canApprove}
+          canDelete={canDeleteAdvance}
+        />
       ) : canSalary ? (
         <SalaryHistory />
       ) : (
-        <Advances canRequest={canRequest} canApprove={canApprove} />
+        <Advances
+          canRequest={canRequest}
+          canApprove={canApprove}
+          canDelete={canDeleteAdvance}
+        />
       )}
     </>
   );

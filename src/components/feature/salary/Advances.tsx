@@ -24,9 +24,11 @@ import type { AdvanceBalance, SalaryMode, StaffAdvance } from "@/lib/types";
 export function Advances({
   canRequest,
   canApprove,
+  canDelete,
 }: {
   canRequest: boolean;
   canApprove: boolean;
+  canDelete: boolean;
 }) {
   const bakery = useBakeryStore((s) => s.bakery);
   const currency = bakery.currency;
@@ -47,6 +49,7 @@ export function Advances({
     const [b, all] = await Promise.all([fetchAdvanceBalances(), fetchAdvances()]);
     setBalances(b);
     setPending(all.filter((a) => a.status === "pending"));
+    return b;
   }, []);
 
   useEffect(() => {
@@ -73,6 +76,29 @@ export function Advances({
       toast(ok, "success");
     } catch (e) {
       toast(e instanceof Error ? e.message : "Something went wrong", "error");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /**
+   * Deleting from the history modal. Unlike `act` this rethrows: the modal only
+   * drops the row once the server has agreed, so a refused deletion (an advance
+   * already recovered from a salary) leaves the ledger as it was.
+   */
+  const removeAdvance = async (a: StaffAdvance) => {
+    setBusy(a.id);
+    try {
+      await rpcDeleteAdvance(a.id);
+      const fresh = await load();
+      // The modal header shows this employee's totals — keep them honest.
+      setHistoryFor((cur) =>
+        cur ? (fresh.find((b) => b.profileId === cur.profileId) ?? cur) : cur,
+      );
+      toast("Advance deleted", "success");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Something went wrong", "error");
+      throw e;
     } finally {
       setBusy(null);
     }
@@ -251,6 +277,7 @@ export function Advances({
           employee={historyFor}
           currency={currency}
           onClose={() => setHistoryFor(null)}
+          onDelete={canDelete ? removeAdvance : undefined}
         />
       )}
 
