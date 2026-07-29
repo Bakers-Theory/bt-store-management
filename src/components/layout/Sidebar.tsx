@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { hasPermission, navItems, roleLabel } from "@/lib/permissions";
+import { hasAnyPermission, hasPermission, navItems, roleLabel } from "@/lib/permissions";
 import { useAuth, useCurrentUser } from "@/components/system/AuthProvider";
 import { useBakeryStore } from "@/lib/store";
 import { BarChart3, Calculator, Croissant, Loader2, Truck } from "lucide-react";
@@ -89,7 +89,7 @@ export function Sidebar() {
 
   const items = [
     ...navItems(user),
-    ...(hasPermission(user, "reports.view")
+    ...(hasAnyPermission(user, ["reports.view", "suppliers.reports"])
       ? [{ key: "reports", href: "/reports", icon: "📈", label: "Reports" }]
       : []),
     { key: "settings", href: "/settings", icon: "⚙", label: "Settings" },

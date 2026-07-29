@@ -1716,3 +1716,50 @@ export async function fetchSupplierSummary(id: string): Promise<SupplierSummary 
   if (error) throw new Error(error.message);
   return data ? mapSummary(data as SummaryRow) : null;
 }
+
+/**
+ * Everything the six supplier reports read, in four round trips.
+ *
+ * Invoice LINES are fetched in one `in (...)` query keyed by the header ids
+ * rather than per invoice — Product-wise Purchases needs every line, and a
+ * query per invoice would be a query per row on screen.
+ *
+ * `shop` is added by the caller from the store, so this stays a pure data fetch.
+ */
+export async function fetchSupplierReportData(
+  range: DateRange,
+): Promise<{
+  invoices: PurchaseInvoice[];
+  payments: SupplierPayment[];
+  returns: PurchaseReturn[];
+  summaries: SupplierSummary[];
+}> {
+  const supabase = createClient();
+  const [invoices, payments, returns, summaries] = await Promise.all([
+    fetchPurchaseInvoices({ range }),
+    fetchSupplierPayments({ range }),
+    fetchPurchaseReturns({ range }),
+    fetchSupplierSummaries(),
+  ]);
+
+  const ids = invoices.filter((i) => i.status === "posted").map((i) => i.id);
+  if (ids.length === 0) return { invoices, payments, returns, summaries };
+
+  const { data, error } = await supabase
+    .from("purchase_invoice_line_v")
+    .select("*")
+    .in("invoice_id", ids);
+  if (error) throw new Error(error.message);
+
+  const byInvoice = new Map<string, PurchaseInvoiceLine[]>();
+  for (const r of (data ?? []) as InvoiceLineRow[]) {
+    byInvoice.set(r.invoice_id, [...(byInvoice.get(r.invoice_id) ?? []), mapInvoiceLine(r)]);
+  }
+
+  return {
+    invoices: invoices.map((i) => ({ ...i, lines: byInvoice.get(i.id) ?? [] })),
+    payments,
+    returns,
+    summaries,
+  };
+}

@@ -5,6 +5,12 @@ import {
   stockHealth as stockHealthData,
   recommendations as recommendationsData,
 } from "./analytics";
+import {
+  SUPPLIER_REPORT_META,
+  supplierReportSheets,
+  type SupplierReportData,
+  type SupplierReportType,
+} from "./supplier-report";
 
 export interface ReportData {
   bakery: Bakery;
@@ -509,4 +515,60 @@ export async function exportReport(
 /** Back-compat: the combined workbook used by Settings and Dashboard. */
 export async function exportExcelReport(data: ReportData): Promise<ReportResult> {
   return exportReport("full", data, { from: null, to: null });
+}
+
+// ─── Supplier reports ───────────────────────────────────────────────────────
+
+/**
+ * One workbook, one sheet per selected supplier report (two for Supplier-wise
+ * Purchases, which has an in-house section). Each sheet gets the same header
+ * block the sales reports use, so a supplier workbook is recognisably the same
+ * document family.
+ *
+ * `xlsx` is imported on demand, exactly as `exportReports` does — it is a large
+ * dependency and most sessions never export.
+ */
+export async function exportSupplierReports(
+  types: SupplierReportType[],
+  data: SupplierReportData,
+  range: DateRange,
+): Promise<ReportResult> {
+  if (types.length === 0) return { ok: false, error: "Select at least one report" };
+
+  const now = new Date();
+  const XLSX = await import("xlsx");
+  const wb = XLSX.utils.book_new();
+  const used = new Set<string>();
+  let anyRows = false;
+
+  const bakeryLike = {
+    name: data.shop.name,
+    address: data.shop.address,
+    phone: data.shop.phone,
+    currency: data.shop.currency,
+  } as Bakery;
+
+  for (const type of types) {
+    const meta = SUPPLIER_REPORT_META[type];
+    for (const sheet of supplierReportSheets(type, data, range)) {
+      const header = headerRows(bakeryLike, meta.name, range, now, meta.snapshot);
+      const ws = XLSX.utils.aoa_to_sheet([...header, []]);
+      if (sheet.rows.length) {
+        XLSX.utils.sheet_add_json(ws, sheet.rows, { origin: -1 });
+        anyRows = true;
+      }
+      XLSX.utils.book_append_sheet(wb, ws, uniqueSheetName(sheet.name, used));
+    }
+  }
+
+  if (!anyRows) return { ok: false, error: "Nothing to export for this period" };
+
+  const safe = (data.shop.name || "Bakery").replace(/[^a-z0-9]/gi, "_");
+  const suffix = rangeSuffix(range, false);
+  const fileName =
+    types.length === 1
+      ? `${safe}_${SUPPLIER_REPORT_META[types[0]].slug}_${suffix}.xlsx`
+      : `${safe}_Supplier_Reports_${suffix}.xlsx`;
+  XLSX.writeFile(wb, fileName);
+  return { ok: true };
 }

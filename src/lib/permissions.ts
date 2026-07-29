@@ -315,7 +315,9 @@ export function canAccessSection(user: User | null, section: string): boolean {
     case "purchases":
       return hasAnyPermission(user, ["purchases.create", "purchases.pay", "purchases.return"]);
     case "reports":
-      return hasPermission(user, "reports.view");
+      // Someone may hold suppliers.reports without reports.view — the page
+      // renders only the tabs they can actually open.
+      return hasAnyPermission(user, ["reports.view", "suppliers.reports"]);
     case "settings":
       return true; // My Account is always reachable
     default:
@@ -335,6 +337,6 @@ export function defaultRoute(user: User | null): string {
   if (hasAnyPermission(user, ["bill.history", "activity.view"])) return "/history";
   if (hasPermission(user, "attendance.view")) return "/attendance";
   if (hasAnyPermission(user, ["salary.view", "advance.view"])) return "/salary";
-  if (hasPermission(user, "reports.view")) return "/reports";
+  if (hasAnyPermission(user, ["reports.view", "suppliers.reports"])) return "/reports";
   return "/dashboard"; // no access — page renders the "No Access" state
 }
