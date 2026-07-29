@@ -30,7 +30,9 @@ const selectCls =
 const STATUS_TONE: Record<string, string> = {
   posted: "bg-success-bg text-success",
   draft: "bg-cream-dark text-ink-muted",
-  cancelled: "bg-cream text-ink-light",
+  // A withdrawn record counts for nothing — it should read as a warning, not as
+  // muted background noise.
+  cancelled: "bg-danger-bg text-danger",
 };
 
 type Kind = "purchase" | "payment" | "return";
@@ -134,7 +136,9 @@ export function PurchaseRecords() {
             reference: i.invoiceNo ?? i.internalRef ?? "—",
             supplier: i.supplierName,
             supplierType: i.supplierType,
-            detail: i.notes,
+            // Once withdrawn, why it was withdrawn matters more than the note
+            // that was taken when it was entered.
+            detail: i.status === "cancelled" && i.cancelReason ? i.cancelReason : i.notes,
             amount: i.total,
             status: i.status,
             reduces: false,

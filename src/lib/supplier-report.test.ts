@@ -37,6 +37,8 @@ const invoice = (over: Partial<PurchaseInvoice> = {}): PurchaseInvoice => ({
       gstRate: 5, lineTotal: 250, expiry: null, returnedQty: 0,
     },
   ],
+  cancelledAt: null,
+  cancelReason: "",
   ...over,
 });
 

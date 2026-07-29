@@ -16,8 +16,20 @@ export function Modal({ title, onClose, children }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
 
+  // Held in a ref so the effect below can depend on NOTHING and therefore run
+  // exactly once per mount. Callers routinely pass an inline arrow for onClose,
+  // whose identity changes on every parent render; with `[onClose]` as a
+  // dependency the effect tore down and re-ran on each of those renders, and its
+  // cleanup calls prevActive.focus() — which yanked focus out of whatever field
+  // was being typed in. That only bit modals whose form state lives in the
+  // PARENT, which is why it went unnoticed for so long.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
   // Escape-to-close, background scroll-lock, and a focus trap that keeps Tab
-  // cycling inside the dialog.
+  // cycling inside the dialog. Mount and unmount only.
   useEffect(() => {
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -35,7 +47,7 @@ export function Modal({ title, onClose, children }: ModalProps) {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key !== "Tab" || !panel) return;
@@ -58,7 +70,7 @@ export function Modal({ title, onClose, children }: ModalProps) {
       document.body.style.overflow = prevOverflow;
       prevActive?.focus?.();
     };
-  }, [onClose]);
+  }, []);
 
   return (
     <div

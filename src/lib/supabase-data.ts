@@ -1406,6 +1406,8 @@ interface InvoiceRow {
   subtotal: number | string | null;
   gst_amount: number | string | null;
   total: number | string | null;
+  cancelled_at: string | null;
+  cancel_reason: string | null;
 }
 
 interface InvoiceLineRow {
@@ -1461,6 +1463,8 @@ function mapInvoice(r: InvoiceRow, lines: PurchaseInvoiceLine[]): PurchaseInvoic
     createdByName: r.created_by_name ?? "",
     createdAt: r.created_at,
     lines,
+    cancelledAt: r.cancelled_at ?? null,
+    cancelReason: r.cancel_reason ?? "",
   };
 }
 

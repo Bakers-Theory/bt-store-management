@@ -494,6 +494,9 @@ export interface PurchaseInvoice {
   createdByName: string;
   createdAt: string; // ISO
   lines: PurchaseInvoiceLine[];
+  /** Set by `cancel_purchase_invoice` (migration 0043) when one is withdrawn. */
+  cancelledAt: string | null;
+  cancelReason: string;
 }
 
 export interface SupplierPayment {
