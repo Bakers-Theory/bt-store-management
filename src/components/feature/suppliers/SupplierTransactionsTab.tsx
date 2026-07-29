@@ -10,7 +10,7 @@ import {
   fetchPurchaseReturns,
   fetchSupplierPayments,
 } from "@/lib/supabase-data";
-import { DateRangePicker } from "@/components/ui/DateRangePicker";
+import { DateRangeFilter } from "@/components/ui/DateRangePicker";
 import { Skeleton } from "@/components/ui/Skeleton";
 import type { DateRange } from "@/lib/date-range";
 import type { Supplier } from "@/lib/types";
@@ -102,8 +102,8 @@ export function SupplierTransactionsTab({ supplier }: { supplier: Supplier }) {
 
   return (
     <>
-      <div className="mb-3.5">
-        <DateRangePicker value={range} onChange={setRange} />
+      <div className="mb-3.5 flex flex-wrap items-center gap-3">
+        <DateRangeFilter value={range} onChange={setRange} />
       </div>
 
       {!loaded ? (

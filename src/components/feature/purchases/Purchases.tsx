@@ -8,11 +8,12 @@ import { NoAccess } from "@/components/feature/NoAccess";
 import { useUIStore } from "@/lib/ui-store";
 import { fetchSuppliers } from "@/lib/supabase-data";
 import { PurchaseInvoiceForm } from "./PurchaseInvoiceForm";
+import { PurchaseRecords } from "./PurchaseRecords";
 import { PurchaseReturnForm } from "./PurchaseReturnForm";
 import { SupplierPaymentForm } from "./SupplierPaymentForm";
 import type { Supplier } from "@/lib/types";
 
-type Tab = "invoice" | "payment" | "return";
+type Tab = "invoice" | "payment" | "return" | "records";
 
 export function Purchases() {
   const user = useCurrentUser();
@@ -20,6 +21,9 @@ export function Purchases() {
   const canCreate = hasPermission(user, "purchases.create");
   const canPay = hasPermission(user, "purchases.pay");
   const canReturn = hasPermission(user, "purchases.return");
+  // Reading the ledger goes through the *_v views, every one of which is gated
+  // on suppliers.view — without it the tab could only ever render empty.
+  const canBrowse = hasPermission(user, "suppliers.view");
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [token, setToken] = useState(0);
@@ -58,6 +62,11 @@ export function Purchases() {
             Return
           </button>
         )}
+        {canBrowse && (
+          <button className={tabCls(tab === "records")} onClick={() => setTab("records")}>
+            All records
+          </button>
+        )}
       </div>
 
       {tab === "invoice" && canCreate ? (
@@ -66,6 +75,8 @@ export function Purchases() {
         <SupplierPaymentForm suppliers={suppliers} onDone={reload} />
       ) : tab === "return" && canReturn ? (
         <PurchaseReturnForm suppliers={suppliers} onDone={reload} />
+      ) : tab === "records" && canBrowse ? (
+        <PurchaseRecords />
       ) : (
         <NoAccess />
       )}
