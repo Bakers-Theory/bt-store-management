@@ -99,6 +99,21 @@ export interface Batch {
   qty: number;
   expiryDate: string | null; // "YYYY-MM-DD" or null (never expires)
   createdAt: string; // ISO
+  /**
+   * Which delivery this batch came from, stamped by `post_purchase_invoice`
+   * (migration 0040). Null on batches that predate that migration and on any
+   * stock added through the Stock In form or a bill cancellation — those have no
+   * invoice behind them.
+   *
+   * `supplierId` is present even when `supplierName` is withheld, which is how
+   * "no source recorded" is told apart from "source hidden from this user"
+   * (the name needs `suppliers.view`).
+   */
+  supplierId: string | null;
+  supplierName: string | null;
+  supplierCode: string | null;
+  /** The invoice number, or the `IH-` reference for in-house production. */
+  sourceRef: string | null;
 }
 
 export interface BillLine {

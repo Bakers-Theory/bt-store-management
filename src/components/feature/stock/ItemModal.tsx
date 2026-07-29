@@ -20,6 +20,18 @@ const CropModal = dynamic(() => import("./CropModal").then((m) => m.CropModal), 
   ssr: false,
 });
 
+/**
+ * Where a batch came from. Three distinct states, deliberately worded apart:
+ * a batch with no source recorded (predates migration 0040, or came in through
+ * the Stock In form) is not the same as one whose supplier this user may not see.
+ */
+function batchSource(b: Batch): string {
+  if (b.supplierName) {
+    return [b.supplierName, b.supplierCode, b.sourceRef].filter(Boolean).join(" · ");
+  }
+  return b.supplierId ? "Source hidden" : "Unknown source";
+}
+
 export function ItemModal({
   itemId,
   onClose,
@@ -373,7 +385,9 @@ export function ItemModal({
         </div>
       )}
 
-      {itemId && tracksExpiry && batches.length > 0 && (
+      {/* Shown for non-expiry items too: since 0040 a batch is one supplier's
+          delivery, so even an item that never expires can have several. */}
+      {itemId && batches.length > 0 && (
         <div className="mb-3.5">
           <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Batches</label>
           <div className="overflow-hidden rounded-[11px] border border-line">
@@ -390,59 +404,64 @@ export function ItemModal({
               return (
                 <div
                   key={b.id}
-                  className="flex items-center gap-2 border-t border-line-soft px-3 py-2 text-[12.5px] first:border-t-0"
+                  className="border-t border-line-soft px-3 py-2 text-[12.5px] first:border-t-0"
                 >
-                  <span className="num font-bold text-ink">{b.qty} {unit}</span>
-                  {b.expiryDate ? (
-                    <input
-                      type="date"
-                      value={b.expiryDate}
-                      disabled={busyBatchId === b.id || !canExpiry}
-                      readOnly={!canExpiry}
-                      onKeyDown={(e) => { if (e.key !== "Tab") e.preventDefault(); }}
-                      aria-label={`Edit expiry date for batch of ${b.qty} ${unit}`}
-                      onChange={async (e) => {
-                        const v = e.target.value;
-                        if (!v || v === b.expiryDate) return;
-                        setBusyBatchId(b.id);
-                        try {
-                          const r = await updateBatchExpiry(b.id, v);
-                          if (r.ok) { toast("Expiry updated", "success"); loadBatches(); }
-                          else toast(r.error ?? "Could not update expiry", "error");
-                        } finally {
-                          setBusyBatchId(null);
-                        }
-                      }}
-                      className="w-[140px] rounded-[7px] border border-line bg-warm-white px-1.5 py-0.5 text-[11.5px] outline-none focus:border-brown disabled:opacity-50"
-                    />
-                  ) : (
-                    <span className="text-ink-muted">no expiry</span>
-                  )}
-                  {b.expiryDate && (
-                    <span className={`rounded-full px-2 py-0.5 text-[10.5px] font-bold ${badge}`}>
-                      {status === "expired" ? "Expired" : status === "expiring" ? "Expiring" : "Fresh"}
-                    </span>
-                  )}
-                  {canExpiry && (
-                    <button
-                      type="button"
-                      disabled={busyBatchId === b.id}
-                      className="ml-auto btn-danger inline-flex items-center gap-1 px-2.5 py-1 text-[11px] disabled:cursor-not-allowed disabled:opacity-50"
-                      onClick={async () => {
-                        setBusyBatchId(b.id);
-                        try {
-                          const r = await writeOffBatch(b.id);
-                          if (r.ok) { toast("Batch written off", "success"); loadBatches(); }
-                          else toast(r.error ?? "Could not write off batch", "error");
-                        } finally {
-                          setBusyBatchId(null);
-                        }
-                      }}
-                    >
-                      {busyBatchId === b.id && <Loader2 size={12} className="animate-spin" />}
-                      Write off
-                    </button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    <span className="num font-bold text-ink">{b.qty} {unit}</span>
+                    {b.expiryDate ? (
+                      <input
+                        type="date"
+                        value={b.expiryDate}
+                        disabled={busyBatchId === b.id || !canExpiry}
+                        readOnly={!canExpiry}
+                        onKeyDown={(e) => { if (e.key !== "Tab") e.preventDefault(); }}
+                        aria-label={`Edit expiry date for batch of ${b.qty} ${unit}`}
+                        onChange={async (e) => {
+                          const v = e.target.value;
+                          if (!v || v === b.expiryDate) return;
+                          setBusyBatchId(b.id);
+                          try {
+                            const r = await updateBatchExpiry(b.id, v);
+                            if (r.ok) { toast("Expiry updated", "success"); loadBatches(); }
+                            else toast(r.error ?? "Could not update expiry", "error");
+                          } finally {
+                            setBusyBatchId(null);
+                          }
+                        }}
+                        className="w-[140px] rounded-[7px] border border-line bg-warm-white px-1.5 py-0.5 text-[11.5px] outline-none focus:border-brown disabled:opacity-50"
+                      />
+                    ) : (
+                      <span className="text-ink-muted">no expiry</span>
+                    )}
+                    {b.expiryDate && (
+                      <span className={`rounded-full px-2 py-0.5 text-[10.5px] font-bold ${badge}`}>
+                        {status === "expired" ? "Expired" : status === "expiring" ? "Expiring" : "Fresh"}
+                      </span>
+                    )}
+                    {canExpiry && (
+                      <button
+                        type="button"
+                        disabled={busyBatchId === b.id}
+                        className="ml-auto btn-danger inline-flex items-center gap-1 px-2.5 py-1 text-[11px] disabled:cursor-not-allowed disabled:opacity-50"
+                        onClick={async () => {
+                          setBusyBatchId(b.id);
+                          try {
+                            const r = await writeOffBatch(b.id);
+                            if (r.ok) { toast("Batch written off", "success"); loadBatches(); }
+                            else toast(r.error ?? "Could not write off batch", "error");
+                          } finally {
+                            setBusyBatchId(null);
+                          }
+                        }}
+                      >
+                        {busyBatchId === b.id && <Loader2 size={12} className="animate-spin" />}
+                        Write off
+                      </button>
+                    )}
+                  </div>
+                  <div className="mt-1 truncate text-[11px] font-semibold text-ink-light">
+                    {batchSource(b)}
+                  </div>
                 </div>
               );
             })}

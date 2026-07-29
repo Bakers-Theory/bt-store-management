@@ -101,6 +101,12 @@ interface BatchRow {
   qty: number | string;
   expiry_date: string | null;
   created_at: string;
+  // Source columns arrive from stock_batches_v (migration 0040). Optional so a
+  // caller reading the bare table still type-checks.
+  supplier_id?: string | null;
+  supplier_name?: string | null;
+  supplier_code?: string | null;
+  source_ref?: string | null;
 }
 
 // ─── Mappers (DB row → app type) ────────────────────────────────────────────
@@ -202,6 +208,10 @@ const mapBatch = (r: BatchRow): Batch => ({
   qty: Number(r.qty),
   expiryDate: r.expiry_date,
   createdAt: r.created_at,
+  supplierId: r.supplier_id ?? null,
+  supplierName: r.supplier_name ?? null,
+  supplierCode: r.supplier_code ?? null,
+  sourceRef: r.source_ref ?? null,
 });
 
 interface StoreListRow { kind: string; value: string }
@@ -524,12 +534,16 @@ export async function fetchCustomerBills(customerId: string): Promise<Bill[]> {
   return rows.map((b) => mapBill(b, linesByBill.get(b.id) ?? []));
 }
 
-/** One item's batches, soonest-expiry first (NULL-expiry last). For the item editor. */
+/**
+ * One item's batches, soonest-expiry first (NULL-expiry last). For the item
+ * editor. Reads `stock_batches_v` rather than the table so each batch carries
+ * the supplier it came from (migration 0040).
+ */
 export async function fetchItemBatches(itemId: string): Promise<Batch[]> {
   const supabase = createClient();
   const { data } = await supabase
-    .from("stock_batches")
-    .select("id,item_id,qty,expiry_date,created_at")
+    .from("stock_batches_v")
+    .select("*")
     .eq("item_id", itemId)
     .order("expiry_date", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: true });
