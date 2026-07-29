@@ -6,6 +6,7 @@ import { tabCls } from "@/components/ui/tabClass";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { hasPermission } from "@/lib/permissions";
 import { SupplierProfileTab } from "./SupplierProfileTab";
+import { SupplierProductsTab } from "./SupplierProductsTab";
 import type { Supplier } from "@/lib/types";
 
 type Tab = "profile" | "products" | "transactions" | "summary";
@@ -45,8 +46,10 @@ export function SupplierDetail({
 
       {tab === "profile" ? (
         <SupplierProfileTab supplier={supplier} onChanged={onChanged} />
+      ) : tab === "products" ? (
+        <SupplierProductsTab supplier={supplier} />
       ) : (
-        // Products (Task 10), Transactions and Account summary (Task 18).
+        // Transactions and Account summary arrive in Task 18.
         <p className="py-8 text-center text-sm text-ink-muted">Coming in a later phase.</p>
       )}
     </Modal>
