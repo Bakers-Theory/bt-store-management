@@ -1,7 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Loader2, Receipt, Search, Trash2, X } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  Receipt,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { useCurrentUser } from "@/components/system/AuthProvider";
@@ -22,10 +30,11 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import type { DateRange } from "@/lib/date-range";
 import type { InvoiceStatus, PurchaseInvoice, SupplierType } from "@/lib/types";
 
-// `!w-auto` overrides the global `select { width: 100% }`, which would otherwise
-// let each select eat the search field's space in this flex row.
+// On mobile the three selects share one row, so each takes an equal slice.
+// From `sm` up, `!w-auto` overrides the global `select { width: 100% }`, which
+// would otherwise let each select eat the search field's space in the flex row.
 const selectCls =
-  "!w-auto shrink-0 rounded-xl border border-line bg-warm-white px-3 py-[11px] text-[13.5px] font-semibold text-ink-muted focus:border-brown";
+  "min-w-0 flex-1 rounded-xl border border-line bg-warm-white px-1.5 py-[11px] text-[12px] font-semibold text-ink-muted focus:border-brown sm:!w-auto sm:shrink-0 sm:flex-none sm:px-3 sm:text-[13.5px]";
 
 const STATUS_TONE: Record<string, string> = {
   posted: "bg-success-bg text-success",
@@ -138,7 +147,10 @@ export function PurchaseRecords() {
             supplierType: i.supplierType,
             // Once withdrawn, why it was withdrawn matters more than the note
             // that was taken when it was entered.
-            detail: i.status === "cancelled" && i.cancelReason ? i.cancelReason : i.notes,
+            detail:
+              i.status === "cancelled" && i.cancelReason
+                ? i.cancelReason
+                : i.notes,
             amount: i.total,
             status: i.status,
             reduces: false,
@@ -165,7 +177,10 @@ export function PurchaseRecords() {
             reference: r.invoiceNo ?? "—",
             supplier: r.supplierName,
             supplierType: "external" as SupplierType,
-            detail: r.status === "cancelled" && r.cancelReason ? r.cancelReason : r.reason,
+            detail:
+              r.status === "cancelled" && r.cancelReason
+                ? r.cancelReason
+                : r.reason,
             amount: r.total,
             status: r.status,
             reduces: true,
@@ -194,7 +209,8 @@ export function PurchaseRecords() {
       if (status !== "all" && e.status !== status) return false;
       if (!q) return true;
       return (
-        e.supplier.toLowerCase().includes(q) || e.reference.toLowerCase().includes(q)
+        e.supplier.toLowerCase().includes(q) ||
+        e.reference.toLowerCase().includes(q)
       );
     });
   }, [entries, search, kind, type, status]);
@@ -272,7 +288,9 @@ export function PurchaseRecords() {
   // Only a posted purchase has stock to write off — a draft never created any,
   // and a return is sending goods back rather than losing them.
   const offersWriteOff =
-    canWriteOff && removing?.entry.kind === "purchase" && removing.entry.status === "posted";
+    canWriteOff &&
+    removing?.entry.kind === "purchase" &&
+    removing.entry.status === "posted";
 
   const confirmRemoval = async () => {
     if (!removing) return;
@@ -281,9 +299,13 @@ export function PurchaseRecords() {
     setBusy(true);
     try {
       if (entry.kind === "purchase") {
-        await rpcCancelPurchaseInvoice(entry.id, reason, offersWriteOff && writeOff);
-      }
-      else if (entry.kind === "payment") await rpcDeleteSupplierPayment(entry.id);
+        await rpcCancelPurchaseInvoice(
+          entry.id,
+          reason,
+          offersWriteOff && writeOff,
+        );
+      } else if (entry.kind === "payment")
+        await rpcDeleteSupplierPayment(entry.id);
       else await rpcCancelPurchaseReturn(entry.id, reason);
 
       toast(
@@ -302,7 +324,10 @@ export function PurchaseRecords() {
       setOpenId(null);
       reload();
     } catch (err) {
-      toast(err instanceof Error ? err.message : "Couldn't remove that record", "error");
+      toast(
+        err instanceof Error ? err.message : "Couldn't remove that record",
+        "error",
+      );
     } finally {
       setBusy(false);
     }
@@ -311,7 +336,7 @@ export function PurchaseRecords() {
   return (
     <>
       <div className="mb-3.5 flex flex-wrap items-center gap-3">
-        <div className="relative min-w-[200px] flex-1">
+        <div className="relative w-full sm:w-auto sm:min-w-[200px] sm:flex-1">
           <span className="pointer-events-none absolute left-[13px] top-1/2 -translate-y-1/2 text-ink-light">
             <Search size={16} />
           </span>
@@ -333,38 +358,42 @@ export function PurchaseRecords() {
             </button>
           )}
         </div>
-        <select
-          aria-label="Record kind"
-          className={selectCls}
-          value={kind}
-          onChange={(e) => setKind(e.target.value as Kind | "all")}
-        >
-          <option value="all">All records</option>
-          <option value="purchase">Purchases</option>
-          <option value="payment">Payments</option>
-          <option value="return">Returns</option>
-        </select>
-        <select
-          aria-label="Supplier type"
-          className={selectCls}
-          value={type}
-          onChange={(e) => setType(e.target.value as SupplierType | "all")}
-        >
-          <option value="all">All types</option>
-          <option value="external">External</option>
-          <option value="in_house">In-house</option>
-        </select>
-        <select
-          aria-label="Status"
-          className={selectCls}
-          value={status}
-          onChange={(e) => setStatus(e.target.value as InvoiceStatus | "all")}
-        >
-          <option value="all">All statuses</option>
-          <option value="posted">Posted</option>
-          <option value="draft">Draft</option>
-          <option value="cancelled">Cancelled</option>
-        </select>
+        {/* `sm:contents` hands the selects back to the outer flex row on desktop,
+            keeping the original single-row layout there. */}
+        <div className="flex w-full items-center gap-1.5 sm:contents">
+          <select
+            aria-label="Record kind"
+            className={selectCls}
+            value={kind}
+            onChange={(e) => setKind(e.target.value as Kind | "all")}
+          >
+            <option value="all">All records</option>
+            <option value="purchase">Purchases</option>
+            <option value="payment">Payments</option>
+            <option value="return">Returns</option>
+          </select>
+          <select
+            aria-label="Supplier type"
+            className={selectCls}
+            value={type}
+            onChange={(e) => setType(e.target.value as SupplierType | "all")}
+          >
+            <option value="all">All types</option>
+            <option value="external">External</option>
+            <option value="in_house">In-house</option>
+          </select>
+          <select
+            aria-label="Status"
+            className={selectCls}
+            value={status}
+            onChange={(e) => setStatus(e.target.value as InvoiceStatus | "all")}
+          >
+            <option value="all">All statuses</option>
+            <option value="posted">Posted</option>
+            <option value="draft">Draft</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
       </div>
 
       <div className="mb-3.5 flex flex-wrap items-center gap-3">
@@ -376,13 +405,19 @@ export function PurchaseRecords() {
       ) : error ? (
         <div className="rounded-[18px] border border-line bg-warm-white px-5 py-10 text-center text-sm text-ink-muted">
           Couldn&apos;t load purchase records.{" "}
-          <button type="button" className="font-bold text-brown underline" onClick={reload}>
+          <button
+            type="button"
+            className="font-bold text-brown underline"
+            onClick={reload}
+          >
             Retry
           </button>
         </div>
       ) : visible.length === 0 ? (
         <div className="rounded-[18px] border border-line bg-warm-white px-5 py-[60px] text-center text-ink-muted">
-          <div className="mb-3 flex justify-center"><Receipt size={44} /></div>
+          <div className="mb-3 flex justify-center">
+            <Receipt size={44} />
+          </div>
           <p className="text-sm">
             {entries.length === 0
               ? "Nothing recorded in this period."
@@ -401,7 +436,10 @@ export function PurchaseRecords() {
               const full = lines[e.id];
               const expandable = e.kind === "purchase";
               return (
-                <div key={e.key} className="border-t border-line-soft first:border-t-0">
+                <div
+                  key={e.key}
+                  className="border-t border-line-soft first:border-t-0"
+                >
                   <div className="flex items-center gap-1 pr-2 hover:bg-cream/60">
                     <button
                       type="button"
@@ -412,7 +450,11 @@ export function PurchaseRecords() {
                     >
                       <span className="shrink-0 text-ink-light">
                         {expandable ? (
-                          isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />
+                          isOpen ? (
+                            <ChevronDown size={16} />
+                          ) : (
+                            <ChevronRight size={16} />
+                          )
                         ) : (
                           <span className="inline-block w-4" />
                         )}
@@ -423,7 +465,9 @@ export function PurchaseRecords() {
                         </div>
                         <div className="truncate text-[12px] font-semibold text-ink-light">
                           {e.date} · {e.supplier}
-                          {e.kind === "purchase" ? ` · ${supplierTypeLabel(e.supplierType)}` : ""}
+                          {e.kind === "purchase"
+                            ? ` · ${supplierTypeLabel(e.supplierType)}`
+                            : ""}
                           {e.detail ? ` · ${e.detail}` : ""}
                         </div>
                       </div>
@@ -464,7 +508,8 @@ export function PurchaseRecords() {
                       {!full ? (
                         loadingLines ? (
                           <div className="flex items-center gap-2 text-[12.5px] font-semibold text-ink-muted">
-                            <Loader2 size={14} className="animate-spin" /> Loading lines…
+                            <Loader2 size={14} className="animate-spin" />{" "}
+                            Loading lines…
                           </div>
                         ) : (
                           <p className="text-[12.5px] font-semibold text-ink-muted">
@@ -484,10 +529,14 @@ export function PurchaseRecords() {
                                 </div>
                                 <div className="text-[11.5px] font-semibold text-ink-light">
                                   {l.qty}
-                                  {canFinancial ? ` × ${money(l.unitCost)}` : ""}
+                                  {canFinancial
+                                    ? ` × ${money(l.unitCost)}`
+                                    : ""}
                                   {l.gstRate > 0 ? ` · ${l.gstRate}% GST` : ""}
                                   {l.expiry ? ` · expires ${l.expiry}` : ""}
-                                  {l.returnedQty > 0 ? ` · ${l.returnedQty} returned` : ""}
+                                  {l.returnedQty > 0
+                                    ? ` · ${l.returnedQty} returned`
+                                    : ""}
                                 </div>
                               </div>
                               {canFinancial && (
@@ -549,7 +598,9 @@ export function PurchaseRecords() {
                 onChange={(ev) => setWriteOff(ev.target.checked)}
               />
               <span className="text-[13px]">
-                <span className="font-bold text-ink">Write the stock off as a loss</span>
+                <span className="font-bold text-ink">
+                  Write the stock off as a loss
+                </span>
                 <span className="mt-0.5 block text-[12px] font-semibold text-ink-light">
                   {writeOff
                     ? "The goods arrived and are unusable. Each line is logged as a Write-off movement, so the loss shows in the stock log and wastage figures."
@@ -561,7 +612,10 @@ export function PurchaseRecords() {
 
           {removing.needsReason && (
             <div className="mb-3.5">
-              <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]" htmlFor="rm-reason">
+              <label
+                className="mb-1.5 block text-xs font-bold text-[#8a6a3c]"
+                htmlFor="rm-reason"
+              >
                 Reason
               </label>
               <input
@@ -573,7 +627,8 @@ export function PurchaseRecords() {
                 // Enter submits, so a short reason does not need a trip to the
                 // mouse. Guarded on the same condition as the button.
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && !busy && reason.trim()) void confirmRemoval();
+                  if (e.key === "Enter" && !busy && reason.trim())
+                    void confirmRemoval();
                 }}
                 placeholder="e.g. Keyed against the wrong supplier"
               />
@@ -589,7 +644,11 @@ export function PurchaseRecords() {
             onClick={confirmRemoval}
             disabled={busy || (removing.needsReason && !reason.trim())}
           >
-            {busy ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+            {busy ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <Trash2 size={16} />
+            )}
             {busy
               ? "Working…"
               : `${removing.verb} ${KIND_LABEL[removing.entry.kind].toLowerCase()}`}
