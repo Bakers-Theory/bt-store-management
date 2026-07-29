@@ -1,8 +1,9 @@
 "use client";
 
 import { createClient } from "@/utils/supabase/client";
-import type { Attendance, AttendanceStatus, AttendanceSummary, AdvanceBalance, Bakery, Batch, Bill, BillLine, BillStatus, Customer, Employee, EmployeeSalary, Item, Log, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, StaffAdvance, StoreLists, Supplier, SupplierProduct, SupplierStatus, User } from "./types";
+import type { Attendance, AttendanceStatus, AttendanceSummary, AdvanceBalance, Bakery, Batch, Bill, BillLine, BillStatus, Customer, Employee, EmployeeSalary, Item, Log, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, StaffAdvance, StoreLists, Supplier, SupplierProduct, SupplierStatus, InvoiceStatus, PurchaseInvoice, PurchaseInvoiceLine, PurchaseMode, PurchaseReturn, PurchaseReturnLine, SupplierPayment, SupplierSummary, User } from "./types";
 import type { SupplierInput } from "./supplier";
+import { isPurchaseMode, type DraftLine } from "./purchase";
 import { isAttendanceStatus } from "./attendance";
 import { isSalaryMode } from "./salary";
 import type { ProfileRow } from "./auth";
@@ -1366,3 +1367,352 @@ export const rpcLinkSupplierItem = (supplierId: string, itemId: string) =>
 
 export const rpcUnlinkSupplierItem = (supplierId: string, itemId: string) =>
   rpc<void>("unlink_supplier_item", { p_supplier: supplierId, p_item: itemId });
+
+// ─── Purchasing ─────────────────────────────────────────────────────────────
+
+/** Optional supplier + date-range narrowing, shared by all three ledgers. */
+export interface LedgerQuery {
+  supplierId?: string;
+  range?: DateRange;
+}
+
+interface InvoiceRow {
+  id: string;
+  supplier_id: string;
+  supplier_type: string;
+  supplier_name: string;
+  supplier_code: string;
+  invoice_no: string | null;
+  internal_ref: string | null;
+  purchase_date: string;
+  status: string;
+  notes: string | null;
+  created_by_name: string | null;
+  created_at: string;
+  subtotal: number | string | null;
+  gst_amount: number | string | null;
+  total: number | string | null;
+}
+
+interface InvoiceLineRow {
+  id: string;
+  invoice_id: string;
+  item_id: string;
+  item_name: string;
+  qty: number | string;
+  expiry: string | null;
+  returned_qty: number | string | null;
+  unit_cost: number | string | null;
+  gst_rate: number | string | null;
+  line_total: number | string | null;
+}
+
+const asStatus = (v: string): InvoiceStatus =>
+  v === "posted" ? "posted" : v === "cancelled" ? "cancelled" : "draft";
+
+/** Money reads NULL without `suppliers.financial`; 0 is the honest render. */
+const money = (v: number | string | null | undefined): number => Number(v ?? 0);
+
+function mapInvoiceLine(r: InvoiceLineRow): PurchaseInvoiceLine {
+  return {
+    id: r.id,
+    itemId: r.item_id,
+    itemName: r.item_name,
+    qty: Number(r.qty),
+    unitCost: money(r.unit_cost),
+    gstRate: money(r.gst_rate),
+    lineTotal: money(r.line_total),
+    expiry: r.expiry,
+    returnedQty: Number(r.returned_qty ?? 0),
+  };
+}
+
+function mapInvoice(r: InvoiceRow, lines: PurchaseInvoiceLine[]): PurchaseInvoice {
+  return {
+    id: r.id,
+    supplierId: r.supplier_id,
+    supplierName: r.supplier_name,
+    supplierCode: r.supplier_code,
+    supplierType: r.supplier_type === "in_house" ? "in_house" : "external",
+    invoiceNo: r.invoice_no,
+    internalRef: r.internal_ref,
+    purchaseDate: r.purchase_date,
+    subtotal: money(r.subtotal),
+    // Null is meaningful here: an in-house receipt has no GST at all, which the
+    // UI renders as "—" rather than "₹0.00".
+    gstAmount: r.gst_amount == null ? null : Number(r.gst_amount),
+    total: money(r.total),
+    status: asStatus(r.status),
+    notes: r.notes ?? "",
+    createdByName: r.created_by_name ?? "",
+    createdAt: r.created_at,
+    lines,
+  };
+}
+
+const applyLedgerQuery = <T>(q: T, opts: LedgerQuery, dateCol: string): T => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let out: any = q;
+  if (opts.supplierId) out = out.eq("supplier_id", opts.supplierId);
+  if (opts.range?.from) out = out.gte(dateCol, opts.range.from);
+  if (opts.range?.to) out = out.lte(dateCol, opts.range.to);
+  return out as T;
+};
+
+/**
+ * Invoice headers, newest first. Lines are NOT fetched — the list shows totals
+ * only, and one round trip per row would be a query per screen.
+ */
+export async function fetchPurchaseInvoices(
+  opts: LedgerQuery = {},
+): Promise<PurchaseInvoice[]> {
+  const supabase = createClient();
+  const { data, error } = await applyLedgerQuery(
+    supabase.from("purchase_invoice_v").select("*"),
+    opts,
+    "purchase_date",
+  )
+    .order("purchase_date", { ascending: false })
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as InvoiceRow[]).map((r) => mapInvoice(r, []));
+}
+
+/** One invoice with its lines — for the detail view and the return form. */
+export async function fetchPurchaseInvoice(id: string): Promise<PurchaseInvoice | null> {
+  const supabase = createClient();
+  const [header, lines] = await Promise.all([
+    supabase.from("purchase_invoice_v").select("*").eq("id", id).maybeSingle(),
+    supabase.from("purchase_invoice_line_v").select("*").eq("invoice_id", id).order("item_name"),
+  ]);
+  if (header.error) throw new Error(header.error.message);
+  if (lines.error) throw new Error(lines.error.message);
+  if (!header.data) return null;
+  return mapInvoice(
+    header.data as InvoiceRow,
+    ((lines.data ?? []) as InvoiceLineRow[]).map(mapInvoiceLine),
+  );
+}
+
+export interface InvoiceDraftInput {
+  /** Omit to create; pass to replace an existing draft. */
+  id?: string;
+  supplierId: string;
+  invoiceNo: string;
+  purchaseDate: string;
+  notes: string;
+  lines: DraftLine[];
+}
+
+export async function rpcSavePurchaseInvoice(
+  draft: InvoiceDraftInput,
+): Promise<PurchaseInvoice> {
+  const row = await rpc<InvoiceRow>("save_purchase_invoice", {
+    p: {
+      id: draft.id ?? "",
+      supplierId: draft.supplierId,
+      invoiceNo: draft.invoiceNo,
+      purchaseDate: draft.purchaseDate,
+      notes: draft.notes,
+      lines: draft.lines.map((l) => ({
+        itemId: l.itemId,
+        qty: l.qty,
+        unitCost: l.unitCost,
+        gstRate: l.gstRate,
+        expiry: l.expiry ?? "",
+      })),
+    },
+  });
+  return mapInvoice(row, []);
+}
+
+export async function rpcPostPurchaseInvoice(id: string): Promise<PurchaseInvoice> {
+  return mapInvoice(await rpc<InvoiceRow>("post_purchase_invoice", { p_id: id }), []);
+}
+
+export async function rpcCancelPurchaseInvoice(
+  id: string,
+  reason: string,
+): Promise<PurchaseInvoice> {
+  return mapInvoice(
+    await rpc<InvoiceRow>("cancel_purchase_invoice", { p_id: id, p_reason: reason }),
+    [],
+  );
+}
+
+interface PaymentRow {
+  id: string;
+  supplier_id: string;
+  supplier_name: string;
+  invoice_id: string | null;
+  invoice_no: string | null;
+  paid_on: string;
+  mode: string;
+  reference_no: string | null;
+  created_by_name: string | null;
+  created_at: string;
+  amount: number | string | null;
+}
+
+const mapPayment = (r: PaymentRow): SupplierPayment => ({
+  id: r.id,
+  supplierId: r.supplier_id,
+  supplierName: r.supplier_name,
+  invoiceId: r.invoice_id,
+  invoiceNo: r.invoice_no,
+  amount: money(r.amount),
+  paidOn: r.paid_on,
+  mode: isPurchaseMode(r.mode) ? r.mode : "Cash",
+  referenceNo: r.reference_no ?? "",
+  createdByName: r.created_by_name ?? "",
+  createdAt: r.created_at,
+});
+
+export async function fetchSupplierPayments(
+  opts: LedgerQuery = {},
+): Promise<SupplierPayment[]> {
+  const supabase = createClient();
+  const { data, error } = await applyLedgerQuery(
+    supabase.from("supplier_payment_v").select("*"),
+    opts,
+    "paid_on",
+  )
+    .order("paid_on", { ascending: false })
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as PaymentRow[]).map(mapPayment);
+}
+
+export interface PaymentInput {
+  supplierId: string;
+  invoiceId: string | null;
+  amount: number;
+  paidOn: string;
+  mode: PurchaseMode;
+  referenceNo: string;
+  notes: string;
+}
+
+export async function rpcRecordSupplierPayment(input: PaymentInput): Promise<SupplierPayment> {
+  return mapPayment(
+    await rpc<PaymentRow>("record_supplier_payment", {
+      p: { ...input, invoiceId: input.invoiceId ?? "" },
+    }),
+  );
+}
+
+export const rpcDeleteSupplierPayment = (id: string) =>
+  rpc<void>("delete_supplier_payment", { p_id: id });
+
+interface ReturnRow {
+  id: string;
+  supplier_id: string;
+  supplier_name: string;
+  invoice_id: string;
+  invoice_no: string | null;
+  return_date: string;
+  status: string;
+  reason: string;
+  created_by_name: string | null;
+  created_at: string;
+  total: number | string | null;
+}
+
+const mapReturn = (r: ReturnRow, lines: PurchaseReturnLine[]): PurchaseReturn => ({
+  id: r.id,
+  supplierId: r.supplier_id,
+  supplierName: r.supplier_name,
+  invoiceId: r.invoice_id,
+  invoiceNo: r.invoice_no,
+  returnDate: r.return_date,
+  total: money(r.total),
+  status: asStatus(r.status),
+  reason: r.reason,
+  createdByName: r.created_by_name ?? "",
+  createdAt: r.created_at,
+  lines,
+});
+
+export async function fetchPurchaseReturns(
+  opts: LedgerQuery = {},
+): Promise<PurchaseReturn[]> {
+  const supabase = createClient();
+  const { data, error } = await applyLedgerQuery(
+    supabase.from("purchase_return_v").select("*"),
+    opts,
+    "return_date",
+  )
+    .order("return_date", { ascending: false })
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as ReturnRow[]).map((r) => mapReturn(r, []));
+}
+
+export interface ReturnInput {
+  invoiceId: string;
+  returnDate: string;
+  reason: string;
+  lines: { invoiceLineId: string; qty: number }[];
+}
+
+export async function rpcPostPurchaseReturn(input: ReturnInput): Promise<PurchaseReturn> {
+  return mapReturn(await rpc<ReturnRow>("post_purchase_return", { p: input }), []);
+}
+
+interface SummaryRow {
+  supplier_id: string;
+  supplier_name: string;
+  supplier_code: string;
+  supplier_type: string;
+  total_purchases: number | string;
+  total_payments: number | string;
+  return_credit: number | string;
+  outstanding: number | string;
+  in_house_value: number | string;
+  last_transaction_date: string | null;
+  last_payment_date: string | null;
+  purchase_order_count: number | string;
+  transaction_count: number | string;
+}
+
+const mapSummary = (r: SummaryRow): SupplierSummary => ({
+  supplierId: r.supplier_id,
+  supplierName: r.supplier_name,
+  supplierCode: r.supplier_code,
+  supplierType: r.supplier_type === "in_house" ? "in_house" : "external",
+  totalPurchases: Number(r.total_purchases),
+  totalPayments: Number(r.total_payments),
+  returnCredit: Number(r.return_credit),
+  outstanding: Number(r.outstanding),
+  inHouseValue: Number(r.in_house_value),
+  lastTransactionDate: r.last_transaction_date,
+  lastPaymentDate: r.last_payment_date,
+  purchaseOrderCount: Number(r.purchase_order_count),
+  transactionCount: Number(r.transaction_count),
+});
+
+/**
+ * Every supplier's account position. Returns an EMPTY array for a caller
+ * without `suppliers.financial` — the view yields no rows rather than a row of
+ * nulls, so the caller must gate the UI on the permission itself.
+ */
+export async function fetchSupplierSummaries(): Promise<SupplierSummary[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("supplier_summary_v")
+    .select("*")
+    .order("supplier_name", { ascending: true });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as SummaryRow[]).map(mapSummary);
+}
+
+export async function fetchSupplierSummary(id: string): Promise<SupplierSummary | null> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("supplier_summary_v")
+    .select("*")
+    .eq("supplier_id", id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? mapSummary(data as SummaryRow) : null;
+}

@@ -432,3 +432,117 @@ export interface SupplierProduct {
   lastPurchaseDate: string | null;
   linkedAt: string; // ISO
 }
+
+// ─── Purchasing ─────────────────────────────────────────────────────────────
+
+/**
+ * How a supplier was paid. Wider than a bill's `PaymentMethod` and wider than
+ * `SalaryMode`: trade payables are routinely settled by bank transfer or
+ * cheque, neither of which is a way a customer or an employee is ever paid.
+ */
+export type PurchaseMode = "Cash" | "UPI" | "Bank Transfer" | "Cheque";
+
+/** Only `posted` invoices touch stock or any financial aggregate. */
+export type InvoiceStatus = "draft" | "posted" | "cancelled";
+
+export interface PurchaseInvoiceLine {
+  id: string;
+  itemId: string;
+  itemName: string;
+  qty: number;
+  unitCost: number;
+  /** Percent. Always 0 on an in-house receipt. */
+  gstRate: number;
+  lineTotal: number;
+  expiry: string | null; // "YYYY-MM-DD"
+  /** Already credited back on posted returns, so the UI can cap a new one. */
+  returnedQty: number;
+}
+
+export interface PurchaseInvoice {
+  id: string;
+  supplierId: string;
+  supplierName: string;
+  supplierCode: string;
+  supplierType: SupplierType;
+  /** The supplier's own number. Null on in-house receipts. */
+  invoiceNo: string | null;
+  /** `IH-0001`. Null on external invoices. */
+  internalRef: string | null;
+  purchaseDate: string; // "YYYY-MM-DD"
+  subtotal: number;
+  /** Null on in-house receipts — a database guarantee, not a UI convention. */
+  gstAmount: number | null;
+  total: number;
+  status: InvoiceStatus;
+  notes: string;
+  createdByName: string;
+  createdAt: string; // ISO
+  lines: PurchaseInvoiceLine[];
+}
+
+export interface SupplierPayment {
+  id: string;
+  supplierId: string;
+  supplierName: string;
+  /** Optional: a payment may settle one invoice or sit on account. */
+  invoiceId: string | null;
+  invoiceNo: string | null;
+  amount: number;
+  paidOn: string; // "YYYY-MM-DD"
+  mode: PurchaseMode;
+  referenceNo: string;
+  createdByName: string;
+  createdAt: string; // ISO
+}
+
+export interface PurchaseReturnLine {
+  id: string;
+  invoiceLineId: string;
+  itemId: string;
+  itemName: string;
+  qty: number;
+  unitCost: number;
+  lineTotal: number;
+}
+
+export interface PurchaseReturn {
+  id: string;
+  supplierId: string;
+  supplierName: string;
+  invoiceId: string;
+  invoiceNo: string | null;
+  returnDate: string; // "YYYY-MM-DD"
+  total: number;
+  status: InvoiceStatus;
+  reason: string;
+  createdByName: string;
+  createdAt: string; // ISO
+  lines: PurchaseReturnLine[];
+}
+
+/**
+ * One supplier's account position (FR-16), computed live from posted rows.
+ * There is no stored balance column anywhere, so nothing can fall out of sync.
+ *
+ * Money fields read 0 for a caller without `suppliers.financial` — the view
+ * nulls them at the column level and the mapper coalesces.
+ */
+export interface SupplierSummary {
+  supplierId: string;
+  supplierName: string;
+  supplierCode: string;
+  supplierType: SupplierType;
+  /** External only. In-house receipts are never a payable. */
+  totalPurchases: number;
+  totalPayments: number;
+  returnCredit: number;
+  outstanding: number;
+  /** In-house only: what your own production has cost. Reported separately. */
+  inHouseValue: number;
+  lastTransactionDate: string | null;
+  lastPaymentDate: string | null;
+  /** An invoice IS the order record; there is no separate PO entity. */
+  purchaseOrderCount: number;
+  transactionCount: number;
+}

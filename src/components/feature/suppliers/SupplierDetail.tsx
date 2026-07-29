@@ -7,6 +7,8 @@ import { useCurrentUser } from "@/components/system/AuthProvider";
 import { hasPermission } from "@/lib/permissions";
 import { SupplierProfileTab } from "./SupplierProfileTab";
 import { SupplierProductsTab } from "./SupplierProductsTab";
+import { SupplierSummaryTab } from "./SupplierSummaryTab";
+import { SupplierTransactionsTab } from "./SupplierTransactionsTab";
 import type { Supplier } from "@/lib/types";
 
 type Tab = "profile" | "products" | "transactions" | "summary";
@@ -48,9 +50,12 @@ export function SupplierDetail({
         <SupplierProfileTab supplier={supplier} onChanged={onChanged} />
       ) : tab === "products" ? (
         <SupplierProductsTab supplier={supplier} />
+      ) : tab === "transactions" ? (
+        <SupplierTransactionsTab supplier={supplier} />
+      ) : canFinancial ? (
+        <SupplierSummaryTab supplier={supplier} />
       ) : (
-        // Transactions and Account summary arrive in Task 18.
-        <p className="py-8 text-center text-sm text-ink-muted">Coming in a later phase.</p>
+        <SupplierProfileTab supplier={supplier} onChanged={onChanged} />
       )}
     </Modal>
   );

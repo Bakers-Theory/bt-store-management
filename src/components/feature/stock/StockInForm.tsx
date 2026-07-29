@@ -1,9 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Check, Loader2 } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
+import { useCurrentUser } from "@/components/system/AuthProvider";
+import { hasAnyPermission } from "@/lib/permissions";
 
 export function StockInForm({
   onSuccess,
@@ -12,6 +15,11 @@ export function StockInForm({
   const items = useBakeryStore((s) => s.items);
   const stockIn = useBakeryStore((s) => s.stockIn);
   const toast = useUIStore((s) => s.toast);
+  const user = useCurrentUser();
+  // A delivery from a supplier belongs on an invoice, which is what creates the
+  // batch AND the cost record. This form is for adjustments that have no
+  // invoice behind them.
+  const canPurchase = hasAnyPermission(user, ["purchases.create"]);
 
   const [itemId, setItemId] = useState(initialItemId ?? "");
   const [qty, setQty] = useState("");
@@ -51,6 +59,16 @@ export function StockInForm({
 
   return (
     <div>
+      {canPurchase && (
+        <p className="mb-3.5 rounded-xl bg-cream px-3.5 py-2.5 text-[12.5px] font-semibold text-ink-muted">
+          Receiving a supplier delivery?{" "}
+          <Link href="/purchases" className="font-bold text-brown underline">
+            Record it as a purchase
+          </Link>{" "}
+          — that files the invoice and the cost too. Use this form for found stock and
+          corrections.
+        </p>
+      )}
       <div className="mb-3.5">
         <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Select Item</label>
         <select value={itemId} onChange={(e) => setItemId(e.target.value)}>
@@ -68,8 +86,8 @@ export function StockInForm({
           <input type="number" placeholder="0" min="0" step="0.01" value={qty} onChange={(e) => setQty(e.target.value)} />
         </div>
         <div>
-          <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Supplier (optional)</label>
-          <input type="text" placeholder="Supplier name" value={supplier} onChange={(e) => setSupplier(e.target.value)} />
+          <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Source (optional)</label>
+          <input type="text" placeholder="Where it came from" value={supplier} onChange={(e) => setSupplier(e.target.value)} />
         </div>
       </div>
       {selected?.tracksExpiry && (
