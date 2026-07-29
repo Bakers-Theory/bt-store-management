@@ -32,6 +32,7 @@ export function PurchaseReturnForm({
   const [invoices, setInvoices] = useState<PurchaseInvoice[]>([]);
   const [invoice, setInvoice] = useState<PurchaseInvoice | null>(null);
   const [qtys, setQtys] = useState<Record<string, string>>({});
+  const [loadingInvoices, setLoadingInvoices] = useState(false);
   const [returnDate, setReturnDate] = useState(today);
   const [reason, setReason] = useState("");
   const [err, setErr] = useState("");
@@ -47,14 +48,17 @@ export function PurchaseReturnForm({
   useEffect(() => {
     if (!supplierId) {
       setInvoices([]);
+      setLoadingInvoices(false);
       return;
     }
     let alive = true;
     setInvoiceId("");
     setInvoice(null);
+    setLoadingInvoices(true);
     fetchPurchaseInvoices({ supplierId })
       .then((rows) => alive && setInvoices(rows.filter((i) => i.status === "posted")))
-      .catch(() => alive && toast("Couldn't load invoices", "error"));
+      .catch(() => alive && toast("Couldn't load invoices", "error"))
+      .finally(() => alive && setLoadingInvoices(false));
     return () => {
       alive = false;
     };
@@ -141,12 +145,22 @@ export function PurchaseReturnForm({
               </option>
             ))}
           </select>
+          {supplierId && !loadingInvoices && invoices.length === 0 && (
+            <p className="mt-1.5 text-[12px] font-semibold text-ink-muted">
+              No posted invoices for this supplier — only posted purchases can be returned.
+            </p>
+          )}
         </div>
       </div>
 
-      {invoice && (
+      <span className={labelCls}>Items to return</span>
+      {!invoice ? (
+        <div className="mb-3.5 rounded-xl border border-dashed border-line px-3.5 py-4 text-center text-[12.5px] font-semibold text-ink-muted">
+          Choose an invoice above to pick which items — and how much of each — to send back.
+          Leave a line at 0 to keep it.
+        </div>
+      ) : (
         <>
-          <span className={labelCls}>Lines to return</span>
           <div className="mb-3.5 overflow-hidden rounded-xl border border-line">
             {invoice.lines.map((l) => {
               const left = returnableQty(l.qty, l.returnedQty);
@@ -177,6 +191,11 @@ export function PurchaseReturnForm({
               );
             })}
           </div>
+          {invoice.lines.every((l) => returnableQty(l.qty, l.returnedQty) <= 0) && (
+            <p className="mb-3.5 -mt-2 text-[12px] font-semibold text-ink-muted">
+              Every item on this invoice has already been returned in full.
+            </p>
+          )}
         </>
       )}
 
