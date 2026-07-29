@@ -1,7 +1,8 @@
 "use client";
 
 import { createClient } from "@/utils/supabase/client";
-import type { Attendance, AttendanceStatus, AttendanceSummary, AdvanceBalance, Bakery, Batch, Bill, BillLine, BillStatus, Customer, Employee, EmployeeSalary, Item, Log, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, StaffAdvance, StoreLists, User } from "./types";
+import type { Attendance, AttendanceStatus, AttendanceSummary, AdvanceBalance, Bakery, Batch, Bill, BillLine, BillStatus, Customer, Employee, EmployeeSalary, Item, Log, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, StaffAdvance, StoreLists, Supplier, SupplierProduct, SupplierStatus, User } from "./types";
+import type { SupplierInput } from "./supplier";
 import { isAttendanceStatus } from "./attendance";
 import { isSalaryMode } from "./salary";
 import type { ProfileRow } from "./auth";
@@ -1198,3 +1199,170 @@ export async function rpcSetAdvanceRecovery(
   });
   return mapSalaryPayment(row);
 }
+
+// ─── Suppliers ──────────────────────────────────────────────────────────────
+
+interface SupplierRow {
+  id: string;
+  code: string;
+  supplier_type: string;
+  name: string;
+  business_name: string | null;
+  contact_person: string | null;
+  mobile: string | null;
+  email: string | null;
+  gstin: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  pin_code: string | null;
+  payment_terms: string | null;
+  notes: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+function mapSupplier(r: SupplierRow): Supplier {
+  return {
+    id: r.id,
+    code: r.code,
+    supplierType: r.supplier_type === "in_house" ? "in_house" : "external",
+    name: r.name,
+    businessName: r.business_name ?? "",
+    contactPerson: r.contact_person ?? "",
+    mobile: r.mobile ?? "",
+    email: r.email ?? "",
+    gstin: r.gstin ?? "",
+    address: r.address ?? "",
+    city: r.city ?? "",
+    state: r.state ?? "",
+    pinCode: r.pin_code ?? "",
+    paymentTerms: r.payment_terms ?? "",
+    notes: r.notes ?? "",
+    status: r.status === "inactive" ? "inactive" : "active",
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+/** The jsonb payload both supplier RPCs take. Keys are camelCase by design —
+ *  `supplier_fields` in SQL reads them and owns the trimming. */
+const supplierPayload = (input: SupplierInput) => ({
+  supplierType: input.supplierType,
+  name: input.name,
+  businessName: input.businessName,
+  contactPerson: input.contactPerson,
+  mobile: input.mobile,
+  email: input.email,
+  gstin: input.gstin,
+  address: input.address,
+  city: input.city,
+  state: input.state,
+  pinCode: input.pinCode,
+  paymentTerms: input.paymentTerms,
+  notes: input.notes,
+});
+
+/** Every supplier the caller may see, active first then by name. */
+export async function fetchSuppliers(): Promise<Supplier[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("suppliers_v")
+    .select("*")
+    .order("status", { ascending: true })
+    .order("name", { ascending: true });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as SupplierRow[]).map(mapSupplier);
+}
+
+export async function fetchSupplier(id: string): Promise<Supplier | null> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("suppliers_v")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? mapSupplier(data as SupplierRow) : null;
+}
+
+export async function rpcCreateSupplier(input: SupplierInput): Promise<Supplier> {
+  return mapSupplier(await rpc<SupplierRow>("create_supplier", { p: supplierPayload(input) }));
+}
+
+/**
+ * `expectedUpdatedAt` is the `updatedAt` the form loaded. The RPC refuses the
+ * write if the stored value has moved, so a concurrent edit surfaces as an
+ * error rather than a silent overwrite.
+ */
+export async function rpcUpdateSupplier(
+  id: string,
+  input: SupplierInput,
+  expectedUpdatedAt: string,
+): Promise<Supplier> {
+  return mapSupplier(
+    await rpc<SupplierRow>("update_supplier", {
+      p_id: id,
+      p: supplierPayload(input),
+      p_expected: expectedUpdatedAt,
+    }),
+  );
+}
+
+export async function rpcSetSupplierStatus(
+  id: string,
+  status: SupplierStatus,
+): Promise<Supplier> {
+  return mapSupplier(
+    await rpc<SupplierRow>("set_supplier_status", { p_id: id, p_status: status }),
+  );
+}
+
+interface SupplierProductRow {
+  supplier_id: string;
+  item_id: string;
+  item_name: string;
+  emoji: string | null;
+  image_url: string | null;
+  category: string | null;
+  unit: string | null;
+  current_qty: number | string | null;
+  earliest_expiry: string | null;
+  last_unit_cost: number | string | null;
+  last_purchase_date: string | null;
+  created_at: string;
+}
+
+/** Products linked to one supplier, with derived purchase price and date. */
+export async function fetchSupplierProducts(supplierId: string): Promise<SupplierProduct[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("supplier_products_v")
+    .select("*")
+    .eq("supplier_id", supplierId)
+    .order("item_name", { ascending: true });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as SupplierProductRow[]).map((r) => ({
+    supplierId: r.supplier_id,
+    itemId: r.item_id,
+    itemName: r.item_name,
+    emoji: r.emoji ?? "📦",
+    imageUrl: r.image_url,
+    category: r.category ?? "",
+    unit: r.unit ?? "",
+    currentQty: Number(r.current_qty ?? 0),
+    earliestExpiry: r.earliest_expiry,
+    // Null, not 0: "never purchased" and "purchased at zero" are different
+    // facts and the UI renders them differently.
+    lastUnitCost: r.last_unit_cost == null ? null : Number(r.last_unit_cost),
+    lastPurchaseDate: r.last_purchase_date,
+    linkedAt: r.created_at,
+  }));
+}
+
+export const rpcLinkSupplierItem = (supplierId: string, itemId: string) =>
+  rpc<void>("link_supplier_item", { p_supplier: supplierId, p_item: itemId });
+
+export const rpcUnlinkSupplierItem = (supplierId: string, itemId: string) =>
+  rpc<void>("unlink_supplier_item", { p_supplier: supplierId, p_item: itemId });

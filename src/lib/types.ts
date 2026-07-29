@@ -43,6 +43,16 @@ export type PermissionKey =
   | "advance.request"
   | "advance.approve"
   | "advance.delete"
+  // Suppliers & Purchasing
+  | "suppliers.view"
+  | "suppliers.create"
+  | "suppliers.edit"
+  | "suppliers.status"
+  | "purchases.create"
+  | "purchases.pay"
+  | "purchases.return"
+  | "suppliers.financial"
+  | "suppliers.reports"
   // Store admin
   | "store.settings"
   | "store.status"
@@ -362,4 +372,63 @@ export interface AdvanceBalance {
   /** Earliest approved advance while anything is outstanding, else null. */
   oldestOpen: string | null;
   monthlySalary: number;
+}
+
+// ─── Suppliers ──────────────────────────────────────────────────────────────
+
+/**
+ * `in_house` is the store's own production: it carries cost, but no invoice
+ * number, no GST and no payable. It is a supplier *type* rather than a separate
+ * system so product association, history and cost tracking stay on one path.
+ */
+export type SupplierType = "external" | "in_house";
+
+export type SupplierStatus = "active" | "inactive";
+
+export interface Supplier {
+  id: string;
+  /** `SUP-0001`, from `supplier_code_seq`. Unique, human-quotable. */
+  code: string;
+  supplierType: SupplierType;
+  name: string;
+  businessName: string;
+  contactPerson: string;
+  mobile: string;
+  email: string;
+  /** Never required. Forbidden outright on in-house suppliers. */
+  gstin: string;
+  address: string;
+  city: string;
+  state: string;
+  pinCode: string;
+  paymentTerms: string;
+  notes: string;
+  status: SupplierStatus;
+  createdAt: string; // ISO
+  /** Powers the optimistic version check on update. */
+  updatedAt: string; // ISO
+}
+
+/**
+ * One product a supplier supplies (FR-10). Every figure below the item's own
+ * fields is derived from posted invoice lines, so nothing here can be stale.
+ *
+ * There is no SKU: `public.items` has no such column. Category and unit
+ * identify the product instead.
+ */
+export interface SupplierProduct {
+  supplierId: string;
+  itemId: string;
+  itemName: string;
+  emoji: string;
+  imageUrl: string | null;
+  category: string;
+  unit: string;
+  currentQty: number;
+  earliestExpiry: string | null; // "YYYY-MM-DD"
+  /** Latest posted unit cost from THIS supplier. Null before any purchase. */
+  lastUnitCost: number | null;
+  /** Latest posted purchase date from this supplier. Null before any purchase. */
+  lastPurchaseDate: string | null;
+  linkedAt: string; // ISO
 }
