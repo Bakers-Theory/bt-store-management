@@ -24,7 +24,12 @@ export function Modal({ title, onClose, children }: ModalProps) {
     const prevActive = document.activeElement as HTMLElement | null;
 
     const panel = panelRef.current;
-    const first = panel?.querySelector<HTMLElement>(FOCUSABLE);
+    // Initial focus belongs on the dialog's first FIELD, not on its own Close
+    // button — which sits before `children` in document order and would
+    // otherwise always win, leaving every form modal opening with the cursor
+    // nowhere useful. The Tab trap below still cycles through Close normally.
+    const focusables = Array.from(panel?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []);
+    const first = focusables.find((el) => !el.hasAttribute("data-modal-close"));
     (first ?? panel)?.focus();
 
     const onKeyDown = (e: KeyboardEvent) => {
@@ -75,6 +80,9 @@ export function Modal({ title, onClose, children }: ModalProps) {
             {title}
           </h2>
           <button
+            // Marks this out of the running for INITIAL focus only; it stays in
+            // the Tab cycle like any other control.
+            data-modal-close
             className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full border-none bg-cream text-ink-muted"
             onClick={onClose}
             aria-label="Close"

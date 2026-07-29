@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Loader2, Receipt, Search, Trash2, X } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
@@ -76,6 +76,9 @@ export function PurchaseRecords() {
   const canCancelInvoice = hasPermission(user, "purchases.create");
   const canDeletePayment = hasPermission(user, "purchases.pay");
   const canCancelReturn = hasPermission(user, "purchases.return");
+  // Recording the removal as wastage is the same decision write_off_batch and
+  // stock_out own, so it carries their key.
+  const canWriteOff = hasPermission(user, "stock.expiry");
 
   const [range, setRange] = useState<DateRange>({ from: null, to: null });
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -95,7 +98,19 @@ export function PurchaseRecords() {
 
   const [removing, setRemoving] = useState<Removal | null>(null);
   const [reason, setReason] = useState("");
+  // Cancelling a posted purchase always removes the stock; this decides whether
+  // that removal is recorded as a loss or treated as "it never arrived".
+  const [writeOff, setWriteOff] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  // Modal focuses its first field on mount, which for a posted purchase is the
+  // write-off checkbox. The reason is what actually has to be typed, so it is
+  // focused explicitly. This effect belongs to Modal's PARENT, so it runs after
+  // Modal's mount effect and wins.
+  const reasonRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (removing?.needsReason) reasonRef.current?.focus();
+  }, [removing]);
 
   const reload = useCallback(() => setToken((t) => t + 1), []);
 
@@ -250,26 +265,36 @@ export function PurchaseRecords() {
     }
   };
 
+  // Only a posted purchase has stock to write off — a draft never created any,
+  // and a return is sending goods back rather than losing them.
+  const offersWriteOff =
+    canWriteOff && removing?.entry.kind === "purchase" && removing.entry.status === "posted";
+
   const confirmRemoval = async () => {
     if (!removing) return;
     const { entry, needsReason, verb } = removing;
     if (needsReason && !reason.trim()) return;
     setBusy(true);
     try {
-      if (entry.kind === "purchase") await rpcCancelPurchaseInvoice(entry.id, reason);
+      if (entry.kind === "purchase") {
+        await rpcCancelPurchaseInvoice(entry.id, reason, offersWriteOff && writeOff);
+      }
       else if (entry.kind === "payment") await rpcDeleteSupplierPayment(entry.id);
       else await rpcCancelPurchaseReturn(entry.id, reason);
 
       toast(
         verb === "Delete"
           ? `Payment of ${money(entry.amount)} removed`
-          : `${KIND_LABEL[entry.kind]} ${entry.reference} cancelled`,
+          : `${KIND_LABEL[entry.kind]} ${entry.reference} cancelled${
+              offersWriteOff && writeOff ? " — stock written off" : ""
+            }`,
         "success",
       );
       // Cancelling an invoice or a return moves stock, so the item cache is stale.
       if (entry.kind !== "payment") await reloadStore();
       setRemoving(null);
       setReason("");
+      setWriteOff(false);
       setOpenId(null);
       reload();
     } catch (err) {
@@ -421,6 +446,7 @@ export function PurchaseRecords() {
                         onClick={() => {
                           setRemoving(removalFor(e));
                           setReason("");
+                          setWriteOff(false);
                         }}
                         className="shrink-0 rounded-full p-2 text-ink-light hover:bg-danger-bg hover:text-danger"
                       >
@@ -494,6 +520,7 @@ export function PurchaseRecords() {
           onClose={() => {
             setRemoving(null);
             setReason("");
+            setWriteOff(false);
           }}
         >
           <p className="mb-3.5 text-sm text-ink-muted">{removing.warning}</p>
@@ -509,6 +536,25 @@ export function PurchaseRecords() {
             </div>
           </div>
 
+          {offersWriteOff && (
+            <label className="mb-3.5 flex cursor-pointer select-none items-start gap-2.5 rounded-xl border border-line bg-warm-white px-[13px] py-[11px]">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 shrink-0 accent-brown"
+                checked={writeOff}
+                onChange={(ev) => setWriteOff(ev.target.checked)}
+              />
+              <span className="text-[13px]">
+                <span className="font-bold text-ink">Write the stock off as a loss</span>
+                <span className="mt-0.5 block text-[12px] font-semibold text-ink-light">
+                  {writeOff
+                    ? "The goods arrived and are unusable. Each line is logged as a Write-off movement, so the loss shows in the stock log and wastage figures."
+                    : "Leave unticked if this invoice was never real — the stock is simply reversed and no loss is recorded."}
+                </span>
+              </span>
+            </label>
+          )}
+
           {removing.needsReason && (
             <div className="mb-3.5">
               <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]" htmlFor="rm-reason">
@@ -516,10 +562,15 @@ export function PurchaseRecords() {
               </label>
               <input
                 id="rm-reason"
+                ref={reasonRef}
                 type="text"
-                autoFocus
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
+                // Enter submits, so a short reason does not need a trip to the
+                // mouse. Guarded on the same condition as the button.
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !busy && reason.trim()) void confirmRemoval();
+                }}
                 placeholder="e.g. Keyed against the wrong supplier"
               />
               <p className="mt-1 text-[11.5px] text-ink-muted">

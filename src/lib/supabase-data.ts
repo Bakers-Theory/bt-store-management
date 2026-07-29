@@ -1544,12 +1544,24 @@ export async function rpcPostPurchaseInvoice(id: string): Promise<PurchaseInvoic
   return mapInvoice(await rpc<InvoiceRow>("post_purchase_invoice", { p_id: id }), []);
 }
 
+/**
+ * `writeOff` decides what the stock removal MEANS. False treats the invoice as
+ * never having happened — the stock is reversed and no movement is logged. True
+ * records the quantity as a loss: one `out` movement per line with reason
+ * "Write-off", so it shows up in the stock log and the wastage figures. Needs
+ * `stock.expiry` on top of `purchases.create`.
+ */
 export async function rpcCancelPurchaseInvoice(
   id: string,
   reason: string,
+  writeOff = false,
 ): Promise<PurchaseInvoice> {
   return mapInvoice(
-    await rpc<InvoiceRow>("cancel_purchase_invoice", { p_id: id, p_reason: reason }),
+    await rpc<InvoiceRow>("cancel_purchase_invoice", {
+      p_id: id,
+      p_reason: reason,
+      p_write_off: writeOff,
+    }),
     [],
   );
 }
