@@ -534,6 +534,9 @@ export interface PurchaseReturn {
   createdByName: string;
   createdAt: string; // ISO
   lines: PurchaseReturnLine[];
+  /** Set by `cancel_purchase_return` (migration 0041) when a credit note is withdrawn. */
+  cancelledAt: string | null;
+  cancelReason: string;
 }
 
 /**

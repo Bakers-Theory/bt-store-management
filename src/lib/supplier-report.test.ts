@@ -72,7 +72,8 @@ const ret = (over: Partial<PurchaseReturn> = {}): PurchaseReturn => ({
   id: "r1", supplierId: "s1", supplierName: "Sharma Mills", invoiceId: "inv1",
   invoiceNo: "INV-77", returnDate: "2026-07-18", total: 75, status: "posted",
   reason: "Damaged in transit", createdByName: "Owner",
-  createdAt: "2026-07-18T10:00:00Z", lines: [], ...over,
+  createdAt: "2026-07-18T10:00:00Z", lines: [],
+  cancelledAt: null, cancelReason: "", ...over,
 });
 
 const summary = (over: Partial<SupplierSummary> = {}): SupplierSummary => ({

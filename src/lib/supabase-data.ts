@@ -1630,6 +1630,8 @@ interface ReturnRow {
   created_by_name: string | null;
   created_at: string;
   total: number | string | null;
+  cancelled_at: string | null;
+  cancel_reason: string | null;
 }
 
 const mapReturn = (r: ReturnRow, lines: PurchaseReturnLine[]): PurchaseReturn => ({
@@ -1645,6 +1647,8 @@ const mapReturn = (r: ReturnRow, lines: PurchaseReturnLine[]): PurchaseReturn =>
   createdByName: r.created_by_name ?? "",
   createdAt: r.created_at,
   lines,
+  cancelledAt: r.cancelled_at ?? null,
+  cancelReason: r.cancel_reason ?? "",
 });
 
 export async function fetchPurchaseReturns(
@@ -1671,6 +1675,21 @@ export interface ReturnInput {
 
 export async function rpcPostPurchaseReturn(input: ReturnInput): Promise<PurchaseReturn> {
   return mapReturn(await rpc<ReturnRow>("post_purchase_return", { p: input }), []);
+}
+
+/**
+ * Withdraw a posted credit note. The stock goes back under the invoice it
+ * arrived on, and the credit disappears from the account summary, which counts
+ * posted returns only.
+ */
+export async function rpcCancelPurchaseReturn(
+  id: string,
+  reason: string,
+): Promise<PurchaseReturn> {
+  return mapReturn(
+    await rpc<ReturnRow>("cancel_purchase_return", { p_id: id, p_reason: reason }),
+    [],
+  );
 }
 
 interface SummaryRow {
