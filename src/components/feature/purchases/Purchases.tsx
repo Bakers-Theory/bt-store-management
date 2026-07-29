@@ -42,11 +42,6 @@ export function Purchases() {
 
   return (
     <>
-      <h2 className="mb-1 text-xl font-extrabold text-ink">Purchases</h2>
-      <p className="mb-4 text-sm text-ink-muted">
-        Record what arrived, what you paid, and what went back.
-      </p>
-
       <div className="mb-4 flex w-fit max-w-full gap-1.5 overflow-x-auto rounded-xl bg-[#f4e7d2] p-1">
         {canCreate && (
           <button className={tabCls(tab === "invoice")} onClick={() => setTab("invoice")}>

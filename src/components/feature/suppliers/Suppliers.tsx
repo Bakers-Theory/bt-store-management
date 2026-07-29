@@ -85,12 +85,9 @@ export function Suppliers() {
   return (
     <>
       <div className="mb-4 flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-extrabold text-ink">Suppliers</h2>
-          <p className="text-sm text-ink-muted">
-            {loaded ? `${visible.length} of ${suppliers.length}` : "Loading…"}
-          </p>
-        </div>
+        <p className="text-sm text-ink-muted">
+          {loaded ? `${visible.length} of ${suppliers.length}` : "Loading…"}
+        </p>
         {canCreate && (
           <button
             type="button"

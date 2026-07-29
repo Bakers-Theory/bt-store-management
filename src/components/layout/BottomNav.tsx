@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { usePathname } from "next/navigation";
+import { Calculator, Truck } from "lucide-react";
 import { hasPermission, navItems, type NavItem } from "@/lib/permissions";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 
@@ -75,6 +76,9 @@ const ICONS: Record<string, React.ReactNode> = {
       <path d="M8 17v-3" />
     </svg>
   ),
+  // Matching the Sidebar's lucide choices, so a section looks the same on both.
+  suppliers: <Truck size={21} strokeWidth={1.9} />,
+  purchases: <Calculator size={21} strokeWidth={1.9} />,
 };
 
 const BILL_ICON = (
