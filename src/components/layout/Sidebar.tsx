@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { hasPermission, navItems, roleLabel } from "@/lib/permissions";
+import { hasAnyPermission, hasPermission, navItems, roleLabel } from "@/lib/permissions";
 import { useAuth, useCurrentUser } from "@/components/system/AuthProvider";
 import { useBakeryStore } from "@/lib/store";
-import { BarChart3, Croissant, Loader2 } from "lucide-react";
+import { BarChart3, Calculator, Croissant, Loader2, Truck } from "lucide-react";
 
 const ICONS: Record<string, React.ReactNode> = {
   dashboard: (
@@ -69,6 +69,8 @@ const ICONS: Record<string, React.ReactNode> = {
     </svg>
   ),
   reports: <BarChart3 size={20} strokeWidth={1.8} />,
+  suppliers: <Truck size={20} strokeWidth={1.8} />,
+  purchases: <Calculator size={20} strokeWidth={1.8} />,
 };
 
 function initials(name: string): string {
@@ -87,7 +89,7 @@ export function Sidebar() {
 
   const items = [
     ...navItems(user),
-    ...(hasPermission(user, "reports.view")
+    ...(hasAnyPermission(user, ["reports.view", "suppliers.reports"])
       ? [{ key: "reports", href: "/reports", icon: "📈", label: "Reports" }]
       : []),
     { key: "settings", href: "/settings", icon: "⚙", label: "Settings" },

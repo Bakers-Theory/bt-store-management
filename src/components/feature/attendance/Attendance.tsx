@@ -58,7 +58,7 @@ export function Attendance() {
 
   return (
     <>
-      <div className="mb-4 flex w-fit gap-1.5 rounded-xl bg-[#f4e7d2] p-1">
+      <div className="mb-4 flex w-fit max-w-full gap-1.5 overflow-x-auto rounded-xl bg-[#f4e7d2] p-1">
         <button className={tabCls(tab === "day")} onClick={() => setTab("day")}>
           Mark day
         </button>

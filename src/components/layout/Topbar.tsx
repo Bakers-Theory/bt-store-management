@@ -14,6 +14,8 @@ const TITLES: Record<string, [string, string]> = {
   "/customers": ["Customers", "Directory, purchases & spend"],
   "/stock": ["Inventory", "Manage items, stock levels & pricing"],
   "/history": ["History", "Past bills and stock movements"],
+  "/suppliers": ["Suppliers", "Records, products & account summaries"],
+  "/purchases": ["Purchases", "Record what arrived, what you paid, and what went back"],
   "/attendance": ["Attendance", "Mark the day and review history"],
   "/salary": ["Salary", "Payroll, salaries & payment history"],
   "/settings": ["Settings", "Store profile, staff & permissions"],

@@ -36,7 +36,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar />
-        <main className="flex-1 overflow-y-auto p-4 lg:px-8 lg:py-6">
+        <main className="flex-1 p-4 lg:px-8 lg:py-6">
           {loadError && (
             <div className="mx-auto mb-3 flex max-w-[1400px] items-center justify-between gap-3 rounded-xl border border-[#f0c9c0] bg-danger-bg px-3.5 py-3 text-[13px] font-semibold text-danger">
               <span className="flex items-center gap-1.5">

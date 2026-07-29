@@ -9,6 +9,8 @@ import { fetchReportCounts, fetchReportData, type ReportCounts } from "@/lib/sup
 import { NoAccess } from "@/components/feature/NoAccess";
 import { DateRangePicker } from "@/components/ui/DateRangePicker";
 import { hasPermission } from "@/lib/permissions";
+import { tabCls } from "@/components/ui/tabClass";
+import { SupplierReports } from "./SupplierReports";
 
 const labelCls = "mb-[5px] block text-xs font-bold text-[#8a6a3c]";
 
@@ -19,7 +21,12 @@ const ALL_REPORTS: ReportType[] = [
 export function Reports() {
   const user = useCurrentUser();
   const toast = useUIStore((s) => s.toast);
+  // Declared above the hooks below so the pane's initial state can read them —
+  // a hook must not sit under a conditional return.
+  const canStore = hasPermission(user, "reports.view");
+  const canSuppliers = hasPermission(user, "suppliers.reports");
 
+  const [pane, setPane] = useState<"store" | "suppliers">(canStore ? "store" : "suppliers");
   const [selected, setSelected] = useState<ReportType[]>(["sales"]);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -41,7 +48,7 @@ export function Reports() {
     };
   }, [from, to]);
 
-  if (user && !hasPermission(user, "reports.view")) return <NoAccess />;
+  if (user && !canStore && !canSuppliers) return <NoAccess />;
   const canExport = hasPermission(user, "reports.export");
 
   const toggle = (t: ReportType) =>
@@ -81,6 +88,20 @@ export function Reports() {
         Choose the reports you want and an optional date range, then download them as one Excel file.
       </p>
 
+      {canStore && canSuppliers && (
+        <div className="mb-4 flex w-fit max-w-full gap-1.5 overflow-x-auto rounded-xl bg-[#f4e7d2] p-1">
+          <button className={tabCls(pane === "store")} onClick={() => setPane("store")}>
+            Store
+          </button>
+          <button className={tabCls(pane === "suppliers")} onClick={() => setPane("suppliers")}>
+            Suppliers
+          </button>
+        </div>
+      )}
+
+      {pane === "suppliers" || !canStore ? (
+        <SupplierReports />
+      ) : (
       <div className="rounded-[18px] border border-line bg-warm-white p-[22px] shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
         <span className={labelCls}>Reports</span>
 
@@ -159,6 +180,7 @@ export function Reports() {
           </p>
         )}
       </div>
+      )}
     </div>
   );
 }

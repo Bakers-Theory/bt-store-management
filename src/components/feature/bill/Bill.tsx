@@ -585,7 +585,7 @@ export function Bill() {
 
         {/* Order panel — right sidebar on desktop, bottom sheet on mobile */}
         <div
-          className={`fixed inset-x-0 bottom-0 z-[210] max-h-[85vh] overflow-y-auto rounded-t-[20px] border border-line bg-warm-white shadow-[0_-8px_30px_rgba(100,60,20,0.18)] transition-transform duration-300 lg:sticky lg:top-3.5 lg:z-auto lg:max-h-none lg:translate-y-0 lg:self-start lg:overflow-hidden lg:rounded-[18px] lg:shadow-[0_4px_18px_rgba(100,60,20,0.08)] ${
+          className={`fixed inset-x-0 bottom-0 z-[210] max-h-[85vh] overflow-y-auto rounded-t-[20px] border border-line bg-warm-white shadow-[0_-8px_30px_rgba(100,60,20,0.18)] transition-transform duration-300 lg:sticky lg:top-[78px] lg:z-auto lg:max-h-[calc(100vh-96px)] lg:translate-y-0 lg:self-start lg:overflow-y-auto lg:rounded-[18px] lg:shadow-[0_4px_18px_rgba(100,60,20,0.08)] ${
             cartOpen ? "translate-y-0" : "translate-y-full lg:translate-y-0"
           }`}
         >

@@ -1,7 +1,9 @@
 "use client";
 
 import { createClient } from "@/utils/supabase/client";
-import type { Attendance, AttendanceStatus, AttendanceSummary, AdvanceBalance, Bakery, Batch, Bill, BillLine, BillStatus, Customer, Employee, EmployeeSalary, Item, Log, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, StaffAdvance, StoreLists, User } from "./types";
+import type { Attendance, AttendanceStatus, AttendanceSummary, AdvanceBalance, Bakery, Batch, Bill, BillLine, BillStatus, Customer, Employee, EmployeeSalary, Item, Log, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, StaffAdvance, StoreLists, Supplier, SupplierProduct, SupplierStatus, InvoiceStatus, PurchaseInvoice, PurchaseInvoiceLine, PurchaseMode, PurchaseReturn, PurchaseReturnLine, SupplierPayment, SupplierSummary, User } from "./types";
+import type { SupplierInput } from "./supplier";
+import { isPurchaseMode, type DraftLine } from "./purchase";
 import { isAttendanceStatus } from "./attendance";
 import { isSalaryMode } from "./salary";
 import type { ProfileRow } from "./auth";
@@ -99,6 +101,12 @@ interface BatchRow {
   qty: number | string;
   expiry_date: string | null;
   created_at: string;
+  // Source columns arrive from stock_batches_v (migration 0040). Optional so a
+  // caller reading the bare table still type-checks.
+  supplier_id?: string | null;
+  supplier_name?: string | null;
+  supplier_code?: string | null;
+  source_ref?: string | null;
 }
 
 // ─── Mappers (DB row → app type) ────────────────────────────────────────────
@@ -200,6 +208,10 @@ const mapBatch = (r: BatchRow): Batch => ({
   qty: Number(r.qty),
   expiryDate: r.expiry_date,
   createdAt: r.created_at,
+  supplierId: r.supplier_id ?? null,
+  supplierName: r.supplier_name ?? null,
+  supplierCode: r.supplier_code ?? null,
+  sourceRef: r.source_ref ?? null,
 });
 
 interface StoreListRow { kind: string; value: string }
@@ -522,12 +534,16 @@ export async function fetchCustomerBills(customerId: string): Promise<Bill[]> {
   return rows.map((b) => mapBill(b, linesByBill.get(b.id) ?? []));
 }
 
-/** One item's batches, soonest-expiry first (NULL-expiry last). For the item editor. */
+/**
+ * One item's batches, soonest-expiry first (NULL-expiry last). For the item
+ * editor. Reads `stock_batches_v` rather than the table so each batch carries
+ * the supplier it came from (migration 0040).
+ */
 export async function fetchItemBatches(itemId: string): Promise<Batch[]> {
   const supabase = createClient();
   const { data } = await supabase
-    .from("stock_batches")
-    .select("id,item_id,qty,expiry_date,created_at")
+    .from("stock_batches_v")
+    .select("*")
     .eq("item_id", itemId)
     .order("expiry_date", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: true });
@@ -1197,4 +1213,602 @@ export async function rpcSetAdvanceRecovery(
     p_amount: amount,
   });
   return mapSalaryPayment(row);
+}
+
+// ─── Suppliers ──────────────────────────────────────────────────────────────
+
+interface SupplierRow {
+  id: string;
+  code: string;
+  supplier_type: string;
+  name: string;
+  business_name: string | null;
+  contact_person: string | null;
+  mobile: string | null;
+  email: string | null;
+  gstin: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  pin_code: string | null;
+  payment_terms: string | null;
+  notes: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+function mapSupplier(r: SupplierRow): Supplier {
+  return {
+    id: r.id,
+    code: r.code,
+    supplierType: r.supplier_type === "in_house" ? "in_house" : "external",
+    name: r.name,
+    businessName: r.business_name ?? "",
+    contactPerson: r.contact_person ?? "",
+    mobile: r.mobile ?? "",
+    email: r.email ?? "",
+    gstin: r.gstin ?? "",
+    address: r.address ?? "",
+    city: r.city ?? "",
+    state: r.state ?? "",
+    pinCode: r.pin_code ?? "",
+    paymentTerms: r.payment_terms ?? "",
+    notes: r.notes ?? "",
+    status: r.status === "inactive" ? "inactive" : "active",
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+/** The jsonb payload both supplier RPCs take. Keys are camelCase by design —
+ *  `supplier_fields` in SQL reads them and owns the trimming. */
+const supplierPayload = (input: SupplierInput) => ({
+  supplierType: input.supplierType,
+  name: input.name,
+  businessName: input.businessName,
+  contactPerson: input.contactPerson,
+  mobile: input.mobile,
+  email: input.email,
+  gstin: input.gstin,
+  address: input.address,
+  city: input.city,
+  state: input.state,
+  pinCode: input.pinCode,
+  paymentTerms: input.paymentTerms,
+  notes: input.notes,
+});
+
+/** Every supplier the caller may see, active first then by name. */
+export async function fetchSuppliers(): Promise<Supplier[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("suppliers_v")
+    .select("*")
+    .order("status", { ascending: true })
+    .order("name", { ascending: true });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as SupplierRow[]).map(mapSupplier);
+}
+
+export async function fetchSupplier(id: string): Promise<Supplier | null> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("suppliers_v")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? mapSupplier(data as SupplierRow) : null;
+}
+
+export async function rpcCreateSupplier(input: SupplierInput): Promise<Supplier> {
+  return mapSupplier(await rpc<SupplierRow>("create_supplier", { p: supplierPayload(input) }));
+}
+
+/**
+ * `expectedUpdatedAt` is the `updatedAt` the form loaded. The RPC refuses the
+ * write if the stored value has moved, so a concurrent edit surfaces as an
+ * error rather than a silent overwrite.
+ */
+export async function rpcUpdateSupplier(
+  id: string,
+  input: SupplierInput,
+  expectedUpdatedAt: string,
+): Promise<Supplier> {
+  return mapSupplier(
+    await rpc<SupplierRow>("update_supplier", {
+      p_id: id,
+      p: supplierPayload(input),
+      p_expected: expectedUpdatedAt,
+    }),
+  );
+}
+
+export async function rpcSetSupplierStatus(
+  id: string,
+  status: SupplierStatus,
+): Promise<Supplier> {
+  return mapSupplier(
+    await rpc<SupplierRow>("set_supplier_status", { p_id: id, p_status: status }),
+  );
+}
+
+interface SupplierProductRow {
+  supplier_id: string;
+  item_id: string;
+  item_name: string;
+  emoji: string | null;
+  image_url: string | null;
+  category: string | null;
+  unit: string | null;
+  current_qty: number | string | null;
+  earliest_expiry: string | null;
+  last_unit_cost: number | string | null;
+  last_purchase_date: string | null;
+  created_at: string;
+}
+
+/** Products linked to one supplier, with derived purchase price and date. */
+export async function fetchSupplierProducts(supplierId: string): Promise<SupplierProduct[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("supplier_products_v")
+    .select("*")
+    .eq("supplier_id", supplierId)
+    .order("item_name", { ascending: true });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as SupplierProductRow[]).map((r) => ({
+    supplierId: r.supplier_id,
+    itemId: r.item_id,
+    itemName: r.item_name,
+    emoji: r.emoji ?? "📦",
+    imageUrl: r.image_url,
+    category: r.category ?? "",
+    unit: r.unit ?? "",
+    currentQty: Number(r.current_qty ?? 0),
+    earliestExpiry: r.earliest_expiry,
+    // Null, not 0: "never purchased" and "purchased at zero" are different
+    // facts and the UI renders them differently.
+    lastUnitCost: r.last_unit_cost == null ? null : Number(r.last_unit_cost),
+    lastPurchaseDate: r.last_purchase_date,
+    linkedAt: r.created_at,
+  }));
+}
+
+export const rpcLinkSupplierItem = (supplierId: string, itemId: string) =>
+  rpc<void>("link_supplier_item", { p_supplier: supplierId, p_item: itemId });
+
+export const rpcUnlinkSupplierItem = (supplierId: string, itemId: string) =>
+  rpc<void>("unlink_supplier_item", { p_supplier: supplierId, p_item: itemId });
+
+// ─── Purchasing ─────────────────────────────────────────────────────────────
+
+/** Optional supplier + date-range narrowing, shared by all three ledgers. */
+export interface LedgerQuery {
+  supplierId?: string;
+  range?: DateRange;
+}
+
+interface InvoiceRow {
+  id: string;
+  supplier_id: string;
+  supplier_type: string;
+  supplier_name: string;
+  supplier_code: string;
+  invoice_no: string | null;
+  internal_ref: string | null;
+  purchase_date: string;
+  status: string;
+  notes: string | null;
+  created_by_name: string | null;
+  created_at: string;
+  subtotal: number | string | null;
+  gst_amount: number | string | null;
+  total: number | string | null;
+  cancelled_at: string | null;
+  cancel_reason: string | null;
+}
+
+interface InvoiceLineRow {
+  id: string;
+  invoice_id: string;
+  item_id: string;
+  item_name: string;
+  qty: number | string;
+  expiry: string | null;
+  returned_qty: number | string | null;
+  unit_cost: number | string | null;
+  gst_rate: number | string | null;
+  line_total: number | string | null;
+}
+
+const asStatus = (v: string): InvoiceStatus =>
+  v === "posted" ? "posted" : v === "cancelled" ? "cancelled" : "draft";
+
+/** Money reads NULL without `suppliers.financial`; 0 is the honest render. */
+const money = (v: number | string | null | undefined): number => Number(v ?? 0);
+
+function mapInvoiceLine(r: InvoiceLineRow): PurchaseInvoiceLine {
+  return {
+    id: r.id,
+    itemId: r.item_id,
+    itemName: r.item_name,
+    qty: Number(r.qty),
+    unitCost: money(r.unit_cost),
+    gstRate: money(r.gst_rate),
+    lineTotal: money(r.line_total),
+    expiry: r.expiry,
+    returnedQty: Number(r.returned_qty ?? 0),
+  };
+}
+
+function mapInvoice(r: InvoiceRow, lines: PurchaseInvoiceLine[]): PurchaseInvoice {
+  return {
+    id: r.id,
+    supplierId: r.supplier_id,
+    supplierName: r.supplier_name,
+    supplierCode: r.supplier_code,
+    supplierType: r.supplier_type === "in_house" ? "in_house" : "external",
+    invoiceNo: r.invoice_no,
+    internalRef: r.internal_ref,
+    purchaseDate: r.purchase_date,
+    subtotal: money(r.subtotal),
+    // Null is meaningful here: an in-house receipt has no GST at all, which the
+    // UI renders as "—" rather than "₹0.00".
+    gstAmount: r.gst_amount == null ? null : Number(r.gst_amount),
+    total: money(r.total),
+    status: asStatus(r.status),
+    notes: r.notes ?? "",
+    createdByName: r.created_by_name ?? "",
+    createdAt: r.created_at,
+    lines,
+    cancelledAt: r.cancelled_at ?? null,
+    cancelReason: r.cancel_reason ?? "",
+  };
+}
+
+const applyLedgerQuery = <T>(q: T, opts: LedgerQuery, dateCol: string): T => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let out: any = q;
+  if (opts.supplierId) out = out.eq("supplier_id", opts.supplierId);
+  if (opts.range?.from) out = out.gte(dateCol, opts.range.from);
+  if (opts.range?.to) out = out.lte(dateCol, opts.range.to);
+  return out as T;
+};
+
+/**
+ * Invoice headers, newest first. Lines are NOT fetched — the list shows totals
+ * only, and one round trip per row would be a query per screen.
+ */
+export async function fetchPurchaseInvoices(
+  opts: LedgerQuery = {},
+): Promise<PurchaseInvoice[]> {
+  const supabase = createClient();
+  const { data, error } = await applyLedgerQuery(
+    supabase.from("purchase_invoice_v").select("*"),
+    opts,
+    "purchase_date",
+  )
+    .order("purchase_date", { ascending: false })
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as InvoiceRow[]).map((r) => mapInvoice(r, []));
+}
+
+/** One invoice with its lines — for the detail view and the return form. */
+export async function fetchPurchaseInvoice(id: string): Promise<PurchaseInvoice | null> {
+  const supabase = createClient();
+  const [header, lines] = await Promise.all([
+    supabase.from("purchase_invoice_v").select("*").eq("id", id).maybeSingle(),
+    supabase.from("purchase_invoice_line_v").select("*").eq("invoice_id", id).order("item_name"),
+  ]);
+  if (header.error) throw new Error(header.error.message);
+  if (lines.error) throw new Error(lines.error.message);
+  if (!header.data) return null;
+  return mapInvoice(
+    header.data as InvoiceRow,
+    ((lines.data ?? []) as InvoiceLineRow[]).map(mapInvoiceLine),
+  );
+}
+
+export interface InvoiceDraftInput {
+  /** Omit to create; pass to replace an existing draft. */
+  id?: string;
+  supplierId: string;
+  invoiceNo: string;
+  purchaseDate: string;
+  notes: string;
+  lines: DraftLine[];
+}
+
+export async function rpcSavePurchaseInvoice(
+  draft: InvoiceDraftInput,
+): Promise<PurchaseInvoice> {
+  const row = await rpc<InvoiceRow>("save_purchase_invoice", {
+    p: {
+      id: draft.id ?? "",
+      supplierId: draft.supplierId,
+      invoiceNo: draft.invoiceNo,
+      purchaseDate: draft.purchaseDate,
+      notes: draft.notes,
+      lines: draft.lines.map((l) => ({
+        itemId: l.itemId,
+        qty: l.qty,
+        unitCost: l.unitCost,
+        gstRate: l.gstRate,
+        expiry: l.expiry ?? "",
+      })),
+    },
+  });
+  return mapInvoice(row, []);
+}
+
+export async function rpcPostPurchaseInvoice(id: string): Promise<PurchaseInvoice> {
+  return mapInvoice(await rpc<InvoiceRow>("post_purchase_invoice", { p_id: id }), []);
+}
+
+/**
+ * `writeOff` decides what the stock removal MEANS. False treats the invoice as
+ * never having happened — the stock is reversed and no movement is logged. True
+ * records the quantity as a loss: one `out` movement per line with reason
+ * "Write-off", so it shows up in the stock log and the wastage figures. Needs
+ * `stock.expiry` on top of `purchases.create`.
+ */
+export async function rpcCancelPurchaseInvoice(
+  id: string,
+  reason: string,
+  writeOff = false,
+): Promise<PurchaseInvoice> {
+  return mapInvoice(
+    await rpc<InvoiceRow>("cancel_purchase_invoice", {
+      p_id: id,
+      p_reason: reason,
+      p_write_off: writeOff,
+    }),
+    [],
+  );
+}
+
+interface PaymentRow {
+  id: string;
+  supplier_id: string;
+  supplier_name: string;
+  invoice_id: string | null;
+  invoice_no: string | null;
+  paid_on: string;
+  mode: string;
+  reference_no: string | null;
+  created_by_name: string | null;
+  created_at: string;
+  amount: number | string | null;
+}
+
+const mapPayment = (r: PaymentRow): SupplierPayment => ({
+  id: r.id,
+  supplierId: r.supplier_id,
+  supplierName: r.supplier_name,
+  invoiceId: r.invoice_id,
+  invoiceNo: r.invoice_no,
+  amount: money(r.amount),
+  paidOn: r.paid_on,
+  mode: isPurchaseMode(r.mode) ? r.mode : "Cash",
+  referenceNo: r.reference_no ?? "",
+  createdByName: r.created_by_name ?? "",
+  createdAt: r.created_at,
+});
+
+export async function fetchSupplierPayments(
+  opts: LedgerQuery = {},
+): Promise<SupplierPayment[]> {
+  const supabase = createClient();
+  const { data, error } = await applyLedgerQuery(
+    supabase.from("supplier_payment_v").select("*"),
+    opts,
+    "paid_on",
+  )
+    .order("paid_on", { ascending: false })
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as PaymentRow[]).map(mapPayment);
+}
+
+export interface PaymentInput {
+  supplierId: string;
+  invoiceId: string | null;
+  amount: number;
+  paidOn: string;
+  mode: PurchaseMode;
+  referenceNo: string;
+  notes: string;
+}
+
+export async function rpcRecordSupplierPayment(input: PaymentInput): Promise<SupplierPayment> {
+  return mapPayment(
+    await rpc<PaymentRow>("record_supplier_payment", {
+      p: { ...input, invoiceId: input.invoiceId ?? "" },
+    }),
+  );
+}
+
+export const rpcDeleteSupplierPayment = (id: string) =>
+  rpc<void>("delete_supplier_payment", { p_id: id });
+
+interface ReturnRow {
+  id: string;
+  supplier_id: string;
+  supplier_name: string;
+  invoice_id: string;
+  invoice_no: string | null;
+  return_date: string;
+  status: string;
+  reason: string;
+  created_by_name: string | null;
+  created_at: string;
+  total: number | string | null;
+  cancelled_at: string | null;
+  cancel_reason: string | null;
+}
+
+const mapReturn = (r: ReturnRow, lines: PurchaseReturnLine[]): PurchaseReturn => ({
+  id: r.id,
+  supplierId: r.supplier_id,
+  supplierName: r.supplier_name,
+  invoiceId: r.invoice_id,
+  invoiceNo: r.invoice_no,
+  returnDate: r.return_date,
+  total: money(r.total),
+  status: asStatus(r.status),
+  reason: r.reason,
+  createdByName: r.created_by_name ?? "",
+  createdAt: r.created_at,
+  lines,
+  cancelledAt: r.cancelled_at ?? null,
+  cancelReason: r.cancel_reason ?? "",
+});
+
+export async function fetchPurchaseReturns(
+  opts: LedgerQuery = {},
+): Promise<PurchaseReturn[]> {
+  const supabase = createClient();
+  const { data, error } = await applyLedgerQuery(
+    supabase.from("purchase_return_v").select("*"),
+    opts,
+    "return_date",
+  )
+    .order("return_date", { ascending: false })
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as ReturnRow[]).map((r) => mapReturn(r, []));
+}
+
+export interface ReturnInput {
+  invoiceId: string;
+  returnDate: string;
+  reason: string;
+  lines: { invoiceLineId: string; qty: number }[];
+}
+
+export async function rpcPostPurchaseReturn(input: ReturnInput): Promise<PurchaseReturn> {
+  return mapReturn(await rpc<ReturnRow>("post_purchase_return", { p: input }), []);
+}
+
+/**
+ * Withdraw a posted credit note. The stock goes back under the invoice it
+ * arrived on, and the credit disappears from the account summary, which counts
+ * posted returns only.
+ */
+export async function rpcCancelPurchaseReturn(
+  id: string,
+  reason: string,
+): Promise<PurchaseReturn> {
+  return mapReturn(
+    await rpc<ReturnRow>("cancel_purchase_return", { p_id: id, p_reason: reason }),
+    [],
+  );
+}
+
+interface SummaryRow {
+  supplier_id: string;
+  supplier_name: string;
+  supplier_code: string;
+  supplier_type: string;
+  total_purchases: number | string;
+  total_payments: number | string;
+  return_credit: number | string;
+  outstanding: number | string;
+  in_house_value: number | string;
+  last_transaction_date: string | null;
+  last_payment_date: string | null;
+  purchase_order_count: number | string;
+  transaction_count: number | string;
+}
+
+const mapSummary = (r: SummaryRow): SupplierSummary => ({
+  supplierId: r.supplier_id,
+  supplierName: r.supplier_name,
+  supplierCode: r.supplier_code,
+  supplierType: r.supplier_type === "in_house" ? "in_house" : "external",
+  totalPurchases: Number(r.total_purchases),
+  totalPayments: Number(r.total_payments),
+  returnCredit: Number(r.return_credit),
+  outstanding: Number(r.outstanding),
+  inHouseValue: Number(r.in_house_value),
+  lastTransactionDate: r.last_transaction_date,
+  lastPaymentDate: r.last_payment_date,
+  purchaseOrderCount: Number(r.purchase_order_count),
+  transactionCount: Number(r.transaction_count),
+});
+
+/**
+ * Every supplier's account position. Returns an EMPTY array for a caller
+ * without `suppliers.financial` — the view yields no rows rather than a row of
+ * nulls, so the caller must gate the UI on the permission itself.
+ */
+export async function fetchSupplierSummaries(): Promise<SupplierSummary[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("supplier_summary_v")
+    .select("*")
+    .order("supplier_name", { ascending: true });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as SummaryRow[]).map(mapSummary);
+}
+
+export async function fetchSupplierSummary(id: string): Promise<SupplierSummary | null> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("supplier_summary_v")
+    .select("*")
+    .eq("supplier_id", id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? mapSummary(data as SummaryRow) : null;
+}
+
+/**
+ * Everything the six supplier reports read, in four round trips.
+ *
+ * Invoice LINES are fetched in one `in (...)` query keyed by the header ids
+ * rather than per invoice — Product-wise Purchases needs every line, and a
+ * query per invoice would be a query per row on screen.
+ *
+ * `shop` is added by the caller from the store, so this stays a pure data fetch.
+ */
+export async function fetchSupplierReportData(
+  range: DateRange,
+): Promise<{
+  invoices: PurchaseInvoice[];
+  payments: SupplierPayment[];
+  returns: PurchaseReturn[];
+  summaries: SupplierSummary[];
+}> {
+  const supabase = createClient();
+  const [invoices, payments, returns, summaries] = await Promise.all([
+    fetchPurchaseInvoices({ range }),
+    fetchSupplierPayments({ range }),
+    fetchPurchaseReturns({ range }),
+    fetchSupplierSummaries(),
+  ]);
+
+  const ids = invoices.filter((i) => i.status === "posted").map((i) => i.id);
+  if (ids.length === 0) return { invoices, payments, returns, summaries };
+
+  const { data, error } = await supabase
+    .from("purchase_invoice_line_v")
+    .select("*")
+    .in("invoice_id", ids);
+  if (error) throw new Error(error.message);
+
+  const byInvoice = new Map<string, PurchaseInvoiceLine[]>();
+  for (const r of (data ?? []) as InvoiceLineRow[]) {
+    byInvoice.set(r.invoice_id, [...(byInvoice.get(r.invoice_id) ?? []), mapInvoiceLine(r)]);
+  }
+
+  return {
+    invoices: invoices.map((i) => ({ ...i, lines: byInvoice.get(i.id) ?? [] })),
+    payments,
+    returns,
+    summaries,
+  };
 }

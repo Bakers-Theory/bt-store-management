@@ -189,9 +189,10 @@ describe("presetForPerms / roleLabel", () => {
 });
 
 describe("navItems", () => {
-  it("orders dashboard, stock, bill, customers, history, attendance for the Owner", () => {
+  it("orders dashboard, stock, suppliers, purchases, bill, customers, history, attendance for the Owner", () => {
     expect(navItems(owner).map((n) => n.key)).toEqual([
-      "dashboard", "stock", "bill", "customers", "history", "attendance", "salary",
+      "dashboard", "stock", "suppliers", "purchases", "bill", "customers",
+      "history", "attendance", "salary",
     ]);
   });
   it("gives the Cashier a till, customers and history — but no stock page", () => {
@@ -202,9 +203,9 @@ describe("navItems", () => {
   it("gives the Storekeeper stock alone — no log means no history", () => {
     expect(navItems(preset("Storekeeper")).map((n) => n.key)).toEqual(["stock"]);
   });
-  it("gives the Manager stock, customers, history and attendance", () => {
+  it("gives the Manager stock, suppliers, purchases, customers, history and attendance", () => {
     expect(navItems(preset("Manager")).map((n) => n.key)).toEqual([
-      "stock", "customers", "history", "attendance",
+      "stock", "suppliers", "purchases", "customers", "history", "attendance",
     ]);
   });
   it("shows Salary only to salary.view holders, and to nobody by preset", () => {
@@ -312,8 +313,11 @@ describe("legacy group aliasing (mirrors has_perm in SQL)", () => {
       "activity.view", "advance.approve", "advance.delete",
       "advance.request", "advance.view",
       "attendance.edit", "attendance.view",
+      "purchases.create", "purchases.pay", "purchases.return",
       "salary.edit", "salary.pay", "salary.view",
       "staff.manage", "store.lists", "store.settings", "store.status",
+      "suppliers.create", "suppliers.edit", "suppliers.financial",
+      "suppliers.reports", "suppliers.status", "suppliers.view",
     ]);
   });
 
@@ -386,5 +390,72 @@ describe("advance permissions", () => {
 
   it("keeps it shut for someone with neither", () => {
     expect(canAccessSection(staff(["bill.create"]), "salary")).toBe(false);
+  });
+});
+
+describe("suppliers & purchasing permissions", () => {
+  const staff = (perms: PermissionKey[]): User => ({
+    id: "u1", name: "Staff", userId: "staff", role: "Staff", permissions: perms,
+  });
+
+  it("puts all nine keys in one catalogue group", () => {
+    const group = PERMISSION_CATALOG.find((g) => g.title === "Suppliers & Purchasing");
+    expect(group).toBeDefined();
+    expect(group!.perms.map((p) => p.key)).toEqual([
+      "suppliers.view", "suppliers.create", "suppliers.edit", "suppliers.status",
+      "purchases.create", "purchases.pay", "purchases.return",
+      "suppliers.financial", "suppliers.reports",
+    ]);
+  });
+
+  it("gives Admin everything except the owner-only keys", () => {
+    expect(ROLE_PRESETS.Admin).toContain("suppliers.view");
+    expect(ROLE_PRESETS.Admin).toContain("purchases.pay");
+    expect(ROLE_PRESETS.Admin).toContain("suppliers.financial");
+  });
+
+  it("gives Manager the data keys but never the money keys", () => {
+    for (const k of [
+      "suppliers.view", "suppliers.create", "suppliers.edit",
+      "suppliers.status", "purchases.create", "suppliers.reports",
+    ] as PermissionKey[]) {
+      expect(ROLE_PRESETS.Manager, k).toContain(k);
+    }
+    expect(ROLE_PRESETS.Manager).not.toContain("purchases.pay");
+    expect(ROLE_PRESETS.Manager).not.toContain("suppliers.financial");
+    expect(ROLE_PRESETS.Manager).not.toContain("purchases.return");
+  });
+
+  it("gives Cashier and Storekeeper nothing", () => {
+    for (const k of ALL_PERMISSIONS.filter(
+      (p) => p.startsWith("suppliers.") || p.startsWith("purchases."),
+    )) {
+      expect(ROLE_PRESETS.Cashier, k).not.toContain(k);
+      expect(ROLE_PRESETS.Storekeeper, k).not.toContain(k);
+    }
+  });
+
+  it("shows a Suppliers nav item to a holder of suppliers.view", () => {
+    const keys = navItems(staff(["suppliers.view"])).map((i) => i.key);
+    expect(keys).toContain("suppliers");
+    expect(keys).not.toContain("purchases");
+  });
+
+  it("shows Purchases to anyone who can record, pay or return", () => {
+    for (const k of ["purchases.create", "purchases.pay", "purchases.return"] as PermissionKey[]) {
+      expect(navItems(staff([k])).map((i) => i.key), k).toContain("purchases");
+    }
+  });
+
+  it("gates both routes", () => {
+    expect(canAccessSection(staff(["suppliers.view"]), "suppliers")).toBe(true);
+    expect(canAccessSection(staff(["suppliers.view"]), "purchases")).toBe(false);
+    expect(canAccessSection(staff(["purchases.pay"]), "purchases")).toBe(true);
+    expect(canAccessSection(staff([]), "suppliers")).toBe(false);
+  });
+
+  it("lands a suppliers-only user on /suppliers", () => {
+    expect(defaultRoute(staff(["suppliers.view"]))).toBe("/suppliers");
+    expect(defaultRoute(staff(["purchases.create"]))).toBe("/purchases");
   });
 });

@@ -103,6 +103,20 @@ export const PERMISSION_CATALOG: PermissionGroup[] = [
     ],
   },
   {
+    title: "Suppliers & Purchasing",
+    perms: [
+      { key: "suppliers.view", label: "View suppliers", hint: "Browse supplier records and the products they supply" },
+      { key: "suppliers.create", label: "Add suppliers", hint: "Create a new external or in-house supplier" },
+      { key: "suppliers.edit", label: "Edit suppliers", hint: "Change contact, address, GSTIN or payment terms" },
+      { key: "suppliers.status", label: "Activate & deactivate suppliers", hint: "Retire a supplier without losing their history" },
+      { key: "purchases.create", label: "Record purchases", hint: "Enter and post a purchase invoice or in-house receipt" },
+      { key: "purchases.pay", label: "Record supplier payments", hint: "Log money paid to a supplier, with date and mode" },
+      { key: "purchases.return", label: "Raise purchase returns", hint: "Issue a credit note against a posted invoice" },
+      { key: "suppliers.financial", label: "View supplier money", hint: "Amounts, balances and the account summary" },
+      { key: "suppliers.reports", label: "Supplier reports", hint: "The six purchase reports and their exports" },
+    ],
+  },
+  {
     title: "Store admin",
     perms: [
       { key: "store.settings", label: "Store profile & tax", hint: "Name, address, GST, tax rate, thresholds, logo" },
@@ -168,10 +182,18 @@ const OWNER_BY_DEFAULT: PermissionKey[] = [
   "advance.request",
   "advance.approve",
   "advance.delete",
+  // Paying a supplier is money leaving the till, so it gets the same treatment
+  // as payroll: grantable, but in no preset.
+  "purchases.pay",
 ];
 
 export const ROLE_PRESETS: Record<PresetRole, PermissionKey[]> = {
-  Admin: ALL_PERMISSIONS.filter((k) => !OWNER_BY_DEFAULT.includes(k)),
+  // Admin is the one preset trusted with supplier payments; every other
+  // OWNER_BY_DEFAULT key stays delegated one person at a time.
+  Admin: [
+    ...ALL_PERMISSIONS.filter((k) => !OWNER_BY_DEFAULT.includes(k)),
+    "purchases.pay",
+  ],
   Manager: [
     "stock.view",
     "stock.in",
@@ -187,6 +209,12 @@ export const ROLE_PRESETS: Record<PresetRole, PermissionKey[]> = {
     "store.status",
     "store.lists",
     "activity.view",
+    "suppliers.view",
+    "suppliers.create",
+    "suppliers.edit",
+    "suppliers.status",
+    "purchases.create",
+    "suppliers.reports",
     "attendance.view",
     "attendance.edit",
   ],
@@ -246,6 +274,10 @@ export function navItems(user: User | null): NavItem[] {
     items.push({ key: "dashboard", href: "/dashboard", icon: "📊", label: "Dashboard" });
   if (hasPermission(user, "stock.view"))
     items.push({ key: "stock", href: "/stock", icon: "📦", label: "Stock" });
+  if (hasPermission(user, "suppliers.view"))
+    items.push({ key: "suppliers", href: "/suppliers", icon: "🚚", label: "Suppliers" });
+  if (hasAnyPermission(user, ["purchases.create", "purchases.pay", "purchases.return"]))
+    items.push({ key: "purchases", href: "/purchases", icon: "🧮", label: "Purchases" });
   if (hasPermission(user, "bill.create"))
     items.push({ key: "bill", href: "/bill", icon: "🧾", label: "Bill" });
   if (hasPermission(user, "customers.view"))
@@ -278,8 +310,14 @@ export function canAccessSection(user: User | null, section: string): boolean {
       return hasPermission(user, "attendance.view");
     case "salary":
       return hasAnyPermission(user, ["salary.view", "advance.view"]);
+    case "suppliers":
+      return hasPermission(user, "suppliers.view");
+    case "purchases":
+      return hasAnyPermission(user, ["purchases.create", "purchases.pay", "purchases.return"]);
     case "reports":
-      return hasPermission(user, "reports.view");
+      // Someone may hold suppliers.reports without reports.view — the page
+      // renders only the tabs they can actually open.
+      return hasAnyPermission(user, ["reports.view", "suppliers.reports"]);
     case "settings":
       return true; // My Account is always reachable
     default:
@@ -292,10 +330,13 @@ export function defaultRoute(user: User | null): string {
   if (hasPermission(user, "dashboard.view")) return "/dashboard";
   if (hasPermission(user, "bill.create")) return "/bill";
   if (hasPermission(user, "stock.view")) return "/stock";
+  if (hasPermission(user, "suppliers.view")) return "/suppliers";
+  if (hasAnyPermission(user, ["purchases.create", "purchases.pay", "purchases.return"]))
+    return "/purchases";
   if (hasPermission(user, "customers.view")) return "/customers";
   if (hasAnyPermission(user, ["bill.history", "activity.view"])) return "/history";
   if (hasPermission(user, "attendance.view")) return "/attendance";
   if (hasAnyPermission(user, ["salary.view", "advance.view"])) return "/salary";
-  if (hasPermission(user, "reports.view")) return "/reports";
+  if (hasAnyPermission(user, ["reports.view", "suppliers.reports"])) return "/reports";
   return "/dashboard"; // no access — page renders the "No Access" state
 }
