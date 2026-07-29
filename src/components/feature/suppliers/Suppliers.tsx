@@ -84,22 +84,31 @@ export function Suppliers() {
 
   return (
     <>
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <p className="text-sm text-ink-muted">
-          {loaded ? `${visible.length} of ${suppliers.length}` : "Loading…"}
-        </p>
-        {canCreate && (
-          <button
-            type="button"
-            onClick={() => setCreating(true)}
-            className="inline-flex items-center gap-1.5 rounded-xl border-none bg-brown px-4 py-2.5 text-sm font-bold text-warm-white"
-          >
-            <Plus size={16} /> Add supplier
-          </button>
-        )}
-      </div>
+      <SupplierFilters
+        search={search}
+        onSearch={setSearch}
+        filters={filters}
+        onFilters={setFilters}
+        action={
+          canCreate && (
+            // Full-width row on phone so it doesn't wrap to a lonely stub;
+            // dissolves back into the toolbar on desktop, as Stock's does.
+            <button
+              type="button"
+              onClick={() => setCreating(true)}
+              className="btn-primary flex w-full items-center justify-center gap-1.5 whitespace-nowrap px-2.5 text-[12.5px] lg:w-auto lg:px-[18px] lg:text-[13.5px]"
+            >
+              <Plus size={16} /> Add supplier
+            </button>
+          )
+        }
+      />
 
-      <SupplierFilters search={search} onSearch={setSearch} filters={filters} onFilters={setFilters} />
+      {loaded && suppliers.length > 0 && (
+        <p className="mb-2 text-[12px] font-semibold text-ink-muted">
+          Showing {visible.length} of {suppliers.length}
+        </p>
+      )}
 
       {!loaded ? (
         <ListSkeleton />
