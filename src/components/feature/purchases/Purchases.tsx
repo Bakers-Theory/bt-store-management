@@ -10,10 +10,11 @@ import { fetchSuppliers } from "@/lib/supabase-data";
 import { PurchaseInvoiceForm } from "./PurchaseInvoiceForm";
 import { PurchaseRecords } from "./PurchaseRecords";
 import { PurchaseReturnForm } from "./PurchaseReturnForm";
+import { SupplierBalances } from "./SupplierBalances";
 import { SupplierPaymentForm } from "./SupplierPaymentForm";
 import type { Supplier } from "@/lib/types";
 
-type Tab = "invoice" | "payment" | "return" | "records";
+type Tab = "invoice" | "payment" | "return" | "records" | "balance";
 
 export function Purchases() {
   const user = useCurrentUser();
@@ -24,6 +25,9 @@ export function Purchases() {
   // Reading the ledger goes through the *_v views, every one of which is gated
   // on suppliers.view — without it the tab could only ever render empty.
   const canBrowse = hasPermission(user, "suppliers.view");
+  // Balance is nothing but money: supplier_summary_v gates on this key alone,
+  // so without it the tab could only ever render zeroes.
+  const canFinancial = hasPermission(user, "suppliers.financial");
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [token, setToken] = useState(0);
@@ -61,10 +65,16 @@ export function Purchases() {
           <button className={tabCls(tab === "return")} onClick={() => setTab("return")}>
             Return
           </button>
+        )
+        }
+        {canFinancial && (
+          <button className={tabCls(tab === "balance")} onClick={() => setTab("balance")}>
+            Balance
+          </button>
         )}
         {canBrowse && (
           <button className={tabCls(tab === "records")} onClick={() => setTab("records")}>
-            All records
+            History
           </button>
         )}
       </div>
@@ -77,6 +87,8 @@ export function Purchases() {
         <PurchaseReturnForm suppliers={suppliers} onDone={reload} />
       ) : tab === "records" && canBrowse ? (
         <PurchaseRecords />
+      ) : tab === "balance" && canFinancial ? (
+        <SupplierBalances />
       ) : (
         <NoAccess />
       )}

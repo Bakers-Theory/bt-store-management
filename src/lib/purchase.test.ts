@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  balanceRows,
   invoiceTotals,
   isPurchaseMode,
   isReturnQtyValid,
@@ -88,16 +89,16 @@ describe("outstandingBalance", () => {
   });
 });
 
-describe("summaryTotals", () => {
-  const row = (over: Partial<SupplierSummary>): SupplierSummary => ({
-    supplierId: "s1", supplierName: "S", supplierCode: "SUP-0001",
-    supplierType: "external", totalPurchases: 0, totalPayments: 0,
-    returnCredit: 0, outstanding: 0, inHouseValue: 0,
-    lastTransactionDate: null, lastPaymentDate: null,
-    purchaseOrderCount: 0, transactionCount: 0,
-    ...over,
-  });
+const row = (over: Partial<SupplierSummary>): SupplierSummary => ({
+  supplierId: "s1", supplierName: "S", supplierCode: "SUP-0001",
+  supplierType: "external", totalPurchases: 0, totalPayments: 0,
+  returnCredit: 0, outstanding: 0, inHouseValue: 0,
+  lastTransactionDate: null, lastPaymentDate: null,
+  purchaseOrderCount: 0, transactionCount: 0,
+  ...over,
+});
 
+describe("summaryTotals", () => {
   it("excludes in-house rows from every payable total", () => {
     const t = summaryTotals([
       row({ totalPurchases: 1000, totalPayments: 400, returnCredit: 100, outstanding: 500 }),
@@ -117,6 +118,72 @@ describe("summaryTotals", () => {
       row({ supplierId: "s3", supplierType: "in_house", inHouseValue: 100 }),
     ]);
     expect(t.suppliersOwing).toBe(1);
+  });
+});
+
+describe("balanceRows", () => {
+  const all = { search: "", owingOnly: false };
+  const ids = (rows: SupplierSummary[]) => rows.map((r) => r.supplierId);
+
+  it("drops in-house suppliers — they can never be a payable", () => {
+    const out = balanceRows(
+      [
+        row({ outstanding: 500 }),
+        row({ supplierId: "s2", supplierType: "in_house", inHouseValue: 900 }),
+      ],
+      all,
+    );
+    expect(ids(out)).toEqual(["s1"]);
+  });
+
+  it("sorts by outstanding descending, so credit balances sink below settled ones", () => {
+    const out = balanceRows(
+      [
+        row({ supplierId: "settled", outstanding: 0 }),
+        row({ supplierId: "credit", outstanding: -989.4 }),
+        row({ supplierId: "small", outstanding: 120 }),
+        row({ supplierId: "big", outstanding: 18400 }),
+      ],
+      all,
+    );
+    expect(ids(out)).toEqual(["big", "small", "settled", "credit"]);
+  });
+
+  it("owingOnly keeps real debts and hides both settled and in-credit accounts", () => {
+    const out = balanceRows(
+      [
+        row({ supplierId: "owing", outstanding: 500 }),
+        row({ supplierId: "settled", outstanding: 0 }),
+        row({ supplierId: "credit", outstanding: -50 }),
+      ],
+      { search: "", owingOnly: true },
+    );
+    expect(ids(out)).toEqual(["owing"]);
+  });
+
+  it("searches name and code, case-insensitively and ignoring surrounding space", () => {
+    const rows = [
+      row({ supplierId: "s1", supplierName: "Sharma Flour", supplierCode: "SUP-0001" }),
+      row({ supplierId: "s2", supplierName: "Good Milk", supplierCode: "SUP-0002" }),
+    ];
+    expect(ids(balanceRows(rows, { ...all, search: "  sharma " }))).toEqual(["s1"]);
+    expect(ids(balanceRows(rows, { ...all, search: "SUP-0002" }))).toEqual(["s2"]);
+    expect(balanceRows(rows, { ...all, search: "nobody" })).toEqual([]);
+  });
+
+  it("applies search and owingOnly together", () => {
+    const rows = [
+      row({ supplierId: "s1", supplierName: "Lab 1", outstanding: -989.4 }),
+      row({ supplierId: "s2", supplierName: "Lab 2", outstanding: 300 }),
+      row({ supplierId: "s3", supplierName: "Sharma Flour", outstanding: 900 }),
+    ];
+    expect(ids(balanceRows(rows, { search: "lab", owingOnly: true }))).toEqual(["s2"]);
+  });
+
+  it("does not mutate or reorder the caller's array", () => {
+    const rows = [row({ supplierId: "a", outstanding: 1 }), row({ supplierId: "b", outstanding: 2 })];
+    balanceRows(rows, all);
+    expect(ids(rows)).toEqual(["a", "b"]);
   });
 });
 
