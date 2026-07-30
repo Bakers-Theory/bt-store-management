@@ -16,7 +16,7 @@ const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const userId = process.env.OWNER_USER_ID ?? "admin";
 const name = process.env.OWNER_NAME ?? "Prateek Kumar Patel";
-const password = process.env.OWNER_PASSWORD;
+const password = process.env.OWNER_PASSWORD ?? "test1234";
 
 if (!url || !serviceKey) {
   console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.");

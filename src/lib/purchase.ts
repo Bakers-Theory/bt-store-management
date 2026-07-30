@@ -100,6 +100,35 @@ export function summaryTotals(rows: SupplierSummary[]): SupplierTotals {
   };
 }
 
+export interface BalanceFilter {
+  search: string;
+  /** Hides settled suppliers and anyone in credit — only real debts remain. */
+  owingOnly: boolean;
+}
+
+/**
+ * The payables list. In-house suppliers are dropped outright: their outstanding
+ * is zero by construction, so listing them would pad the page with rows that
+ * can never be acted on. Biggest debt first, so what is owed most reads first
+ * and settled accounts sink.
+ */
+export function balanceRows(
+  rows: SupplierSummary[],
+  { search, owingOnly }: BalanceFilter,
+): SupplierSummary[] {
+  const q = search.trim().toLowerCase();
+  return rows
+    .filter(
+      (r) =>
+        isExternal(r) &&
+        (!owingOnly || r.outstanding > 0) &&
+        (!q ||
+          r.supplierName.toLowerCase().includes(q) ||
+          r.supplierCode.toLowerCase().includes(q)),
+    )
+    .sort((a, b) => b.outstanding - a.outstanding);
+}
+
 export interface InvoiceDraft {
   supplierId: string;
   supplierType: SupplierType;
