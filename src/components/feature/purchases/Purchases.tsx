@@ -65,15 +65,16 @@ export function Purchases() {
           <button className={tabCls(tab === "return")} onClick={() => setTab("return")}>
             Return
           </button>
-        )}
-        {canBrowse && (
-          <button className={tabCls(tab === "records")} onClick={() => setTab("records")}>
-            All records
-          </button>
-        )}
+        )
+        }
         {canFinancial && (
           <button className={tabCls(tab === "balance")} onClick={() => setTab("balance")}>
             Balance
+          </button>
+        )}
+        {canBrowse && (
+          <button className={tabCls(tab === "records")} onClick={() => setTab("records")}>
+            History
           </button>
         )}
       </div>
