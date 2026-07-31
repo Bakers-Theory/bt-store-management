@@ -136,11 +136,51 @@ describe("presets", () => {
     expect(hasPermission(m, "staff.manage")).toBe(false);
   });
 
-  it("Cashier and Manager overlap only on customers", () => {
+  // Superseded the customers-only assertion when the cashbook landed. The cash
+  // drawer is the first responsibility both the counter and the back office
+  // hold: whoever handles the money all day is who reads and reconciles it.
+  // Everything else in ARCHITECTURE.md §8's counter/back-office split stands.
+  it("Cashier and Manager overlap only on customers and reading the cashbook", () => {
     const shared = ROLE_PRESETS.Cashier.filter((k) =>
       ROLE_PRESETS.Manager.includes(k),
     );
-    expect(shared.sort()).toEqual(["customers.edit", "customers.view"]);
+    expect(shared.sort()).toEqual([
+      "cashbook.view",
+      "customers.edit",
+      "customers.view",
+    ]);
+  });
+
+  it("a Cashier reads the cashbook but cannot adjust it", () => {
+    const c = preset("Cashier");
+    expect(hasPermission(c, "cashbook.view")).toBe(true);
+    // A counter operator who could write arbitrary entries could make a
+    // shortfall disappear.
+    expect(hasPermission(c, "cashbook.entry")).toBe(false);
+  });
+
+  it("Storekeeper never sees the cashbook", () => {
+    const s = preset("Storekeeper");
+    expect(hasPermission(s, "cashbook.view")).toBe(false);
+    expect(hasPermission(s, "cashbook.entry")).toBe(false);
+  });
+
+  it("Admin and Manager can both write cashbook entries", () => {
+    expect(hasPermission(preset("Admin"), "cashbook.entry")).toBe(true);
+    expect(hasPermission(preset("Manager"), "cashbook.entry")).toBe(true);
+  });
+
+  it("the cashbook section opens for anyone who can read it", () => {
+    expect(canAccessSection(preset("Cashier"), "cashbook")).toBe(true);
+    expect(canAccessSection(preset("Manager"), "cashbook")).toBe(true);
+    expect(canAccessSection(owner, "cashbook")).toBe(true);
+    expect(canAccessSection(preset("Storekeeper"), "cashbook")).toBe(false);
+  });
+
+  it("the cashbook nav item appears for readers only", () => {
+    const keys = (u: User) => navItems(u).map((i) => i.key);
+    expect(keys(preset("Cashier"))).toContain("cashbook");
+    expect(keys(preset("Storekeeper"))).not.toContain("cashbook");
   });
 
   it("attendance is supervisory: Admin and Manager only", () => {
@@ -189,23 +229,24 @@ describe("presetForPerms / roleLabel", () => {
 });
 
 describe("navItems", () => {
-  it("orders dashboard, stock, suppliers, purchases, bill, customers, history, attendance for the Owner", () => {
+  it("orders dashboard, stock, suppliers, purchases, bill, customers, history, cashbook, attendance for the Owner", () => {
     expect(navItems(owner).map((n) => n.key)).toEqual([
       "dashboard", "stock", "suppliers", "purchases", "bill", "customers",
-      "history", "attendance", "salary",
+      "history", "cashbook", "attendance", "salary",
     ]);
   });
-  it("gives the Cashier a till, customers and history — but no stock page", () => {
+  it("gives the Cashier a till, customers, history and the cashbook — but no stock page", () => {
     expect(navItems(preset("Cashier")).map((n) => n.key)).toEqual([
-      "bill", "customers", "history",
+      "bill", "customers", "history", "cashbook",
     ]);
   });
   it("gives the Storekeeper stock alone — no log means no history", () => {
     expect(navItems(preset("Storekeeper")).map((n) => n.key)).toEqual(["stock"]);
   });
-  it("gives the Manager stock, suppliers, purchases, customers, history and attendance", () => {
+  it("gives the Manager stock, suppliers, purchases, customers, history, cashbook and attendance", () => {
     expect(navItems(preset("Manager")).map((n) => n.key)).toEqual([
-      "stock", "suppliers", "purchases", "customers", "history", "attendance",
+      "stock", "suppliers", "purchases", "customers", "history", "cashbook",
+      "attendance",
     ]);
   });
   it("shows Salary only to salary.view holders, and to nobody by preset", () => {
@@ -313,6 +354,9 @@ describe("legacy group aliasing (mirrors has_perm in SQL)", () => {
       "activity.view", "advance.approve", "advance.delete",
       "advance.request", "advance.view",
       "attendance.edit", "attendance.view",
+      // Deliberately ungrouped: the legacy sales/inventory/analytics aliases
+      // predate the cashbook, so no pre-0028 policy can reach these keys.
+      "cashbook.entry", "cashbook.view",
       "purchases.create", "purchases.pay", "purchases.return",
       "salary.edit", "salary.pay", "salary.view",
       "staff.manage", "store.lists", "store.settings", "store.status",

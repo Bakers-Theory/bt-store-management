@@ -53,6 +53,9 @@ export type PermissionKey =
   | "purchases.return"
   | "suppliers.financial"
   | "suppliers.reports"
+  // Cashbook
+  | "cashbook.view"
+  | "cashbook.entry"
   // Store admin
   | "store.settings"
   | "store.status"
@@ -566,4 +569,93 @@ export interface SupplierSummary {
   /** An invoice IS the order record; there is no separate PO entity. */
   purchaseOrderCount: number;
   transactionCount: number;
+}
+
+// ─── Cashbook ───────────────────────────────────────────────────────────────
+
+/** The two accounts the cashbook tracks. Physical drawer, and the bank. */
+export type CashAccount = "cash" | "bank";
+
+export type CashDirection = "in" | "out";
+
+/**
+ * Modes a posting can carry. `Cheque` exists only to read historical
+ * `supplier_payment` rows (0038) — no form offers it. `Mixed` is not here:
+ * a mixed payment is two entries, each with its own real mode.
+ */
+export type CashPaymentMode = "Cash" | "UPI" | "Bank Transfer" | "Cheque";
+
+export type CashSourceType =
+  | "bill"
+  | "expense"
+  | "salary"
+  | "advance"
+  | "supplier_payment"
+  | "manual"
+  | "transfer"
+  | "opening";
+
+/** Derived in `cash_entry_v`, never stored — a posting either happened or it didn't. */
+export type CashEntryStatus = "posted" | "reversed" | "reversal";
+
+export interface CashEntry {
+  id: string;
+  onDate: string; // "YYYY-MM-DD" — the local business date
+  createdAt: string; // ISO instant, gives the Time column
+  account: CashAccount;
+  direction: CashDirection;
+  amount: number;
+  paymentMode: CashPaymentMode;
+  categoryId: string;
+  categoryName: string;
+  categoryGroup: string; // "" for a top-level (system) category
+  categoryPath: string; // "Utilities › Rent", or just "Sales"
+  sourceType: CashSourceType;
+  sourceId: string | null;
+  sourceRef: string; // "#412", an employee name, a supplier name, or ""
+  reversesId: string | null;
+  transferId: string | null;
+  referenceNo: string;
+  note: string;
+  // The id, not just the name: two staff can share a name, and "is this mine?"
+  // decides whether the edit button renders.
+  createdById: string | null;
+  createdByName: string;
+  status: CashEntryStatus;
+  runningBalance: number; // computed by cash_entry_v over the whole ledger
+}
+
+export interface CashCategory {
+  id: string;
+  parentId: string | null;
+  name: string;
+  direction: "in" | "out" | "both";
+  isSystem: boolean;
+  sortOrder: number;
+}
+
+/**
+ * Two kinds of figure, deliberately. The balances are point-in-time and ignore
+ * the filter range — "cash in hand" is what is in the drawer now. The `period*`
+ * figures follow the range, so the tiles and the transaction list below them
+ * always describe the same slice of time.
+ */
+export interface CashbookSummary {
+  cashBalance: number;
+  bankBalance: number;
+  periodSales: number;
+  periodExpenses: number;
+  periodCashIn: number;
+  periodCashOut: number;
+}
+
+export interface CashEntryFilters {
+  from?: string;
+  to?: string;
+  account?: CashAccount;
+  direction?: CashDirection;
+  categoryId?: string;
+  paymentMode?: CashPaymentMode;
+  sourceType?: CashSourceType;
+  q?: string;
 }

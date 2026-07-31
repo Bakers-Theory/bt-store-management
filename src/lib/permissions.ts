@@ -117,6 +117,13 @@ export const PERMISSION_CATALOG: PermissionGroup[] = [
     ],
   },
   {
+    title: "Cashbook",
+    perms: [
+      { key: "cashbook.view", label: "View cashbook", hint: "Cash and bank balances, and every transaction" },
+      { key: "cashbook.entry", label: "Add & adjust entries", hint: "Record cash taken out or added, and move money between cash and bank" },
+    ],
+  },
+  {
     title: "Store admin",
     perms: [
       { key: "store.settings", label: "Store profile & tax", hint: "Name, address, GST, tax rate, thresholds, logo" },
@@ -217,6 +224,8 @@ export const ROLE_PRESETS: Record<PresetRole, PermissionKey[]> = {
     "suppliers.reports",
     "attendance.view",
     "attendance.edit",
+    "cashbook.view",
+    "cashbook.entry",
   ],
   Cashier: [
     "bill.create",
@@ -226,6 +235,8 @@ export const ROLE_PRESETS: Record<PresetRole, PermissionKey[]> = {
     "bill.history",
     "customers.view",
     "customers.edit",
+    // Reads only. Closing the drawer arrives with cashbook.close in phase B.
+    "cashbook.view",
   ],
   Storekeeper: [
     "stock.view",
@@ -284,6 +295,10 @@ export function navItems(user: User | null): NavItem[] {
     items.push({ key: "customers", href: "/customers", icon: "👥", label: "Customers" });
   if (hasAnyPermission(user, ["bill.history", "activity.view"]))
     items.push({ key: "history", href: "/history", icon: "📋", label: "History" });
+  if (hasPermission(user, "cashbook.view"))
+    // A ledger book, not a banknote: 💵 is a US dollar in a ₹ app, and it read
+    // as a near-duplicate of Salary's 💰.
+    items.push({ key: "cashbook", href: "/cashbook", icon: "📒", label: "Cashbook" });
   if (hasPermission(user, "attendance.view"))
     items.push({ key: "attendance", href: "/attendance", icon: "🗓️", label: "Attendance" });
   // advance.view alone must reach the page too — Salary.tsx renders only the
@@ -314,6 +329,8 @@ export function canAccessSection(user: User | null, section: string): boolean {
       return hasPermission(user, "suppliers.view");
     case "purchases":
       return hasAnyPermission(user, ["purchases.create", "purchases.pay", "purchases.return"]);
+    case "cashbook":
+      return hasPermission(user, "cashbook.view");
     case "reports":
       // Someone may hold suppliers.reports without reports.view — the page
       // renders only the tabs they can actually open.
@@ -335,6 +352,7 @@ export function defaultRoute(user: User | null): string {
     return "/purchases";
   if (hasPermission(user, "customers.view")) return "/customers";
   if (hasAnyPermission(user, ["bill.history", "activity.view"])) return "/history";
+  if (hasPermission(user, "cashbook.view")) return "/cashbook";
   if (hasPermission(user, "attendance.view")) return "/attendance";
   if (hasAnyPermission(user, ["salary.view", "advance.view"])) return "/salary";
   if (hasAnyPermission(user, ["reports.view", "suppliers.reports"])) return "/reports";

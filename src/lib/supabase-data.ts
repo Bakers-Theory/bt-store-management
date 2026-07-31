@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@/utils/supabase/client";
-import type { Attendance, AttendanceStatus, AttendanceSummary, AdvanceBalance, Bakery, Batch, Bill, BillLine, BillStatus, Customer, Employee, EmployeeSalary, Item, Log, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, StaffAdvance, StoreLists, Supplier, SupplierProduct, SupplierStatus, InvoiceStatus, PurchaseInvoice, PurchaseInvoiceLine, PurchaseMode, PurchaseReturn, PurchaseReturnLine, SupplierPayment, SupplierSummary, User } from "./types";
+import type { Attendance, AttendanceStatus, AttendanceSummary, AdvanceBalance, Bakery, Batch, Bill, BillLine, BillStatus, CashAccount, CashCategory, CashDirection, CashEntry, CashEntryFilters, CashEntryStatus, CashPaymentMode, CashSourceType, CashbookSummary, Customer, Employee, EmployeeSalary, Item, Log, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, StaffAdvance, StoreLists, Supplier, SupplierProduct, SupplierStatus, InvoiceStatus, PurchaseInvoice, PurchaseInvoiceLine, PurchaseMode, PurchaseReturn, PurchaseReturnLine, SupplierPayment, SupplierSummary, User } from "./types";
 import type { SupplierInput } from "./supplier";
 import { isPurchaseMode, type DraftLine } from "./purchase";
 import { isAttendanceStatus } from "./attendance";
@@ -1811,4 +1811,217 @@ export async function fetchSupplierReportData(
     returns,
     summaries,
   };
+}
+
+// ─── Cashbook ───────────────────────────────────────────────────────────────
+
+export interface CashEntryRow {
+  id: string;
+  on_date: string;
+  created_at: string;
+  account: string;
+  direction: string;
+  amount: string | number;
+  payment_mode: string;
+  category_id: string;
+  category_name: string;
+  category_group: string | null;
+  category_path: string;
+  source_type: string;
+  source_id: string | null;
+  reverses_id: string | null;
+  transfer_id: string | null;
+  reference_no: string | null;
+  note: string | null;
+  created_by: string | null;
+  created_by_name: string | null;
+  status: string;
+  source_ref: string | null;
+  running_balance: string | number;
+}
+
+export interface CashCategoryRow {
+  id: string;
+  parent_id: string | null;
+  name: string;
+  direction: string;
+  is_system: boolean;
+  sort_order: number;
+}
+
+export function mapCashEntry(r: CashEntryRow): CashEntry {
+  return {
+    id: r.id,
+    onDate: r.on_date,
+    createdAt: r.created_at,
+    account: r.account as CashAccount,
+    direction: r.direction as CashDirection,
+    // Postgres numeric arrives as a string over the wire.
+    amount: Number(r.amount),
+    paymentMode: r.payment_mode as CashPaymentMode,
+    categoryId: r.category_id,
+    categoryName: r.category_name,
+    categoryGroup: r.category_group ?? "",
+    categoryPath: r.category_path,
+    sourceType: r.source_type as CashSourceType,
+    sourceId: r.source_id,
+    sourceRef: r.source_ref ?? "",
+    reversesId: r.reverses_id,
+    transferId: r.transfer_id,
+    referenceNo: r.reference_no ?? "",
+    note: r.note ?? "",
+    createdById: r.created_by,
+    createdByName: r.created_by_name ?? "",
+    status: r.status as CashEntryStatus,
+    runningBalance: Number(r.running_balance),
+  };
+}
+
+export function mapCashCategory(r: CashCategoryRow): CashCategory {
+  return {
+    id: r.id,
+    parentId: r.parent_id,
+    name: r.name,
+    direction: r.direction as CashCategory["direction"],
+    isSystem: r.is_system,
+    sortOrder: r.sort_order,
+  };
+}
+
+export interface CashEntriesPage {
+  entries: CashEntry[];
+  hasMore: boolean;
+}
+
+/**
+ * The ledger is unbounded and time-sensitive, so it is paginated and never
+ * cached in the Zustand store — the same rule bills and logs follow.
+ *
+ * `on_date` is a plain `date`, so it filters directly. Do NOT wrap the bounds
+ * in dayStartISO/dayEndISO: that turns a date into a timestamp and matches
+ * nothing.
+ */
+export async function fetchCashEntriesPage(
+  offset: number,
+  limit: number,
+  filters: CashEntryFilters = {},
+): Promise<CashEntriesPage> {
+  const supabase = createClient();
+  let query = supabase
+    .from("cash_entry_v")
+    .select("*")
+    .order("on_date", { ascending: false })
+    .order("created_at", { ascending: false });
+
+  if (filters.from) query = query.gte("on_date", filters.from);
+  if (filters.to) query = query.lte("on_date", filters.to);
+  if (filters.account) query = query.eq("account", filters.account);
+  if (filters.direction) query = query.eq("direction", filters.direction);
+  if (filters.categoryId) query = query.eq("category_id", filters.categoryId);
+  if (filters.paymentMode) query = query.eq("payment_mode", filters.paymentMode);
+  if (filters.sourceType) query = query.eq("source_type", filters.sourceType);
+
+  const q = filters.q ? orSafe(filters.q) : "";
+  if (q) {
+    query = query.or(
+      `note.ilike.*${q}*,reference_no.ilike.*${q}*,source_ref.ilike.*${q}*,category_path.ilike.*${q}*`,
+    );
+  }
+
+  const { data, error } = await query.range(offset, offset + limit - 1);
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []) as CashEntryRow[];
+  return { entries: rows.map(mapCashEntry), hasMore: rows.length === limit };
+}
+
+/** Bounded and slow-changing, so it is fetched once per page mount. */
+export async function fetchCashCategories(): Promise<CashCategory[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("cash_category_v")
+    .select("id, parent_id, name, direction, is_system, sort_order")
+    .order("sort_order");
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as CashCategoryRow[]).map(mapCashCategory);
+}
+
+/**
+ * The client passes its own local dates: `current_date` inside a view would be
+ * the server's UTC date, which is the wrong day for part of every morning.
+ *
+ * The range scopes the `period*` figures only — the balances are live, so the
+ * tiles keep telling the truth about the drawer while the list below them is
+ * filtered.
+ */
+export async function fetchCashbookSummary(
+  range: { from: string | null; to: string | null } = { from: null, to: null },
+): Promise<CashbookSummary> {
+  const r = await rpc<Record<string, string | number>>("cashbook_summary", {
+    p_from: range.from,
+    p_to: range.to,
+  });
+  return {
+    cashBalance: Number(r.cashBalance),
+    bankBalance: Number(r.bankBalance),
+    periodSales: Number(r.periodSales),
+    periodExpenses: Number(r.periodExpenses),
+    periodCashIn: Number(r.periodCashIn),
+    periodCashOut: Number(r.periodCashOut),
+  };
+}
+
+export interface CashEntryInput {
+  onDate: string;
+  direction: CashDirection;
+  amount: number;
+  mode: CashPaymentMode;
+  categoryId: string;
+  note: string;
+  referenceNo: string;
+}
+
+export async function rpcAddCashEntry(p: CashEntryInput): Promise<string> {
+  return rpc<string>("add_cash_entry", {
+    p_on_date: p.onDate,
+    p_direction: p.direction,
+    p_amount: p.amount,
+    p_mode: p.mode,
+    p_category_id: p.categoryId,
+    p_note: p.note,
+    p_reference_no: p.referenceNo,
+  });
+}
+
+/** `direction` is not editable — delete and re-record to change which way it went. */
+export async function rpcUpdateCashEntry(
+  id: string,
+  p: Omit<CashEntryInput, "direction">,
+): Promise<void> {
+  await rpc<void>("update_cash_entry", {
+    p_id: id,
+    p_on_date: p.onDate,
+    p_amount: p.amount,
+    p_mode: p.mode,
+    p_category_id: p.categoryId,
+    p_note: p.note,
+    p_reference_no: p.referenceNo,
+  });
+}
+
+export async function rpcDeleteCashEntry(id: string): Promise<void> {
+  await rpc<void>("delete_cash_entry", { p_id: id });
+}
+
+export async function rpcTransferCash(p: {
+  onDate: string;
+  fromAccount: CashAccount;
+  amount: number;
+  note: string;
+}): Promise<string> {
+  return rpc<string>("transfer_cash", {
+    p_on_date: p.onDate,
+    p_from_account: p.fromAccount,
+    p_amount: p.amount,
+    p_note: p.note,
+  });
 }

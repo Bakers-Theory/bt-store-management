@@ -287,6 +287,111 @@ create index store_lists_kind_idx on public.store_lists (kind, sort_order);
 
 ---
 
+### 3.10 `cash_category` — two-level cashbook categories *(0044)*
+
+Eight `is_system` rows are what the auto-posting paths name by string
+(`system_category('Sales')`), so they can be neither renamed nor archived. The
+rest are admin-managed on the `store.lists` key, seeded from issue #32's category
+table. Removal is `archived_at`, never `DELETE`: a category with entries against
+it must keep resolving a label in a historical report forever.
+
+```sql
+create table public.cash_category (
+  id          uuid primary key default gen_random_uuid(),
+  parent_id   uuid references public.cash_category(id),
+  name        text not null,
+  direction   text not null default 'out' check (direction in ('in','out','both')),
+  is_system   boolean not null default false,
+  sort_order  int not null default 0,
+  archived_at timestamptz,
+  created_at  timestamptz not null default now(),
+  constraint cash_category_name_not_blank check (btrim(name) <> ''),
+  constraint cash_category_system_is_top_level check (not is_system or parent_id is null)
+);
+-- TWO partial indexes, not one constraint: Postgres treats NULLs as distinct, so
+-- `unique (parent_id, name)` alone would let two top-level groups share a name.
+create unique index cash_category_top_name_uniq
+  on public.cash_category (name) where parent_id is null;
+create unique index cash_category_child_name_uniq
+  on public.cash_category (parent_id, name) where parent_id is not null;
+create index cash_category_parent_idx on public.cash_category (parent_id, sort_order);
+```
+
+`direction` is what stops the expense form offering an income category (and vice
+versa) — `add_cash_entry` rejects a mismatch rather than filing it.
+
+**Exactly two levels** is a trigger (`cash_category_depth_guard`), not a CHECK: "my
+parent must itself be top-level" reads another row.
+
+---
+
+### 3.11 `cash_entry` — the posting ledger *(0045)*
+
+One row per movement of money in or out of one account. `post_cash` is the only
+insert path in the schema; `reverse_cash` is the only correction path.
+
+```sql
+create table public.cash_entry (
+  id            uuid primary key default gen_random_uuid(),
+  on_date       date not null,               -- the LOCAL business date, not created_at
+  account       text not null check (account in ('cash','bank')),
+  direction     text not null check (direction in ('in','out')),
+  amount        numeric(12,2) not null check (amount > 0),  -- sign lives in direction
+  payment_mode  text not null check (payment_mode in ('Cash','UPI','Bank Transfer','Cheque')),
+  category_id   uuid not null references public.cash_category(id),
+  source_type   text not null check (source_type in ('bill','expense','salary',
+                  'advance','supplier_payment','manual','transfer','opening')),
+  source_id     uuid,                        -- NOT a FK, see below
+  reverses_id   uuid references public.cash_entry(id),
+  transfer_id   uuid,                        -- pairs the two legs of a transfer
+  reference_no  text not null default '',
+  note          text not null default '',
+  deleted_at    timestamptz,
+  deleted_by    uuid references public.profiles(id) on delete set null,
+  created_by    uuid references public.profiles(id) on delete set null,
+  created_at    timestamptz not null default now(),
+  constraint cash_entry_manual_needs_note
+    check (source_type <> 'manual' or btrim(note) <> ''),
+  constraint cash_entry_reversal_has_source
+    check (reverses_id is null or source_type <> 'opening')
+);
+```
+
+Three things about this table are load-bearing and easy to "fix" wrongly:
+
+1. **`source_id` is deliberately not a foreign key.** Sources live in five
+   different tables, and `delete_bill` hard-deletes its bill while the ledger row
+   must survive as history.
+2. **`amount` is always positive; the sign lives in `direction`.** Every aggregate
+   sums `case when direction = 'in' then amount else -amount end`.
+3. **`on_date` is the local business date**, derived with the client's `p_tz` at
+   posting time (or `store_settings.timezone` in the backfill) — never
+   `created_at::date`.
+
+```sql
+-- Makes the 0046 backfill re-runnable. `reverses_id is null` is load-bearing: a
+-- reversal shares its original's source_type, source_id AND account, so without
+-- it every reversal would collide. `account` is in the key because one Mixed
+-- expense (phase C) legitimately posts one row per account.
+create unique index cash_entry_source_uniq
+  on public.cash_entry (source_type, source_id, account)
+  where source_id is not null and reverses_id is null and deleted_at is null;
+```
+
+**Immutability** is two triggers on `cash_entry_guard()`, so the guarantee does
+not depend on every future RPC remembering to check:
+
+- `DELETE` is refused outright — removal is `deleted_at` (#32's soft-delete rule).
+- `UPDATE` is refused when `source_type <> 'manual'`: an auto-posted row mirrors a
+  document and is changed by changing the document, which writes a reversal.
+- `UPDATE` is refused on the money-shaped columns of a row that already has a
+  reversal pointing at it.
+
+Phase B adds a third clause rejecting any row whose `on_date` belongs to a closed
+`cash_day`.
+
+---
+
 ## 4. Views (the read surface)
 
 The client reads `*_v` views, not base tables, wherever a view exists. They join

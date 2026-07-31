@@ -6,7 +6,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { hasAnyPermission, hasPermission, navItems, roleLabel } from "@/lib/permissions";
 import { useAuth, useCurrentUser } from "@/components/system/AuthProvider";
 import { useBakeryStore } from "@/lib/store";
-import { BarChart3, Calculator, Croissant, Loader2, Truck } from "lucide-react";
+import { BarChart3, Calculator, Croissant, Loader2, Truck, Wallet } from "lucide-react";
 
 const ICONS: Record<string, React.ReactNode> = {
   dashboard: (
@@ -71,6 +71,7 @@ const ICONS: Record<string, React.ReactNode> = {
   reports: <BarChart3 size={20} strokeWidth={1.8} />,
   suppliers: <Truck size={20} strokeWidth={1.8} />,
   purchases: <Calculator size={20} strokeWidth={1.8} />,
+  cashbook: <Wallet size={20} strokeWidth={1.8} />,
 };
 
 function initials(name: string): string {

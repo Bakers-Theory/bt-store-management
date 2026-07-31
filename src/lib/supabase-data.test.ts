@@ -1,5 +1,96 @@
 import { describe, it, expect } from "vitest";
-import { groupLists, mapCustomer, mapBill, mapItem } from "./supabase-data";
+import {
+  groupLists,
+  mapCashCategory,
+  mapCashEntry,
+  mapCustomer,
+  mapBill,
+  mapItem,
+} from "./supabase-data";
+
+describe("mapCashEntry", () => {
+  const row = {
+    id: "e1",
+    on_date: "2026-07-31",
+    created_at: "2026-07-31T04:00:00.000Z",
+    account: "cash",
+    direction: "out",
+    // Postgres numeric arrives as a STRING over the wire.
+    amount: "3000.00",
+    payment_mode: "Cash",
+    category_id: "c1",
+    category_name: "Rent",
+    category_group: "Utilities",
+    category_path: "Utilities › Rent",
+    source_type: "manual",
+    source_id: null,
+    reverses_id: null,
+    transfer_id: null,
+    reference_no: "",
+    note: "July rent",
+    created_by: "u1",
+    created_by_name: "Ravi",
+    status: "posted",
+    source_ref: "",
+    running_balance: "-3000.00",
+  };
+
+  it("coerces the numeric strings Postgres sends into numbers", () => {
+    const e = mapCashEntry(row as never);
+    expect(e.amount).toBe(3000);
+    expect(e.runningBalance).toBe(-3000);
+    expect(typeof e.amount).toBe("number");
+  });
+
+  it("maps snake_case to camelCase and keeps nulls as null", () => {
+    const e = mapCashEntry(row as never);
+    expect(e.onDate).toBe("2026-07-31");
+    expect(e.categoryPath).toBe("Utilities › Rent");
+    expect(e.createdByName).toBe("Ravi");
+    expect(e.createdById).toBe("u1");
+    expect(e.sourceId).toBeNull();
+    expect(e.reversesId).toBeNull();
+  });
+
+  it("defaults absent text fields to empty strings rather than undefined", () => {
+    const e = mapCashEntry({ ...row, note: null, source_ref: null } as never);
+    expect(e.note).toBe("");
+    expect(e.sourceRef).toBe("");
+  });
+});
+
+describe("mapCashCategory", () => {
+  it("maps a leaf and its group", () => {
+    const c = mapCashCategory({
+      id: "c1",
+      parent_id: "g1",
+      name: "Rent",
+      direction: "out",
+      is_system: false,
+      sort_order: 3,
+    } as never);
+    expect(c).toEqual({
+      id: "c1",
+      parentId: "g1",
+      name: "Rent",
+      direction: "out",
+      isSystem: false,
+      sortOrder: 3,
+    });
+  });
+
+  it("keeps a top-level category's null parent", () => {
+    const c = mapCashCategory({
+      id: "g1",
+      parent_id: null,
+      name: "Utilities",
+      direction: "out",
+      is_system: false,
+      sort_order: 13,
+    } as never);
+    expect(c.parentId).toBeNull();
+  });
+});
 
 describe("groupLists", () => {
   it("buckets rows by kind and preserves input order", () => {
