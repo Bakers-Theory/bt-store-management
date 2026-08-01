@@ -649,6 +649,16 @@ export interface CashDay {
   countedCash: number;
   /** counted − expected. Negative is short, positive is excess. */
   difference: number;
+  /**
+   * The bank side (migration 0050). Null on every day closed before it existed,
+   * and on any day closed without reading a balance off the bank — "not
+   * checked", which is different from "checked and it was zero".
+   */
+  openingBank: number | null;
+  expectedBank: number | null;
+  closingBank: number | null;
+  /** closingBank − expectedBank. Null whenever either side is. */
+  bankDifference: number | null;
   remarks: string;
   status: CashDayStatus;
   closedByName: string;
@@ -688,6 +698,14 @@ export interface CashDaySummary {
   cashOut: number;
   /** Null until the day has been closed. */
   countedCash: number | null;
+  /** The ledger's bank balance strictly before `onDate`. */
+  openingBank: number;
+  /** openingBank + the day's bank movements — what the book says the bank holds. */
+  expectedBank: number;
+  bankIn: number;
+  bankOut: number;
+  /** The balance read off the bank. Null means it was never checked. */
+  closingBank: number | null;
   status: CashDayStatus;
 }
 

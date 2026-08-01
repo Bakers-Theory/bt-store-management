@@ -81,12 +81,32 @@ export function DayHistory({
                 {/* The counted cash is the day's closing balance — it is also the
                     next day's opening, so the two figures lead the row. */}
                 <p className="text-[13px] font-semibold tabular-nums text-ink">
+                  <span className="text-[10px] font-bold uppercase text-[#8a6a3c]">
+                    Cash
+                  </span>{" "}
                   Open {money(d.openingCash)}{" "}
                   <span className="font-normal text-ink-muted">→</span> Close{" "}
                   {money(d.countedCash)}
                 </p>
+                {/* Null on days closed before the bank side existed, and on any
+                    day nobody checked the bank. Saying so beats showing a zero. */}
+                <p className="text-[13px] font-semibold tabular-nums text-ink">
+                  <span className="text-[10px] font-bold uppercase text-[#8a6a3c]">
+                    Bank
+                  </span>{" "}
+                  {d.closingBank === null || d.openingBank === null ? (
+                    <span className="font-normal text-ink-muted">Not checked</span>
+                  ) : (
+                    <>
+                      Open {money(d.openingBank)}{" "}
+                      <span className="font-normal text-ink-muted">→</span> Close{" "}
+                      {money(d.closingBank)}
+                    </>
+                  )}
+                </p>
                 <p className="text-[11px] text-ink-muted">
-                  Expected {money(d.expectedCash)}
+                  Expected {money(d.expectedCash)} cash
+                  {d.expectedBank !== null && ` · ${money(d.expectedBank)} bank`}
                   {d.closedByName && ` · by ${d.closedByName}`}
                 </p>
               </div>
@@ -99,6 +119,16 @@ export function DayHistory({
                   <p className="text-[10px] font-bold uppercase text-[#8a6a3c]">
                     {label.label}
                   </p>
+                  {d.bankDifference !== null && d.bankDifference !== 0 && (
+                    <p
+                      className={`text-[11px] font-bold tabular-nums ${
+                        toneCls[differenceLabel(d.bankDifference).tone]
+                      }`}
+                    >
+                      bank {d.bankDifference > 0 ? "+" : "−"}
+                      {money(Math.abs(d.bankDifference))}
+                    </p>
+                  )}
                 </div>
                 {canReopen && d.status === "closed" && (
                   <button

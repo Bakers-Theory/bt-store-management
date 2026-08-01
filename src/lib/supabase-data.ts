@@ -2032,6 +2032,10 @@ export interface CashDayRow {
   expected_cash: string | number;
   counted_cash: string | number;
   difference: string | number;
+  opening_bank: string | number | null;
+  expected_bank: string | number | null;
+  closing_bank: string | number | null;
+  bank_difference: string | number | null;
   remarks: string | null;
   status: string;
   closed_by_name: string | null;
@@ -2048,6 +2052,11 @@ export function mapCashDay(r: CashDayRow): CashDay {
     expectedCash: Number(r.expected_cash),
     countedCash: Number(r.counted_cash),
     difference: Number(r.difference),
+    // Null survives as null: it means the bank was never checked that day.
+    openingBank: r.opening_bank === null ? null : Number(r.opening_bank),
+    expectedBank: r.expected_bank === null ? null : Number(r.expected_bank),
+    closingBank: r.closing_bank === null ? null : Number(r.closing_bank),
+    bankDifference: r.bank_difference === null ? null : Number(r.bank_difference),
     remarks: r.remarks ?? "",
     status: r.status as CashDayStatus,
     closedByName: r.closed_by_name ?? "",
@@ -2103,15 +2112,34 @@ export async function fetchCashDay(onDate: string): Promise<CashDay | null> {
   return data ? mapCashDay(data as CashDayRow) : null;
 }
 
+/** `closingBank` is null when nobody read a balance off the bank. */
 export async function rpcCloseCashDay(
   onDate: string,
   countedCash: number,
   remarks: string,
+  closingBank: number | null = null,
 ): Promise<void> {
   await rpc<void>("close_cash_day", {
     p_date: onDate,
     p_counted_cash: countedCash,
     p_remarks: remarks,
+    p_closing_bank: closingBank,
+  });
+}
+
+/**
+ * Posts an "Other › Adjustment" bank entry for the gap between the book and the
+ * bank, so the ledger ends at `closingBank`. Only works while the day is open.
+ */
+export async function rpcAdjustBankBalance(
+  onDate: string,
+  closingBank: number,
+  note = "",
+): Promise<string> {
+  return rpc<string>("adjust_bank_balance", {
+    p_on_date: onDate,
+    p_closing_bank: closingBank,
+    p_note: note,
   });
 }
 
@@ -2126,6 +2154,11 @@ export interface CashDaySummaryRow {
   cashIn: string | number;
   cashOut: string | number;
   countedCash: string | number | null;
+  openingBank: string | number;
+  expectedBank: string | number;
+  bankIn: string | number;
+  bankOut: string | number;
+  closingBank: string | number | null;
   status: string;
 }
 
@@ -2140,6 +2173,12 @@ export async function fetchCashDaySummary(onDate: string): Promise<CashDaySummar
     cashOut: Number(r.cashOut),
     // Null means the day has never been counted, which is different from 0.
     countedCash: r.countedCash === null ? null : Number(r.countedCash),
+    openingBank: Number(r.openingBank),
+    expectedBank: Number(r.expectedBank),
+    bankIn: Number(r.bankIn),
+    bankOut: Number(r.bankOut),
+    // Null means the bank was never checked, which is different from 0.
+    closingBank: r.closingBank === null ? null : Number(r.closingBank),
     status: r.status as CashDayStatus,
   };
 }

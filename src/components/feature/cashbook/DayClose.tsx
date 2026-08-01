@@ -20,6 +20,7 @@ export function DayClose() {
   const toast = useUIStore((s) => s.toast);
   const canClose = hasPermission(user, "cashbook.close");
   const canReopen = hasPermission(user, "cashbook.reopen");
+  const canEdit = hasPermission(user, "cashbook.entry");
 
   const today = isoDateLocal(new Date());
   const [summary, setSummary] = useState<CashDaySummary | null>(null);
@@ -80,7 +81,8 @@ export function DayClose() {
             onDate={today}
             summary={summary}
             canClose={canClose}
-            onClosed={() => void load()}
+            canEdit={canEdit}
+            onChanged={() => void load()}
           />
 
           <div>

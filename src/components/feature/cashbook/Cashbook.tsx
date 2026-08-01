@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import { ArrowLeftRight, ClipboardCheck, Plus } from "lucide-react";
+import { ArrowLeftRight, Plus } from "lucide-react";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { useUIStore } from "@/lib/ui-store";
 import { hasPermission } from "@/lib/permissions";
@@ -130,13 +129,8 @@ export function Cashbook() {
           <h1 className="font-display text-2xl font-bold text-ink">Cashbook</h1>
           <p className="text-xs text-ink-muted">Every rupee in and out, cash and bank</p>
         </div>
+        {/* Day close is reached from the Today card below — one route, not two. */}
         <div className="flex gap-2">
-          <Link
-            href="/cashbook/day-close"
-            className="inline-flex items-center gap-1.5 rounded-[13px] border border-line bg-warm-white px-3.5 py-2.5 text-xs font-bold text-ink"
-          >
-            <ClipboardCheck size={14} /> Day close
-          </Link>
           {canEdit && (
             <>
               <button
