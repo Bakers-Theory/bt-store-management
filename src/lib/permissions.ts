@@ -121,6 +121,8 @@ export const PERMISSION_CATALOG: PermissionGroup[] = [
     perms: [
       { key: "cashbook.view", label: "View cashbook", hint: "Cash and bank balances, and every transaction" },
       { key: "cashbook.entry", label: "Add & adjust entries", hint: "Record cash taken out or added, and move money between cash and bank" },
+      { key: "cashbook.close", label: "Close the day", hint: "Count the drawer and lock the day's cash book" },
+      { key: "cashbook.reopen", label: "Reopen a closed day", hint: "Unlock a day that was already counted — needs a written reason" },
     ],
   },
   {
@@ -226,6 +228,7 @@ export const ROLE_PRESETS: Record<PresetRole, PermissionKey[]> = {
     "attendance.edit",
     "cashbook.view",
     "cashbook.entry",
+    "cashbook.close",
   ],
   Cashier: [
     "bill.create",
@@ -235,8 +238,8 @@ export const ROLE_PRESETS: Record<PresetRole, PermissionKey[]> = {
     "bill.history",
     "customers.view",
     "customers.edit",
-    // Reads only. Closing the drawer arrives with cashbook.close in phase B.
     "cashbook.view",
+    "cashbook.close",
   ],
   Storekeeper: [
     "stock.view",

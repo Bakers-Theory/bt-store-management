@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   groupLists,
   mapCashCategory,
+  mapCashDay,
   mapCashEntry,
   mapCustomer,
   mapBill,
@@ -89,6 +90,55 @@ describe("mapCashCategory", () => {
       sort_order: 13,
     } as never);
     expect(c.parentId).toBeNull();
+  });
+});
+
+describe("mapCashDay", () => {
+  const row = {
+    on_date: "2026-07-31",
+    // Postgres numeric arrives as a STRING over the wire.
+    opening_cash: "7200.00",
+    expected_cash: "5900.00",
+    counted_cash: "5850.00",
+    difference: "-50.00",
+    remarks: "50 short",
+    status: "closed",
+    closed_by_name: "Ravi",
+    closed_at: "2026-07-31T15:40:00.000Z",
+    reopened_by_name: "",
+    reopened_at: null,
+    reopen_reason: "",
+  };
+
+  it("coerces every money column to a number", () => {
+    const d = mapCashDay(row as never);
+    expect(d.openingCash).toBe(7200);
+    expect(d.expectedCash).toBe(5900);
+    expect(d.countedCash).toBe(5850);
+    expect(d.difference).toBe(-50);
+  });
+
+  it("maps snake_case to camelCase and keeps a null timestamp null", () => {
+    const d = mapCashDay(row as never);
+    expect(d.onDate).toBe("2026-07-31");
+    expect(d.status).toBe("closed");
+    expect(d.closedByName).toBe("Ravi");
+    expect(d.reopenedAt).toBeNull();
+  });
+
+  it("reads a reopened day's audit trail", () => {
+    const d = mapCashDay({
+      ...row,
+      status: "open",
+      reopened_by_name: "Asha",
+      reopened_at: "2026-08-01T04:00:00.000Z",
+      reopen_reason: "recount",
+    } as never);
+    expect(d.status).toBe("open");
+    expect(d.reopenedByName).toBe("Asha");
+    expect(d.reopenReason).toBe("recount");
+    // The close figures survive a reopen — that is what it answers to.
+    expect(d.countedCash).toBe(5850);
   });
 });
 

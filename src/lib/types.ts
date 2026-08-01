@@ -56,6 +56,8 @@ export type PermissionKey =
   // Cashbook
   | "cashbook.view"
   | "cashbook.entry"
+  | "cashbook.close"
+  | "cashbook.reopen"
   // Store admin
   | "store.settings"
   | "store.status"
@@ -634,6 +636,28 @@ export interface CashCategory {
   sortOrder: number;
 }
 
+export type CashDayStatus = "open" | "closed";
+
+/**
+ * A day that has been closed at least once. A date with NO row is open — the
+ * same "absence is data, not a state" rule `attendance` uses.
+ */
+export interface CashDay {
+  onDate: string; // "YYYY-MM-DD"
+  openingCash: number;
+  expectedCash: number;
+  countedCash: number;
+  /** counted − expected. Negative is short, positive is excess. */
+  difference: number;
+  remarks: string;
+  status: CashDayStatus;
+  closedByName: string;
+  closedAt: string | null;
+  reopenedByName: string;
+  reopenedAt: string | null;
+  reopenReason: string;
+}
+
 /**
  * Two kinds of figure, deliberately. The balances are point-in-time and ignore
  * the filter range — "cash in hand" is what is in the drawer now. The `period*`
@@ -647,6 +671,24 @@ export interface CashbookSummary {
   periodExpenses: number;
   periodCashIn: number;
   periodCashOut: number;
+}
+
+/**
+ * The reconciliation figures for one day, from `cash_day_summary(date)`.
+ * Deliberately separate from `CashbookSummary`, which summarises a user-chosen
+ * date RANGE and has no single day to reconcile against.
+ */
+export interface CashDaySummary {
+  onDate: string; // "YYYY-MM-DD"
+  /** The ledger's cash balance strictly before `onDate`. */
+  openingCash: number;
+  /** openingCash + the day's cash movements. */
+  expectedCash: number;
+  cashIn: number;
+  cashOut: number;
+  /** Null until the day has been closed. */
+  countedCash: number | null;
+  status: CashDayStatus;
 }
 
 export interface CashEntryFilters {

@@ -1,3 +1,4 @@
+import { round2 } from "./salary";
 import type {
   CashAccount,
   CashCategory,
@@ -150,4 +151,44 @@ export function periodLabel(
   }
   if (from) return `From ${shortDate(from, year)}`;
   return `Up to ${shortDate(to!, year)}`;
+}
+
+// ─── Reconciliation ─────────────────────────────────────────────────────────
+// Mirrors of close_cash_day()'s arithmetic in SQL (migration 0049). The SQL copy
+// is what a closed day is actually stored from; these exist so the page can show
+// a live difference as the operator types.
+
+/** The amount with its sign applied. `amount` itself is always positive. */
+export function signedAmount(e: CashEntry): number {
+  return e.direction === "in" ? e.amount : -e.amount;
+}
+
+export function accountBalance(entries: CashEntry[], account: CashAccount): number {
+  return round2(
+    entries
+      .filter((e) => e.account === account)
+      .reduce((sum, e) => sum + signedAmount(e), 0),
+  );
+}
+
+/**
+ * Opening cash plus the day's cash movements. Bank entries never apply — there
+ * is no physical count to reconcile the bank against.
+ */
+export function expectedCash(openingCash: number, entries: CashEntry[]): number {
+  return round2(openingCash + accountBalance(entries, "cash"));
+}
+
+/** Counted minus expected: negative is short, positive is excess. */
+export function cashDifference(counted: number, expected: number): number {
+  return round2(counted - expected);
+}
+
+export function differenceLabel(diff: number): {
+  tone: "short" | "excess" | "exact";
+  label: string;
+} {
+  if (diff < 0) return { tone: "short", label: "Short" };
+  if (diff > 0) return { tone: "excess", label: "Excess" };
+  return { tone: "exact", label: "Tallied" };
 }

@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  accountBalance,
   accountLabel,
+  cashDifference,
+  differenceLabel,
   entryTypeLabel,
+  expectedCash,
   modeToAccount,
   periodLabel,
   postableCategories,
+  signedAmount,
 } from "./cashbook";
 import type { CashCategory, CashEntry } from "./types";
 
@@ -169,5 +174,72 @@ describe("periodLabel", () => {
   it("handles a half-open range from either side", () => {
     expect(periodLabel({ from: "2026-07-01", to: null }, today)).toBe("From 1 Jul");
     expect(periodLabel({ from: null, to: "2026-07-15" }, today)).toBe("Up to 15 Jul");
+  });
+});
+
+describe("signedAmount", () => {
+  it("is positive for money in and negative for money out", () => {
+    expect(signedAmount(entry({ direction: "in", amount: 250 }))).toBe(250);
+    expect(signedAmount(entry({ direction: "out", amount: 250 }))).toBe(-250);
+  });
+});
+
+describe("accountBalance", () => {
+  it("nets in against out for one account only", () => {
+    const rows = [
+      entry({ account: "cash", direction: "in", amount: 500 }),
+      entry({ account: "cash", direction: "out", amount: 120 }),
+      entry({ account: "bank", direction: "in", amount: 9000 }),
+    ];
+    expect(accountBalance(rows, "cash")).toBe(380);
+    expect(accountBalance(rows, "bank")).toBe(9000);
+  });
+
+  it("is zero for an account with no entries", () => {
+    expect(accountBalance([], "cash")).toBe(0);
+  });
+
+  it("rounds to paise so floating point cannot leak a fraction", () => {
+    const rows = [
+      entry({ direction: "in", amount: 0.1 }),
+      entry({ direction: "in", amount: 0.2 }),
+    ];
+    expect(accountBalance(rows, "cash")).toBe(0.3);
+  });
+});
+
+describe("expectedCash", () => {
+  it("is opening plus cash in minus cash out, ignoring bank entries", () => {
+    const rows = [
+      entry({ account: "cash", direction: "in", amount: 1200 }),
+      entry({ account: "cash", direction: "out", amount: 300 }),
+      // A bank transfer out never touches the drawer.
+      entry({ account: "bank", direction: "out", amount: 5000 }),
+    ];
+    expect(expectedCash(7200, rows)).toBe(8100);
+  });
+
+  it("is the opening figure when nothing moved", () => {
+    expect(expectedCash(7200, [])).toBe(7200);
+  });
+});
+
+describe("cashDifference", () => {
+  it("is counted minus expected, so a shortfall is negative", () => {
+    expect(cashDifference(5850, 5900)).toBe(-50);
+    expect(cashDifference(9320, 9120)).toBe(200);
+    expect(cashDifference(5900, 5900)).toBe(0);
+  });
+
+  it("rounds, so a paise-level float cannot read as a discrepancy", () => {
+    expect(cashDifference(0.3, 0.1 + 0.2)).toBe(0);
+  });
+});
+
+describe("differenceLabel", () => {
+  it("names the three outcomes", () => {
+    expect(differenceLabel(-50)).toEqual({ tone: "short", label: "Short" });
+    expect(differenceLabel(200)).toEqual({ tone: "excess", label: "Excess" });
+    expect(differenceLabel(0)).toEqual({ tone: "exact", label: "Tallied" });
   });
 });

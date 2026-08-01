@@ -1,12 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeftRight, Plus } from "lucide-react";
+import Link from "next/link";
+import { ArrowLeftRight, ClipboardCheck, Plus } from "lucide-react";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { useUIStore } from "@/lib/ui-store";
 import { hasPermission } from "@/lib/permissions";
 import {
   fetchCashCategories,
+  fetchCashDaySummary,
   fetchCashEntriesPage,
   fetchCashbookSummary,
   rpcDeleteCashEntry,
@@ -23,7 +25,7 @@ import {
 } from "./CashbookFilters";
 import { CashEntryModal } from "./CashEntryModal";
 import { CashTransferModal } from "./CashTransferModal";
-import type { CashCategory, CashEntry, CashbookSummary } from "@/lib/types";
+import type { CashCategory, CashDaySummary, CashEntry, CashbookSummary } from "@/lib/types";
 
 const PAGE = 40;
 
@@ -48,6 +50,7 @@ export function Cashbook() {
   const [entries, setEntries] = useState<CashEntry[]>([]);
   const [categories, setCategories] = useState<CashCategory[]>([]);
   const [summary, setSummary] = useState<CashbookSummary | null>(null);
+  const [daySummary, setDaySummary] = useState<CashDaySummary | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -88,6 +91,14 @@ export function Cashbook() {
       .catch(() => toast("Couldn't load the categories", "error"));
   }, [toast]);
 
+  // Today's reconciliation figures don't depend on the range filter, so fetch
+  // once rather than on every range change.
+  useEffect(() => {
+    fetchCashDaySummary(isoDateLocal(new Date()))
+      .then(setDaySummary)
+      .catch(() => toast("Couldn't load today's reconciliation", "error"));
+  }, [toast]);
+
   useEffect(() => {
     loadSummary();
   }, [loadSummary]);
@@ -119,26 +130,35 @@ export function Cashbook() {
           <h1 className="font-display text-2xl font-bold text-ink">Cashbook</h1>
           <p className="text-xs text-ink-muted">Every rupee in and out, cash and bank</p>
         </div>
-        {canEdit && (
-          <div className="flex gap-2">
-            <button
-              onClick={() => setTransferring(true)}
-              className="inline-flex items-center gap-1.5 rounded-[13px] border border-line bg-warm-white px-3.5 py-2.5 text-xs font-bold text-ink"
-            >
-              <ArrowLeftRight size={14} /> Transfer
-            </button>
-            <button
-              onClick={() => setAdding(true)}
-              className="inline-flex items-center gap-1.5 rounded-[13px] bg-brown px-3.5 py-2.5 text-xs font-bold text-white"
-            >
-              <Plus size={14} /> Add entry
-            </button>
-          </div>
-        )}
+        <div className="flex gap-2">
+          <Link
+            href="/cashbook/day-close"
+            className="inline-flex items-center gap-1.5 rounded-[13px] border border-line bg-warm-white px-3.5 py-2.5 text-xs font-bold text-ink"
+          >
+            <ClipboardCheck size={14} /> Day close
+          </Link>
+          {canEdit && (
+            <>
+              <button
+                onClick={() => setTransferring(true)}
+                className="inline-flex items-center gap-1.5 rounded-[13px] border border-line bg-warm-white px-3.5 py-2.5 text-xs font-bold text-ink"
+              >
+                <ArrowLeftRight size={14} /> Transfer
+              </button>
+              <button
+                onClick={() => setAdding(true)}
+                className="inline-flex items-center gap-1.5 rounded-[13px] bg-brown px-3.5 py-2.5 text-xs font-bold text-white"
+              >
+                <Plus size={14} /> Add entry
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       <CashbookTiles
         summary={summary}
+        daySummary={daySummary}
         periodLabel={periodLabel(range, isoDateLocal(new Date()))}
       />
 

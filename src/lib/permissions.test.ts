@@ -140,15 +140,40 @@ describe("presets", () => {
   // drawer is the first responsibility both the counter and the back office
   // hold: whoever handles the money all day is who reads and reconciles it.
   // Everything else in ARCHITECTURE.md §8's counter/back-office split stands.
-  it("Cashier and Manager overlap only on customers and reading the cashbook", () => {
+  // Grew once more when daily closing landed. The counter counts the drawer;
+  // that is the job. Reopening a counted day stays with Admin and the Owner.
+  it("Cashier and Manager overlap on customers, reading the cashbook and closing the day", () => {
     const shared = ROLE_PRESETS.Cashier.filter((k) =>
       ROLE_PRESETS.Manager.includes(k),
     );
     expect(shared.sort()).toEqual([
+      "cashbook.close",
       "cashbook.view",
       "customers.edit",
       "customers.view",
     ]);
+  });
+
+  it("a Cashier counts and closes the drawer but cannot reopen a closed day", () => {
+    const c = preset("Cashier");
+    expect(hasPermission(c, "cashbook.close")).toBe(true);
+    expect(hasPermission(c, "cashbook.reopen")).toBe(false);
+    // Still no arbitrary adjustments: a shortfall must not be editable away.
+    expect(hasPermission(c, "cashbook.entry")).toBe(false);
+  });
+
+  it("reopening a closed day is Admin and Owner only", () => {
+    expect(hasPermission(preset("Admin"), "cashbook.reopen")).toBe(true);
+    expect(hasPermission(owner, "cashbook.reopen")).toBe(true);
+    expect(hasPermission(preset("Manager"), "cashbook.reopen")).toBe(false);
+    expect(hasPermission(preset("Cashier"), "cashbook.reopen")).toBe(false);
+    expect(hasPermission(preset("Storekeeper"), "cashbook.reopen")).toBe(false);
+  });
+
+  it("Storekeeper still never touches the cashbook", () => {
+    const s = preset("Storekeeper");
+    expect(hasPermission(s, "cashbook.close")).toBe(false);
+    expect(hasPermission(s, "cashbook.reopen")).toBe(false);
   });
 
   it("a Cashier reads the cashbook but cannot adjust it", () => {
@@ -356,7 +381,7 @@ describe("legacy group aliasing (mirrors has_perm in SQL)", () => {
       "attendance.edit", "attendance.view",
       // Deliberately ungrouped: the legacy sales/inventory/analytics aliases
       // predate the cashbook, so no pre-0028 policy can reach these keys.
-      "cashbook.entry", "cashbook.view",
+      "cashbook.close", "cashbook.entry", "cashbook.reopen", "cashbook.view",
       "purchases.create", "purchases.pay", "purchases.return",
       "salary.edit", "salary.pay", "salary.view",
       "staff.manage", "store.lists", "store.settings", "store.status",

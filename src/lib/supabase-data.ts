@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@/utils/supabase/client";
-import type { Attendance, AttendanceStatus, AttendanceSummary, AdvanceBalance, Bakery, Batch, Bill, BillLine, BillStatus, CashAccount, CashCategory, CashDirection, CashEntry, CashEntryFilters, CashEntryStatus, CashPaymentMode, CashSourceType, CashbookSummary, Customer, Employee, EmployeeSalary, Item, Log, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, StaffAdvance, StoreLists, Supplier, SupplierProduct, SupplierStatus, InvoiceStatus, PurchaseInvoice, PurchaseInvoiceLine, PurchaseMode, PurchaseReturn, PurchaseReturnLine, SupplierPayment, SupplierSummary, User } from "./types";
+import type { Attendance, AttendanceStatus, AttendanceSummary, AdvanceBalance, Bakery, Batch, Bill, BillLine, BillStatus, CashAccount, CashCategory, CashDay, CashDayStatus, CashDaySummary, CashDirection, CashEntry, CashEntryFilters, CashEntryStatus, CashPaymentMode, CashSourceType, CashbookSummary, Customer, Employee, EmployeeSalary, Item, Log, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, StaffAdvance, StoreLists, Supplier, SupplierProduct, SupplierStatus, InvoiceStatus, PurchaseInvoice, PurchaseInvoiceLine, PurchaseMode, PurchaseReturn, PurchaseReturnLine, SupplierPayment, SupplierSummary, User } from "./types";
 import type { SupplierInput } from "./supplier";
 import { isPurchaseMode, type DraftLine } from "./purchase";
 import { isAttendanceStatus } from "./attendance";
@@ -2024,4 +2024,122 @@ export async function rpcTransferCash(p: {
     p_amount: p.amount,
     p_note: p.note,
   });
+}
+
+export interface CashDayRow {
+  on_date: string;
+  opening_cash: string | number;
+  expected_cash: string | number;
+  counted_cash: string | number;
+  difference: string | number;
+  remarks: string | null;
+  status: string;
+  closed_by_name: string | null;
+  closed_at: string | null;
+  reopened_by_name: string | null;
+  reopened_at: string | null;
+  reopen_reason: string | null;
+}
+
+export function mapCashDay(r: CashDayRow): CashDay {
+  return {
+    onDate: r.on_date,
+    openingCash: Number(r.opening_cash),
+    expectedCash: Number(r.expected_cash),
+    countedCash: Number(r.counted_cash),
+    difference: Number(r.difference),
+    remarks: r.remarks ?? "",
+    status: r.status as CashDayStatus,
+    closedByName: r.closed_by_name ?? "",
+    closedAt: r.closed_at,
+    reopenedByName: r.reopened_by_name ?? "",
+    reopenedAt: r.reopened_at,
+    reopenReason: r.reopen_reason ?? "",
+  };
+}
+
+export interface CashDayFilters {
+  from?: string;
+  to?: string;
+  /** Only days whose count didn't match. Backs the discrepancy view. */
+  varianceOnly?: boolean;
+}
+
+export interface CashDaysPage {
+  days: CashDay[];
+  hasMore: boolean;
+}
+
+export async function fetchCashDaysPage(
+  offset: number,
+  limit: number,
+  filters: CashDayFilters = {},
+): Promise<CashDaysPage> {
+  const supabase = createClient();
+  let query = supabase
+    .from("cash_day_v")
+    .select("*")
+    .order("on_date", { ascending: false });
+  // `on_date` is a plain date, so it filters directly — no UTC conversion.
+  if (filters.from) query = query.gte("on_date", filters.from);
+  if (filters.to) query = query.lte("on_date", filters.to);
+  if (filters.varianceOnly) query = query.neq("difference", 0);
+
+  const { data, error } = await query.range(offset, offset + limit - 1);
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []) as CashDayRow[];
+  return { days: rows.map(mapCashDay), hasMore: rows.length === limit };
+}
+
+/** Null when the day has never been closed — i.e. it is open. */
+export async function fetchCashDay(onDate: string): Promise<CashDay | null> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("cash_day_v")
+    .select("*")
+    .eq("on_date", onDate)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? mapCashDay(data as CashDayRow) : null;
+}
+
+export async function rpcCloseCashDay(
+  onDate: string,
+  countedCash: number,
+  remarks: string,
+): Promise<void> {
+  await rpc<void>("close_cash_day", {
+    p_date: onDate,
+    p_counted_cash: countedCash,
+    p_remarks: remarks,
+  });
+}
+
+export async function rpcReopenCashDay(onDate: string, reason: string): Promise<void> {
+  await rpc<void>("reopen_cash_day", { p_date: onDate, p_reason: reason });
+}
+
+export interface CashDaySummaryRow {
+  onDate: string;
+  openingCash: string | number;
+  expectedCash: string | number;
+  cashIn: string | number;
+  cashOut: string | number;
+  countedCash: string | number | null;
+  status: string;
+}
+
+/** The reconciliation figures for one day. Backs the day-close page. */
+export async function fetchCashDaySummary(onDate: string): Promise<CashDaySummary> {
+  const r = await rpc<CashDaySummaryRow>("cash_day_summary", { p_on_date: onDate });
+  return {
+    onDate: r.onDate,
+    openingCash: Number(r.openingCash),
+    expectedCash: Number(r.expectedCash),
+    cashIn: Number(r.cashIn),
+    cashOut: Number(r.cashOut),
+    // Null means the day has never been counted, which is different from 0.
+    countedCash: r.countedCash === null ? null : Number(r.countedCash),
+    status: r.status as CashDayStatus,
+  };
 }
