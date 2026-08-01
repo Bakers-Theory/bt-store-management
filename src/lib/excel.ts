@@ -11,6 +11,12 @@ import {
   type SupplierReportData,
   type SupplierReportType,
 } from "./supplier-report";
+import {
+  CASHBOOK_REPORT_META,
+  cashbookReportSheets,
+  type CashbookReportData,
+  type CashbookReportType,
+} from "./cashbook-report";
 
 export interface ReportData {
   bakery: Bakery;
@@ -569,6 +575,58 @@ export async function exportSupplierReports(
     types.length === 1
       ? `${safe}_${SUPPLIER_REPORT_META[types[0]].slug}_${suffix}.xlsx`
       : `${safe}_Supplier_Reports_${suffix}.xlsx`;
+  XLSX.writeFile(wb, fileName);
+  return { ok: true };
+}
+
+// ─── Cashbook reports ───────────────────────────────────────────────────────
+
+/**
+ * One workbook, sheets from every selected cashbook report. Same idiom as
+ * `exportSupplierReports` — `xlsx` is imported on demand.
+ */
+export async function exportCashbookReports(
+  types: CashbookReportType[],
+  data: CashbookReportData,
+  range: DateRange,
+): Promise<ReportResult> {
+  if (types.length === 0) return { ok: false, error: "Select at least one report" };
+
+  const now = new Date();
+  // Dynamically imported so `xlsx` stays out of the main bundle.
+  const XLSX = await import("xlsx");
+  const wb = XLSX.utils.book_new();
+  const used = new Set<string>();
+  let anyRows = false;
+
+  const bakeryLike = {
+    name: data.shop.name,
+    address: data.shop.address,
+    phone: data.shop.phone,
+    currency: data.shop.currency,
+  } as Bakery;
+
+  for (const type of types) {
+    const meta = CASHBOOK_REPORT_META[type];
+    for (const sheet of cashbookReportSheets(type, data, range)) {
+      const header = headerRows(bakeryLike, meta.name, range, now, meta.snapshot);
+      const ws = XLSX.utils.aoa_to_sheet([...header, []]);
+      if (sheet.rows.length) {
+        XLSX.utils.sheet_add_json(ws, sheet.rows, { origin: -1 });
+        anyRows = true;
+      }
+      XLSX.utils.book_append_sheet(wb, ws, uniqueSheetName(sheet.name, used));
+    }
+  }
+
+  if (!anyRows) return { ok: false, error: "Nothing to export for this period" };
+
+  const safe = (data.shop.name || "Bakery").replace(/[^a-z0-9]/gi, "_");
+  const suffix = rangeSuffix(range, false);
+  const fileName =
+    types.length === 1
+      ? `${safe}_${CASHBOOK_REPORT_META[types[0]].slug}_${suffix}.xlsx`
+      : `${safe}_Cashbook_Reports_${suffix}.xlsx`;
   XLSX.writeFile(wb, fileName);
   return { ok: true };
 }

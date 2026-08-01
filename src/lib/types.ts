@@ -58,6 +58,7 @@ export type PermissionKey =
   | "cashbook.entry"
   | "cashbook.close"
   | "cashbook.reopen"
+  | "cashbook.reports"
   // Expenses
   | "expense.view"
   | "expense.create"

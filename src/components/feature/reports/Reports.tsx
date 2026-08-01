@@ -11,6 +11,7 @@ import { DateRangePicker } from "@/components/ui/DateRangePicker";
 import { hasPermission } from "@/lib/permissions";
 import { tabCls } from "@/components/ui/tabClass";
 import { SupplierReports } from "./SupplierReports";
+import { CashbookReports } from "./CashbookReports";
 
 const labelCls = "mb-[5px] block text-xs font-bold text-[#8a6a3c]";
 
@@ -25,8 +26,11 @@ export function Reports() {
   // a hook must not sit under a conditional return.
   const canStore = hasPermission(user, "reports.view");
   const canSuppliers = hasPermission(user, "suppliers.reports");
+  const canCashbook = hasPermission(user, "cashbook.reports");
 
-  const [pane, setPane] = useState<"store" | "suppliers">(canStore ? "store" : "suppliers");
+  const [pane, setPane] = useState<"store" | "suppliers" | "cashbook">(
+    canStore ? "store" : canSuppliers ? "suppliers" : "cashbook",
+  );
   const [selected, setSelected] = useState<ReportType[]>(["sales"]);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -48,7 +52,7 @@ export function Reports() {
     };
   }, [from, to]);
 
-  if (user && !canStore && !canSuppliers) return <NoAccess />;
+  if (user && !canStore && !canSuppliers && !canCashbook) return <NoAccess />;
   const canExport = hasPermission(user, "reports.export");
 
   const toggle = (t: ReportType) =>
@@ -88,18 +92,29 @@ export function Reports() {
         Choose the reports you want and an optional date range, then download them as one Excel file.
       </p>
 
-      {canStore && canSuppliers && (
+      {[canStore, canSuppliers, canCashbook].filter(Boolean).length > 1 && (
         <div className="mb-4 flex w-fit max-w-full gap-1.5 overflow-x-auto rounded-xl bg-[#f4e7d2] p-1">
-          <button className={tabCls(pane === "store")} onClick={() => setPane("store")}>
-            Store
-          </button>
-          <button className={tabCls(pane === "suppliers")} onClick={() => setPane("suppliers")}>
-            Suppliers
-          </button>
+          {canStore && (
+            <button className={tabCls(pane === "store")} onClick={() => setPane("store")}>
+              Store
+            </button>
+          )}
+          {canSuppliers && (
+            <button className={tabCls(pane === "suppliers")} onClick={() => setPane("suppliers")}>
+              Suppliers
+            </button>
+          )}
+          {canCashbook && (
+            <button className={tabCls(pane === "cashbook")} onClick={() => setPane("cashbook")}>
+              Cashbook
+            </button>
+          )}
         </div>
       )}
 
-      {pane === "suppliers" || !canStore ? (
+      {pane === "cashbook" && canCashbook ? (
+        <CashbookReports />
+      ) : pane === "suppliers" || !canStore ? (
         <SupplierReports />
       ) : (
       <div className="rounded-[18px] border border-line bg-warm-white p-[22px] shadow-[0_2px_12px_rgba(100,60,20,0.05)]">

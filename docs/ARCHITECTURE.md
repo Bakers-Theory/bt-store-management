@@ -399,6 +399,14 @@ returns rows only to `dashboard.profit` / `reports.export` holders, and
 `dashboard_stats` returns `cogs: null` without `dashboard.profit`. The client mappers hard-code `costPrice: 0` on bill lines so
 cost never even has a client-side field to leak into.
 
+The cashbook's Income vs Expense report is the third cost-aware surface.
+`cashbook_cogs(from, to)` is `SECURITY DEFINER` because `bill_items.cost_price` is
+revoked at the column level, and it returns **`null`** — not `0` — without
+`dashboard.profit`, the same as `dashboard_stats`. The report renders as pure
+cash-basis income vs expense for everyone else, and its **name says so**: calling
+it "Profit vs Expense" (as the ticket does) for a reader who cannot see cost would
+be a lie.
+
 ### The cash ledger
 
 Every money event writes a `cash_entry` row **inside the same transaction as its
@@ -535,7 +543,7 @@ transfers · `0049` the day close (`cash_day`, the real `assert_cash_day_open`
 body, reopen) · `0050` bank closing on the day close (`opening_bank` /
 `expected_bank` / `closing_bank`, `adjust_bank_balance`) · `0051` the expense
 document (`expense`, `expense_event`, `expense_v`) · `0052` the expense workflow
-RPCs.
+RPCs · `0053` COGS for the income-vs-expense report.
 
 > The full consolidated schema — every table's columns, the views, the complete
 > RPC catalog, the privacy/grants model, and deep-dives on the batch/FIFO and
@@ -569,6 +577,14 @@ unit-tested in plain functions. These are the files with `*.test.ts` siblings:
   and the net derived from it, so `gross − deduction === net` holds exactly and a
   payslip always adds up. Rounding both independently would let one drift by a
   paisa.
+- **`cashbook-report.ts`** — the nine cashbook report builders, following
+  `supplier-report.ts`'s shape exactly: a type union, a `*_REPORT_META` record,
+  table builders, then three renderers over the same tables (`PrintReport` for
+  A4/PDF, `Sheet[]` for `xlsx`, `toCsv` for CSV). **Which date each report groups
+  by is the contract**: cash reports use `cash_entry.on_date` (when money moved),
+  expense reports use `expense.expense_date` (when the cost was incurred). Mixing
+  them would make two reports over one period disagree, so every builder states
+  its date field.
 - **`expiry.ts`** — day-granularity expiry status (fresh / expiring-soon /
   expired) shared by UI and matching server-side batch logic.
 - **`cashbook.ts`** — the mode→account mirror of `mode_to_account()`, account
