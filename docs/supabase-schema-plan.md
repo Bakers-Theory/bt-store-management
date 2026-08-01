@@ -660,6 +660,7 @@ leaves the stored cost untouched, since the view hands them `null`.
 |---|---|---|
 | `bill_lines_with_cost()` | `table` (incl. `cost_price`) | Cost-bearing bill lines for the Excel COGS/profit export; empty for non-analytics. |
 | `dashboard_stats(p_tz text = 'UTC', p_from date = null, p_to date = null)` | `jsonb` | Server-side KPI aggregation for a local-day range, with a previous-period comparison. `cogs` is `null` for non-analytics users. |
+| `cashbook_cogs(p_from date, p_to date)` | `numeric` | Sum of `bill_items.cost_price` for active bills in the local-day range (`stable`, `SECURITY DEFINER`, gated on `dashboard.profit`). Returns `null` without the key (not `0`, to distinguish "unknown" from "zero margin"). Excludes cancelled bills (same as `excel.ts` aggregates). Bills' `created_at` is converted through `store_settings.timezone` — the same timezone conversion `0046`'s backfill used for ledger dates, ensuring a bill's COGS and its ledger row land on the same day. |
 
 ### Expenses *(0052)* — gate: one `expense.*` key each
 
@@ -769,7 +770,9 @@ row · `0017` store open/closed status · `0018` store/staff admin audit +
 admin view · `0019` closed store blocks inventory · `0020` bills skip expired
 batches · `0021` dashboard stats by range · `0022`/`0023` product images ·
 `0024` grant `bill_items.image_url` · `0025` dashboard prev-period counts ·
-`0026` flat discount · `0027` update customer.
+`0026` flat discount · `0027` update customer · `0028` granular RBAC ·
+`0029`–`0052` staff, suppliers, purchases, expenses · `0053` COGS RPC for
+income-vs-expense report.
 
 Apply in order via the Supabase SQL editor or `supabase db push`.
 

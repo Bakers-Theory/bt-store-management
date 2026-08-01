@@ -409,7 +409,7 @@ describe("legacy group aliasing (mirrors has_perm in SQL)", () => {
       "attendance.edit", "attendance.view",
       // Deliberately ungrouped: the legacy sales/inventory/analytics aliases
       // predate the cashbook, so no pre-0028 policy can reach these keys.
-      "cashbook.close", "cashbook.entry", "cashbook.reopen", "cashbook.view",
+      "cashbook.close", "cashbook.entry", "cashbook.reopen", "cashbook.reports", "cashbook.view",
       "expense.cancel", "expense.create", "expense.pay", "expense.view",
       "purchases.create", "purchases.pay", "purchases.return",
       "salary.edit", "salary.pay", "salary.view",
@@ -488,6 +488,35 @@ describe("advance permissions", () => {
 
   it("keeps it shut for someone with neither", () => {
     expect(canAccessSection(staff(["bill.create"]), "salary")).toBe(false);
+  });
+});
+
+describe("cashbook reports permissions", () => {
+  const staff = (perms: PermissionKey[]): User => ({
+    id: "u1", name: "Staff", userId: "staff", role: "Staff", permissions: perms,
+  });
+
+  it("cashbook reports are supervisory: Admin, Manager and Owner", () => {
+    expect(hasPermission(preset("Admin"), "cashbook.reports")).toBe(true);
+    expect(hasPermission(preset("Manager"), "cashbook.reports")).toBe(true);
+    expect(hasPermission(owner, "cashbook.reports")).toBe(true);
+    // The counter closes the drawer; it does not report on the money.
+    expect(hasPermission(preset("Cashier"), "cashbook.reports")).toBe(false);
+    expect(hasPermission(preset("Storekeeper"), "cashbook.reports")).toBe(false);
+  });
+
+  it("cashbook.reports alone reaches the Reports page", () => {
+    // Mirrors the suppliers.reports precedent: the page renders only the tabs
+    // its holder can actually open.
+    const u: User = {
+      id: "u9",
+      name: "Reporter",
+      userId: "9",
+      role: "Staff",
+      permissions: ["cashbook.reports"],
+    };
+    expect(canAccessSection(u, "reports")).toBe(true);
+    expect(defaultRoute(u)).toBe("/reports");
   });
 });
 

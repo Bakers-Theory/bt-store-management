@@ -123,6 +123,7 @@ export const PERMISSION_CATALOG: PermissionGroup[] = [
       { key: "cashbook.entry", label: "Add & adjust entries", hint: "Record cash taken out or added, and move money between cash and bank" },
       { key: "cashbook.close", label: "Close the day", hint: "Count the drawer and lock the day's cash book" },
       { key: "cashbook.reopen", label: "Reopen a closed day", hint: "Unlock a day that was already counted — needs a written reason" },
+      { key: "cashbook.reports", label: "Financial reports", hint: "Day book, cash flow, expense and discrepancy reports" },
     ],
   },
   {
@@ -238,6 +239,7 @@ export const ROLE_PRESETS: Record<PresetRole, PermissionKey[]> = {
     "cashbook.view",
     "cashbook.entry",
     "cashbook.close",
+    "cashbook.reports",
     "expense.view",
     "expense.create",
     "expense.pay",
@@ -302,8 +304,6 @@ export function navItems(user: User | null): NavItem[] {
     items.push({ key: "dashboard", href: "/dashboard", icon: "📊", label: "Dashboard" });
   if (hasPermission(user, "stock.view"))
     items.push({ key: "stock", href: "/stock", icon: "📦", label: "Stock" });
-  if (hasPermission(user, "cashbook.view"))
-   items.push({ key: "cashbook", href: "/cashbook", icon: "📒", label: "Cashbook" });
   if (hasPermission(user, "suppliers.view"))
     items.push({ key: "suppliers", href: "/suppliers", icon: "🚚", label: "Suppliers" });
   if (hasAnyPermission(user, ["purchases.create", "purchases.pay", "purchases.return"]))
@@ -312,12 +312,14 @@ export function navItems(user: User | null): NavItem[] {
     items.push({ key: "bill", href: "/bill", icon: "🧾", label: "Bill" });
   if (hasPermission(user, "customers.view"))
     items.push({ key: "customers", href: "/customers", icon: "👥", label: "Customers" });
+  if (hasAnyPermission(user, ["bill.history", "activity.view"]))
+    items.push({ key: "history", href: "/history", icon: "📋", label: "History" });
+  if (hasPermission(user, "cashbook.view"))
+    items.push({ key: "cashbook", href: "/cashbook", icon: "📒", label: "Cashbook" });
   if (hasPermission(user, "attendance.view"))
     items.push({ key: "attendance", href: "/attendance", icon: "🗓️", label: "Attendance" });
   if (hasAnyPermission(user, ["salary.view", "advance.view"]))
     items.push({ key: "salary", href: "/salary", icon: "💰", label: "Salary" });
-  if (hasAnyPermission(user, ["bill.history", "activity.view"]))
-    items.push({ key: "history", href: "/history", icon: "📋", label: "History" });
   return items;
 }
 
@@ -345,7 +347,13 @@ export function canAccessSection(user: User | null, section: string): boolean {
     case "cashbook":
       return hasPermission(user, "cashbook.view");
     case "reports":
-      return hasAnyPermission(user, ["reports.view", "suppliers.reports"]);
+      // Someone may hold suppliers.reports or cashbook.reports without
+      // reports.view — the page renders only the tabs they can actually open.
+      return hasAnyPermission(user, [
+        "reports.view",
+        "suppliers.reports",
+        "cashbook.reports",
+      ]);
     case "settings":
       return true; // My Account is always reachable
     default:
@@ -366,6 +374,7 @@ export function defaultRoute(user: User | null): string {
   if (hasPermission(user, "cashbook.view")) return "/cashbook";
   if (hasPermission(user, "attendance.view")) return "/attendance";
   if (hasAnyPermission(user, ["salary.view", "advance.view"])) return "/salary";
-  if (hasAnyPermission(user, ["reports.view", "suppliers.reports"])) return "/reports";
+  if (hasAnyPermission(user, ["reports.view", "suppliers.reports", "cashbook.reports"]))
+    return "/reports";
   return "/dashboard"; // no access — page renders the "No Access" state
 }
