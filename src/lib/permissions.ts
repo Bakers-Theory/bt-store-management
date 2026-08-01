@@ -302,6 +302,8 @@ export function navItems(user: User | null): NavItem[] {
     items.push({ key: "dashboard", href: "/dashboard", icon: "📊", label: "Dashboard" });
   if (hasPermission(user, "stock.view"))
     items.push({ key: "stock", href: "/stock", icon: "📦", label: "Stock" });
+  if (hasPermission(user, "cashbook.view"))
+   items.push({ key: "cashbook", href: "/cashbook", icon: "📒", label: "Cashbook" });
   if (hasPermission(user, "suppliers.view"))
     items.push({ key: "suppliers", href: "/suppliers", icon: "🚚", label: "Suppliers" });
   if (hasAnyPermission(user, ["purchases.create", "purchases.pay", "purchases.return"]))
@@ -310,18 +312,12 @@ export function navItems(user: User | null): NavItem[] {
     items.push({ key: "bill", href: "/bill", icon: "🧾", label: "Bill" });
   if (hasPermission(user, "customers.view"))
     items.push({ key: "customers", href: "/customers", icon: "👥", label: "Customers" });
-  if (hasAnyPermission(user, ["bill.history", "activity.view"]))
-    items.push({ key: "history", href: "/history", icon: "📋", label: "History" });
-  if (hasPermission(user, "cashbook.view"))
-    // A ledger book, not a banknote: 💵 is a US dollar in a ₹ app, and it read
-    // as a near-duplicate of Salary's 💰.
-    items.push({ key: "cashbook", href: "/cashbook", icon: "📒", label: "Cashbook" });
   if (hasPermission(user, "attendance.view"))
     items.push({ key: "attendance", href: "/attendance", icon: "🗓️", label: "Attendance" });
-  // advance.view alone must reach the page too — Salary.tsx renders only the
-  // tabs the holder can actually open.
   if (hasAnyPermission(user, ["salary.view", "advance.view"]))
     items.push({ key: "salary", href: "/salary", icon: "💰", label: "Salary" });
+  if (hasAnyPermission(user, ["bill.history", "activity.view"]))
+    items.push({ key: "history", href: "/history", icon: "📋", label: "History" });
   return items;
 }
 
@@ -349,8 +345,6 @@ export function canAccessSection(user: User | null, section: string): boolean {
     case "cashbook":
       return hasPermission(user, "cashbook.view");
     case "reports":
-      // Someone may hold suppliers.reports without reports.view — the page
-      // renders only the tabs they can actually open.
       return hasAnyPermission(user, ["reports.view", "suppliers.reports"]);
     case "settings":
       return true; // My Account is always reachable
