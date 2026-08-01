@@ -3,31 +3,46 @@
 import { useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { rectSortingStrategy, SortableContext } from "@dnd-kit/sortable";
-import { snapSpan } from "@/lib/dashboard-layout";
+import { clampHeightLevelIndex, snapSpan } from "@/lib/dashboard-layout";
 import type { DashboardWidgetSlot } from "@/lib/types";
 import { DashboardWidget } from "./DashboardWidget";
+
+// Vertical drag distance (px) per height-level step — unlike width (measured
+// in grid columns), "how much to show" has no natural unit to divide the
+// pointer delta by, so this is just a comfortable drag distance per step.
+const PX_PER_HEIGHT_LEVEL = 50;
 
 export function DashboardGrid({
   slots,
   editing,
   minSpanFor,
   mobileSpanFor,
+  heightLevelCountFor,
   renderWidget,
   onReorder,
   onRemove,
   onResize,
+  onResizeHeight,
 }: {
   slots: DashboardWidgetSlot[];
   editing: boolean;
   minSpanFor: (id: string) => number;
   mobileSpanFor: (id: string) => 1 | 2;
+  /** Number of height levels a widget supports; undefined = no height control. */
+  heightLevelCountFor: (id: string) => number | undefined;
   renderWidget: (id: string) => ReactNode;
   onReorder: (activeId: string, overId: string) => void;
   onRemove: (id: string) => void;
   onResize: (id: string, span: number) => void;
+  onResizeHeight: (id: string, levelIndex: number) => void;
 }) {
   const gridRef = useRef<HTMLDivElement>(null);
   const [resizing, setResizing] = useState<{ id: string; startX: number; startSpan: number } | null>(null);
+  const [resizingHeight, setResizingHeight] = useState<{
+    id: string;
+    startY: number;
+    startLevel: number;
+  } | null>(null);
   // A small drag threshold so a plain click on the handle (or a light tap on
   // mobile while reordering) doesn't get misread as a drag.
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
@@ -44,14 +59,33 @@ export function DashboardGrid({
     setResizing({ id, startX: e.clientX, startSpan: current.span });
   };
 
-  const handlePointerMove = (e: PointerEvent) => {
-    if (!resizing || !gridRef.current) return;
-    const colWidth = gridRef.current.clientWidth / 4;
-    const deltaCols = Math.round((e.clientX - resizing.startX) / colWidth);
-    onResize(resizing.id, snapSpan(resizing.startSpan + deltaCols, minSpanFor(resizing.id)));
+  const handleResizeHeightStart = (id: string, e: PointerEvent) => {
+    e.preventDefault();
+    const current = slots.find((s) => s.id === id);
+    if (!current?.heightLevel) return;
+    setResizingHeight({ id, startY: e.clientY, startLevel: current.heightLevel });
   };
 
-  const endResize = () => setResizing(null);
+  const handlePointerMove = (e: PointerEvent) => {
+    if (resizing && gridRef.current) {
+      const colWidth = gridRef.current.clientWidth / 4;
+      const deltaCols = Math.round((e.clientX - resizing.startX) / colWidth);
+      onResize(resizing.id, snapSpan(resizing.startSpan + deltaCols, minSpanFor(resizing.id)));
+    }
+    if (resizingHeight) {
+      const levelCount = heightLevelCountFor(resizingHeight.id) ?? 1;
+      const deltaLevels = Math.round((e.clientY - resizingHeight.startY) / PX_PER_HEIGHT_LEVEL);
+      onResizeHeight(
+        resizingHeight.id,
+        clampHeightLevelIndex(resizingHeight.startLevel + deltaLevels, levelCount),
+      );
+    }
+  };
+
+  const endResize = () => {
+    setResizing(null);
+    setResizingHeight(null);
+  };
 
   return (
     <div
@@ -72,6 +106,9 @@ export function DashboardGrid({
               editing={editing}
               onRemove={onRemove}
               onResizeStart={handleResizeStart}
+              heightLevel={slot.heightLevel}
+              heightLevelCount={heightLevelCountFor(slot.id)}
+              onResizeHeightStart={handleResizeHeightStart}
             >
               {renderWidget(slot.id)}
             </DashboardWidget>

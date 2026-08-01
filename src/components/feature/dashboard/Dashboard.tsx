@@ -38,6 +38,7 @@ import {
   removeWidget,
   reorderWidgets,
   resolveLayout,
+  setWidgetHeightLevel,
   setWidgetSpan,
 } from "@/lib/dashboard-layout";
 import { DashboardGrid } from "./DashboardGrid";
@@ -195,7 +196,9 @@ export function Dashboard() {
     fetchCustomers()
       .then((rows) => {
         if (!alive) return;
-        setTopCustomers([...rows].sort((a, b) => b.totalSpend - a.totalSpend).slice(0, 5));
+        // Sliced to 10 — the widget's tallest height level; the card itself
+        // slices further down to the user's chosen level.
+        setTopCustomers([...rows].sort((a, b) => b.totalSpend - a.totalSpend).slice(0, 10));
         setCustLoaded(true);
       })
       .catch(() => {
@@ -417,6 +420,16 @@ export function Dashboard() {
     [stats, health, currency],
   );
 
+  // Resolves a widget's current height level to its registry value (a row
+  // count for list widgets, a pixel height for the chart). Falls back to the
+  // widget's own middle level if the slot isn't shown/doesn't have one yet.
+  const heightValueFor = (id: string): number | undefined => {
+    const w = DASHBOARD_WIDGETS.find((d) => d.id === id);
+    if (!w?.heightLevels) return undefined;
+    const level = shown.find((s) => s.id === id)?.heightLevel ?? Math.ceil(w.heightLevels.length / 2);
+    return w.heightLevels[level - 1];
+  };
+
   const widgetBody: Record<string, React.ReactNode> = {
     "kpi-sales": (
       <KpiCard
@@ -503,7 +516,11 @@ export function Dashboard() {
         <div className="card-header">
           <h3>{range.from === range.to && range.from ? "Sales" : "Sales over range"}</h3>
         </div>
-        {loading ? <ChartFallback h={160} /> : <SalesChart data={chartData} currency={currency} />}
+        {loading ? (
+          <ChartFallback h={heightValueFor("sales-chart") ?? 160} />
+        ) : (
+          <SalesChart data={chartData} currency={currency} height={heightValueFor("sales-chart")} />
+        )}
       </div>
     ),
     "quick-actions": (
@@ -611,7 +628,7 @@ export function Dashboard() {
                 </div>
               </div>
             ))
-          : recs.map((r, idx) => {
+          : recs.slice(0, heightValueFor("business-boosters") ?? recs.length).map((r, idx) => {
               const act = r.action;
               return (
                 <div
@@ -644,14 +661,27 @@ export function Dashboard() {
             })}
       </div>
     ),
-    "recent-bills": <RecentBillsCard loading={loading} recent={recent} currency={currency} onView={openBill} />,
+    "recent-bills": (
+      <RecentBillsCard
+        loading={loading}
+        recent={recent.slice(0, heightValueFor("recent-bills") ?? recent.length)}
+        currency={currency}
+        onView={openBill}
+      />
+    ),
     "top-customers": (
-      <TopCustomersCard loaded={custLoaded} error={custError} customers={topCustomers} currency={currency} />
+      <TopCustomersCard
+        loaded={custLoaded}
+        error={custError}
+        customers={topCustomers.slice(0, heightValueFor("top-customers") ?? topCustomers.length)}
+        currency={currency}
+      />
     ),
     "stock-health": (
       <StockHealthCard
         loading={loading}
         health={health}
+        limit={heightValueFor("stock-health")}
         onRestock={(id) => {
           setStockInItemId(id);
           setStockInOpen(true);
@@ -792,10 +822,12 @@ export function Dashboard() {
         editing={editing}
         minSpanFor={(id) => DASHBOARD_WIDGETS.find((w) => w.id === id)?.minSpan ?? 1}
         mobileSpanFor={(id) => DASHBOARD_WIDGETS.find((w) => w.id === id)?.mobileSpan ?? 2}
+        heightLevelCountFor={(id) => DASHBOARD_WIDGETS.find((w) => w.id === id)?.heightLevels?.length}
         renderWidget={(id) => widgetBody[id] ?? null}
         onReorder={(activeId, overId) => setRawLayout((l) => reorderWidgets(l, activeId, overId))}
         onRemove={(id) => setRawLayout((l) => removeWidget(l, id))}
         onResize={(id, span) => setRawLayout((l) => setWidgetSpan(l, id, span))}
+        onResizeHeight={(id, level) => setRawLayout((l) => setWidgetHeightLevel(l, id, level))}
       />
 
       {addOpen && <ItemModal itemId={null} onClose={() => setAddOpen(false)} />}

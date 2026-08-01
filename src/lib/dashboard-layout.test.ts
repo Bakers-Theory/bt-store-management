@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   addWidget,
+  clampHeightLevelIndex,
   DASHBOARD_WIDGETS,
   isStoredLayout,
   removeWidget,
   reorderWidgets,
   resolveLayout,
+  setWidgetHeightLevel,
   setWidgetSpan,
   snapSpan,
 } from "./dashboard-layout";
@@ -86,7 +88,7 @@ describe("resolveLayout", () => {
       visible: [
         { id: "kpi-bills", span: 1 },
         { id: "kpi-sales", span: 1 },
-        { id: "recent-bills", span: 2 },
+        { id: "recent-bills", span: 2, heightLevel: 2 },
         { id: "kpi-items", span: 1 },
         { id: "kpi-lowstock", span: 1 },
         { id: "quick-actions", span: 1 },
@@ -186,7 +188,9 @@ describe("removeWidget / addWidget round-trip", () => {
       dismissed: [{ id: "stock-health", span: 3 }],
     };
     const after = addWidget(layout, "stock-health");
-    expect(after.visible).toContainEqual({ id: "stock-health", span: 3 });
+    // stock-health has heightLevels, so a remembered slot without one gets
+    // the default middle level filled in on re-add.
+    expect(after.visible).toContainEqual({ id: "stock-health", span: 3, heightLevel: 2 });
     expect(after.dismissed).toEqual([]);
   });
 
@@ -229,5 +233,92 @@ describe("setWidgetSpan", () => {
   it("is a no-op for an id not in the registry", () => {
     const layout: StoredLayout = { visible: [{ id: "kpi-sales", span: 1 }], dismissed: [] };
     expect(setWidgetSpan(layout, "not-a-widget", 3)).toBe(layout);
+  });
+});
+
+describe("clampHeightLevelIndex", () => {
+  it("rounds to the nearest integer", () => {
+    expect(clampHeightLevelIndex(2.4, 3)).toBe(2);
+    expect(clampHeightLevelIndex(2.6, 3)).toBe(3);
+  });
+
+  it("clamps to the level count at the top and 1 at the bottom", () => {
+    expect(clampHeightLevelIndex(99, 3)).toBe(3);
+    expect(clampHeightLevelIndex(0, 3)).toBe(1);
+    expect(clampHeightLevelIndex(-5, 3)).toBe(1);
+  });
+});
+
+describe("setWidgetHeightLevel", () => {
+  it("updates one widget's height level, clamped to its heightLevels range", () => {
+    const layout: StoredLayout = {
+      visible: [{ id: "recent-bills", span: 2, heightLevel: 2 }],
+      dismissed: [],
+    };
+    expect(setWidgetHeightLevel(layout, "recent-bills", 3).visible[0]).toEqual({
+      id: "recent-bills",
+      span: 2,
+      heightLevel: 3,
+    });
+    expect(setWidgetHeightLevel(layout, "recent-bills", 99).visible[0].heightLevel).toBe(3); // only 3 levels
+  });
+
+  it("is a no-op for a widget without heightLevels", () => {
+    const layout: StoredLayout = { visible: [{ id: "kpi-sales", span: 1 }], dismissed: [] };
+    expect(setWidgetHeightLevel(layout, "kpi-sales", 2)).toBe(layout);
+  });
+
+  it("is a no-op for an id not in the registry", () => {
+    const layout: StoredLayout = { visible: [{ id: "kpi-sales", span: 1 }], dismissed: [] };
+    expect(setWidgetHeightLevel(layout, "not-a-widget", 2)).toBe(layout);
+  });
+});
+
+describe("resolveLayout — heightLevel", () => {
+  it("defaults a height-capable widget missing heightLevel to its middle level", () => {
+    const saved: StoredLayout = { visible: [{ id: "recent-bills", span: 2 }], dismissed: [] };
+    const { shown } = resolveLayout(saved, user());
+    // recent-bills heightLevels: [3, 5, 10] → middle index 2
+    expect(shown.find((s) => s.id === "recent-bills")?.heightLevel).toBe(2);
+  });
+
+  it("clamps an out-of-range saved heightLevel", () => {
+    const saved: StoredLayout = {
+      visible: [{ id: "business-boosters", span: 2, heightLevel: 99 }],
+      dismissed: [],
+    };
+    const { shown } = resolveLayout(saved, user(["dashboard.view"]));
+    // business-boosters heightLevels: [3, 5, 9] → 3 levels, clamp to 3
+    expect(shown.find((s) => s.id === "business-boosters")?.heightLevel).toBe(3);
+  });
+
+  it("never adds heightLevel for a widget without heightLevels", () => {
+    const saved: StoredLayout = { visible: [{ id: "kpi-sales", span: 1, heightLevel: 2 }], dismissed: [] };
+    const { shown } = resolveLayout(saved, user());
+    expect(shown.find((s) => s.id === "kpi-sales")).toEqual({ id: "kpi-sales", span: 1 });
+  });
+});
+
+describe("addWidget — heightLevel round-trip", () => {
+  it("restores a remembered heightLevel when re-adding a dismissed widget", () => {
+    const layout: StoredLayout = {
+      visible: [],
+      dismissed: [{ id: "recent-bills", span: 2, heightLevel: 3 }],
+    };
+    const after = addWidget(layout, "recent-bills");
+    expect(after.visible).toContainEqual({ id: "recent-bills", span: 2, heightLevel: 3 });
+  });
+
+  it("defaults heightLevel to the middle level for a never-shown height-capable widget", () => {
+    const layout: StoredLayout = { visible: [], dismissed: [] };
+    const after = addWidget(layout, "stock-health");
+    // stock-health heightLevels: [3, 6, 10] → middle index 2
+    expect(after.visible).toContainEqual({ id: "stock-health", span: 2, heightLevel: 2 });
+  });
+
+  it("adding a widget without heightLevels never sets heightLevel", () => {
+    const layout: StoredLayout = { visible: [], dismissed: [] };
+    const after = addWidget(layout, "quick-actions");
+    expect(after.visible).toContainEqual({ id: "quick-actions", span: 1 });
   });
 });

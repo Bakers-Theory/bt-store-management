@@ -228,6 +228,9 @@ export type RoleLabel = "Owner" | PresetRole | "Custom" | "No access";
 export interface DashboardWidgetSlot {
   id: string;
   span: number;
+  /** 1-based index into the widget's `heightLevels` (registry, dashboard-layout.ts).
+   *  Only meaningful for widgets that declare `heightLevels`; omitted/ignored otherwise. */
+  heightLevel?: number;
 }
 
 /**

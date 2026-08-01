@@ -25,10 +25,13 @@ const verdictRank: Record<StockVerdict, number> = {
 export function StockHealthCard({
   loading,
   health,
+  limit,
   onRestock,
 }: {
   loading: boolean;
   health: StockHealthRow[];
+  /** Cap how many rows render (the count badge above still shows the full total). */
+  limit?: number;
   onRestock: (itemId: string) => void;
 }) {
   const attention = useMemo(
@@ -38,6 +41,7 @@ export function StockHealthCard({
         .sort((a, b) => verdictRank[a.verdict] - verdictRank[b.verdict]),
     [health],
   );
+  const shownAttention = limit === undefined ? attention : attention.slice(0, limit);
 
   return (
     <div className="card">
@@ -64,7 +68,7 @@ export function StockHealthCard({
       ) : attention.length === 0 ? (
         <div className="p-3 text-center text-[12.5px] text-ink-muted">All items are healthy</div>
       ) : (
-        attention.map((s) => {
+        shownAttention.map((s) => {
           const needsRestock = s.verdict === "Reorder now" || s.verdict === "Reorder soon";
           return (
             <div

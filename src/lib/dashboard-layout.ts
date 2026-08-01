@@ -14,6 +14,21 @@ export interface WidgetDef {
   mobileSpan: 1 | 2;
   /** Omitted = visible to anyone regardless of permission. */
   permission?: PermissionKey | PermissionKey[];
+  /** Ascending "how much to show" values (row counts for list widgets, pixel
+   *  height for a chart) a widget can be dragged between. Omitted = the widget
+   *  has no height control (its content is a fixed size, e.g. a KPI tile). */
+  heightLevels?: number[];
+}
+
+/** Middle level by default (1-based index into `heightLevels`) — e.g. index 2
+ *  of 3 levels ("Normal"), not the most cramped or most sprawling option. */
+function defaultHeightLevelIndex(levels: number[]): number {
+  return Math.ceil(levels.length / 2);
+}
+
+/** Clamp a 1-based height-level index to a widget's `heightLevels` range. */
+export function clampHeightLevelIndex(rawIndex: number, levelCount: number): number {
+  return Math.max(1, Math.min(levelCount, Math.round(rawIndex)));
 }
 
 export const DASHBOARD_WIDGETS: WidgetDef[] = [
@@ -21,14 +36,14 @@ export const DASHBOARD_WIDGETS: WidgetDef[] = [
   { id: "kpi-bills", title: "Bills", defaultSpan: 1, minSpan: 1, defaultVisible: true, mobileSpan: 1 },
   { id: "kpi-items", title: "Items Sold", defaultSpan: 1, minSpan: 1, defaultVisible: true, mobileSpan: 1 },
   { id: "kpi-lowstock", title: "Low Stock", defaultSpan: 1, minSpan: 1, defaultVisible: true, mobileSpan: 1 },
-  { id: "sales-chart", title: "Sales over range", defaultSpan: 3, minSpan: 2, defaultVisible: true, mobileSpan: 2, permission: "dashboard.view" },
+  { id: "sales-chart", title: "Sales over range", defaultSpan: 3, minSpan: 2, defaultVisible: true, mobileSpan: 2, permission: "dashboard.view", heightLevels: [120, 160, 220] },
   { id: "quick-actions", title: "Quick Actions", defaultSpan: 1, minSpan: 1, defaultVisible: true, mobileSpan: 2 },
   { id: "top-items", title: "Top items", defaultSpan: 2, minSpan: 1, defaultVisible: true, mobileSpan: 2, permission: "dashboard.view" },
   { id: "category-pl", title: "Sales & profit by category", defaultSpan: 2, minSpan: 1, defaultVisible: true, mobileSpan: 2, permission: "dashboard.view" },
-  { id: "business-boosters", title: "Business Boosters", defaultSpan: 2, minSpan: 1, defaultVisible: true, mobileSpan: 2, permission: "dashboard.view" },
-  { id: "recent-bills", title: "Recent Bills", defaultSpan: 2, minSpan: 1, defaultVisible: true, mobileSpan: 2 },
-  { id: "top-customers", title: "Top customers", defaultSpan: 2, minSpan: 1, defaultVisible: true, mobileSpan: 2, permission: "customers.view" },
-  { id: "stock-health", title: "Stock Health", defaultSpan: 2, minSpan: 1, defaultVisible: true, mobileSpan: 2, permission: "stock.view" },
+  { id: "business-boosters", title: "Business Boosters", defaultSpan: 2, minSpan: 1, defaultVisible: true, mobileSpan: 2, permission: "dashboard.view", heightLevels: [3, 5, 10] },
+  { id: "recent-bills", title: "Recent Bills", defaultSpan: 2, minSpan: 1, defaultVisible: true, mobileSpan: 2, heightLevels: [3, 5, 10] },
+  { id: "top-customers", title: "Top customers", defaultSpan: 2, minSpan: 1, defaultVisible: true, mobileSpan: 2, permission: "customers.view", heightLevels: [3, 5, 10] },
+  { id: "stock-health", title: "Stock Health", defaultSpan: 2, minSpan: 1, defaultVisible: true, mobileSpan: 2, permission: "stock.view", heightLevels: [3, 6, 10] },
   { id: "cashbook-summary", title: "Cashbook", defaultSpan: 2, minSpan: 1, defaultVisible: true, mobileSpan: 2, permission: "cashbook.view" },
   { id: "supplier-balance", title: "Suppliers & Purchases", defaultSpan: 2, minSpan: 1, defaultVisible: true, mobileSpan: 2, permission: "suppliers.financial" },
   { id: "attendance-today", title: "Attendance", defaultSpan: 2, minSpan: 1, defaultVisible: false, mobileSpan: 2, permission: "attendance.view" },
@@ -42,13 +57,12 @@ export const DEFAULT_LAYOUT: StoredLayout = {
 function isSlotArray(v: unknown): v is DashboardWidgetSlot[] {
   return (
     Array.isArray(v) &&
-    v.every(
-      (s) =>
-        s !== null &&
-        typeof s === "object" &&
-        typeof (s as { id: unknown }).id === "string" &&
-        typeof (s as { span: unknown }).span === "number",
-    )
+    v.every((s) => {
+      if (s === null || typeof s !== "object") return false;
+      const slot = s as { id: unknown; span: unknown; heightLevel?: unknown };
+      if (typeof slot.id !== "string" || typeof slot.span !== "number") return false;
+      return slot.heightLevel === undefined || typeof slot.heightLevel === "number";
+    })
   );
 }
 
@@ -83,7 +97,16 @@ export function resolveLayout(
   for (const slot of base) {
     const w = registryById.get(slot.id);
     if (!w || !widgetPasses(w, user)) continue;
-    shown.push({ id: slot.id, span: snapSpan(slot.span, w.minSpan) });
+    shown.push({
+      id: slot.id,
+      span: snapSpan(slot.span, w.minSpan),
+      ...(w.heightLevels && {
+        heightLevel: clampHeightLevelIndex(
+          slot.heightLevel ?? defaultHeightLevelIndex(w.heightLevels),
+          w.heightLevels.length,
+        ),
+      }),
+    });
     seen.add(slot.id);
   }
 
@@ -91,7 +114,11 @@ export function resolveLayout(
     if (seen.has(w.id) || !w.defaultVisible) continue;
     if (dismissedIds.has(w.id)) continue;
     if (!widgetPasses(w, user)) continue;
-    shown.push({ id: w.id, span: w.defaultSpan });
+    shown.push({
+      id: w.id,
+      span: w.defaultSpan,
+      ...(w.heightLevels && { heightLevel: defaultHeightLevelIndex(w.heightLevels) }),
+    });
     seen.add(w.id);
   }
 
@@ -110,14 +137,17 @@ export function removeWidget(layout: StoredLayout, id: string): StoredLayout {
   };
 }
 
-/** Add a widget (back), restoring its remembered span if it has one. */
+/** Add a widget (back), restoring its remembered span/height if it has one. */
 export function addWidget(layout: StoredLayout, id: string): StoredLayout {
   if (layout.visible.some((s) => s.id === id)) return layout;
   const remembered = layout.dismissed.find((d) => d.id === id);
   const w = DASHBOARD_WIDGETS.find((d) => d.id === id);
   const span = remembered?.span ?? w?.defaultSpan ?? 1;
+  const heightLevel = w?.heightLevels
+    ? (remembered?.heightLevel ?? defaultHeightLevelIndex(w.heightLevels))
+    : undefined;
   return {
-    visible: [...layout.visible, { id, span }],
+    visible: [...layout.visible, { id, span, ...(heightLevel !== undefined && { heightLevel }) }],
     dismissed: layout.dismissed.filter((d) => d.id !== id),
   };
 }
@@ -141,5 +171,18 @@ export function setWidgetSpan(layout: StoredLayout, id: string, span: number): S
   return {
     ...layout,
     visible: layout.visible.map((s) => (s.id === id ? { ...s, span: clamped } : s)),
+  };
+}
+
+/** Update one visible widget's height level (1-based index into its registry
+ *  `heightLevels`), clamped to that widget's range. No-op if the widget
+ *  doesn't declare `heightLevels` at all. */
+export function setWidgetHeightLevel(layout: StoredLayout, id: string, levelIndex: number): StoredLayout {
+  const w = DASHBOARD_WIDGETS.find((d) => d.id === id);
+  if (!w?.heightLevels) return layout;
+  const clamped = clampHeightLevelIndex(levelIndex, w.heightLevels.length);
+  return {
+    ...layout,
+    visible: layout.visible.map((s) => (s.id === id ? { ...s, heightLevel: clamped } : s)),
   };
 }
