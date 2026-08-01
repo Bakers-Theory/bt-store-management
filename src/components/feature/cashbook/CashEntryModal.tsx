@@ -110,7 +110,7 @@ export function CashEntryModal({
         )}
 
         <div className="grid grid-cols-2 gap-2.5">
-          <div>
+          <div className="min-w-0">
             <label className={labelCls} htmlFor="cb-date">Date</label>
             <input
               id="cb-date"
@@ -121,7 +121,7 @@ export function CashEntryModal({
               className={inputCls}
             />
           </div>
-          <div>
+          <div className="min-w-0">
             <label className={labelCls} htmlFor="cb-amount">Amount ({currency})</label>
             <input
               id="cb-amount"
