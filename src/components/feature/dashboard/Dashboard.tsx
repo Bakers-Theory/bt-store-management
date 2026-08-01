@@ -13,11 +13,16 @@ import {
   fetchReportData,
   fetchBill,
   fetchCustomers,
+  fetchCashbookSummary,
+  fetchSupplierSummaries,
   type DashboardStats,
 } from "@/lib/supabase-data";
 import { bucketSeries, categoryPLFrom, stockHealthFrom, recommendationsFrom } from "@/lib/analytics";
 import { last7Days, type DateRange } from "@/lib/date-range";
 import { expiryStatus } from "@/lib/expiry";
+import { periodLabel as cashPeriodLabel } from "@/lib/cashbook";
+import { summaryTotals, type SupplierTotals } from "@/lib/purchase";
+import { isoDateLocal } from "@/lib/excel";
 import { ItemModal } from "@/components/feature/stock/ItemModal";
 import { ViewBillModal } from "@/components/feature/bill/ViewBillModal";
 import { StockInForm } from "@/components/feature/stock/StockInForm";
@@ -28,8 +33,10 @@ import { KpiCard } from "./KpiCard";
 import { RecentBillsCard } from "./RecentBillsCard";
 import { TopCustomersCard } from "./TopCustomersCard";
 import { StockHealthCard } from "./StockHealthCard";
+import { CashbookSummaryCard } from "./CashbookSummaryCard";
+import { SupplierBalanceCard } from "./SupplierBalanceCard";
 import dynamic from "next/dynamic";
-import type { Bill, Customer } from "@/lib/types";
+import type { Bill, CashbookSummary, Customer } from "@/lib/types";
 
 // Charts pull in recharts (~110 kB), which no other route needs. Load them on
 // demand so it stays out of the initial dashboard bundle. Client-only (ssr:
@@ -171,6 +178,48 @@ export function Dashboard() {
           setCustLoaded(true);
           setCustError(true);
         }
+      });
+    return () => {
+      alive = false;
+    };
+  }, [user?.id]);
+
+  // Cashbook balances, scoped to the same range as the sales KPIs above so the
+  // "period sales/expenses" tiles agree with the rest of the page. On failure
+  // `cashError` is set so the card shows "couldn't load" instead of spinning
+  // forever.
+  const [cashSummary, setCashSummary] = useState<CashbookSummary | null>(null);
+  const [cashError, setCashError] = useState(false);
+  useEffect(() => {
+    if (!hasPermission(user, "cashbook.view") || invalidRange) return;
+    let alive = true;
+    setCashSummary(null);
+    setCashError(false);
+    fetchCashbookSummary(range)
+      .then((s) => {
+        if (alive) setCashSummary(s);
+      })
+      .catch(() => {
+        if (alive) setCashError(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [user?.id, range, invalidRange]);
+
+  // Supplier payables — a live, all-time snapshot (not range-scoped), same as
+  // the Suppliers tab's own balance view.
+  const [supplierTotals, setSupplierTotals] = useState<SupplierTotals | null>(null);
+  const [supplierError, setSupplierError] = useState(false);
+  useEffect(() => {
+    if (!hasPermission(user, "suppliers.financial")) return;
+    let alive = true;
+    fetchSupplierSummaries()
+      .then((rows) => {
+        if (alive) setSupplierTotals(summaryTotals(rows));
+      })
+      .catch(() => {
+        if (alive) setSupplierError(true);
       });
     return () => {
       alive = false;
@@ -579,22 +628,39 @@ export function Dashboard() {
 
           {/* RIGHT COLUMN */}
           <div className="flex min-w-0 flex-col gap-4">
+            {hasPermission(user, "cashbook.view") && (
+              <CashbookSummaryCard
+                loading={!cashSummary && !cashError}
+                error={cashError}
+                summary={cashSummary}
+                currency={currency}
+                periodLabel={cashPeriodLabel(range, isoDateLocal(new Date()))}
+              />
+            )}
+            {hasPermission(user, "suppliers.financial") && (
+              <SupplierBalanceCard
+                loading={!supplierTotals && !supplierError}
+                error={supplierError}
+                totals={supplierTotals}
+                currency={currency}
+              />
+            )}
+            {hasPermission(user, "stock.view") && (
+              <StockHealthCard
+              loading={loading}
+              health={health}
+              onRestock={(id) => {
+                setStockInItemId(id);
+                setStockInOpen(true);
+              }}
+              />
+            )}
             {hasPermission(user, "customers.view") && (
               <TopCustomersCard
                 loaded={custLoaded}
                 error={custError}
                 customers={topCustomers}
                 currency={currency}
-              />
-            )}
-            {hasPermission(user, "stock.view") && (
-              <StockHealthCard
-                loading={loading}
-                health={health}
-                onRestock={(id) => {
-                  setStockInItemId(id);
-                  setStockInOpen(true);
-                }}
               />
             )}
           </div>
