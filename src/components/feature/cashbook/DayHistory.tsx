@@ -78,8 +78,15 @@ export function DayHistory({
                     </span>
                   )}
                 </p>
+                {/* The counted cash is the day's closing balance — it is also the
+                    next day's opening, so the two figures lead the row. */}
+                <p className="text-[13px] font-semibold tabular-nums text-ink">
+                  Open {money(d.openingCash)}{" "}
+                  <span className="font-normal text-ink-muted">→</span> Close{" "}
+                  {money(d.countedCash)}
+                </p>
                 <p className="text-[11px] text-ink-muted">
-                  Expected {money(d.expectedCash)} · counted {money(d.countedCash)}
+                  Expected {money(d.expectedCash)}
                   {d.closedByName && ` · by ${d.closedByName}`}
                 </p>
               </div>

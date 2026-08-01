@@ -85,7 +85,7 @@ export function DayClose() {
 
           <div>
             <h2 className="mb-2 text-xs font-bold uppercase tracking-wide text-[#8a6a3c]">
-              Closed days
+              Opening &amp; closing balances
             </h2>
             <DayHistory days={days} canReopen={canReopen} onChanged={() => void load()} />
             {hasMore && (
