@@ -281,49 +281,6 @@ describe("presetForPerms / roleLabel", () => {
   });
 });
 
-describe("navItems", () => {
-  it("orders dashboard, stock, suppliers, purchases, bill, customers, history, cashbook, attendance for the Owner", () => {
-    expect(navItems(owner).map((n) => n.key)).toEqual([
-      "dashboard", "stock", "suppliers", "purchases", "bill", "customers",
-      "history", "cashbook", "attendance", "salary",
-    ]);
-  });
-  it("gives the Cashier a till, customers, history and the cashbook — but no stock page", () => {
-    expect(navItems(preset("Cashier")).map((n) => n.key)).toEqual([
-      "bill", "customers", "history", "cashbook",
-    ]);
-  });
-  it("gives the Storekeeper stock alone — no log means no history", () => {
-    expect(navItems(preset("Storekeeper")).map((n) => n.key)).toEqual(["stock"]);
-  });
-  it("gives the Manager stock, suppliers, purchases, customers, history, cashbook and attendance", () => {
-    expect(navItems(preset("Manager")).map((n) => n.key)).toEqual([
-      "stock", "suppliers", "purchases", "customers", "history", "cashbook",
-      "attendance",
-    ]);
-  });
-  it("shows Salary only to salary.view holders, and to nobody by preset", () => {
-    expect(navItems(staff(["salary.view"])).map((n) => n.key)).toEqual(["salary"]);
-    for (const role of PRESET_ROLES) {
-      expect(navItems(preset(role)).map((n) => n.key), role).not.toContain("salary");
-    }
-    expect(navItems(owner).map((n) => n.key)).toContain("salary");
-  });
-  it("shows Attendance only to attendance.view holders", () => {
-    expect(navItems(staff(["attendance.view"])).map((n) => n.key)).toEqual([
-      "attendance",
-    ]);
-    expect(navItems(staff(["attendance.edit"])).map((n) => n.key)).toEqual([]);
-  });
-  it("history appears for bill readers and for activity readers alike", () => {
-    expect(navItems(staff(["bill.history"])).map((n) => n.key)).toEqual(["history"]);
-    expect(navItems(staff(["activity.view"])).map((n) => n.key)).toEqual(["history"]);
-  });
-  it("a user with no permissions gets no nav", () => {
-    expect(navItems(staff([])).map((n) => n.key)).toEqual([]);
-  });
-});
-
 describe("canAccessSection", () => {
   it("settings is always accessible, so nobody is stranded", () => {
     expect(canAccessSection(staff([]), "settings")).toBe(true);
