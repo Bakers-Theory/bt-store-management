@@ -131,7 +131,7 @@ export function DateRangeFilter({
   }, [open]);
 
   return (
-    <div className="flex max-w-full items-center gap-2">
+    <div className="flex min-w-0 max-w-full items-center gap-2">
       <PresetPills value={value} onPick={onChange} />
       <div ref={ref} className="relative shrink-0">
         <button
