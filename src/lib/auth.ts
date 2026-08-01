@@ -1,5 +1,6 @@
 import type { PermissionKey, User, UserRole } from "./types";
 import { isPermissionKey } from "./permissions";
+import { isStoredLayout } from "./dashboard-layout";
 
 /** Synthetic email domain that backs the "User ID" login UX in Supabase Auth. */
 export const AUTH_EMAIL_DOMAIN = "bt.local";
@@ -15,10 +16,11 @@ export interface ProfileRow {
   name: string;
   role: UserRole;
   perms: string[] | null;
+  dashboard_layout: unknown;
 }
 
 /** Columns to select for a profile (kept in one place). */
-export const PROFILE_COLUMNS = "id,user_id,name,role,perms";
+export const PROFILE_COLUMNS = "id,user_id,name,role,perms,dashboard_layout";
 
 /**
  * Adapt a Supabase profile row to the `User` shape the app uses.
@@ -34,6 +36,6 @@ export function profileToUser(p: ProfileRow): User {
     name: p.name,
     role: p.role,
     permissions: (p.perms ?? []).filter(isPermissionKey) as PermissionKey[],
-    dashboardLayout: null,
+    dashboardLayout: isStoredLayout(p.dashboard_layout) ? p.dashboard_layout : null,
   };
 }
