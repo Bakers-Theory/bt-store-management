@@ -126,6 +126,15 @@ export const PERMISSION_CATALOG: PermissionGroup[] = [
     ],
   },
   {
+    title: "Expenses",
+    perms: [
+      { key: "expense.view", label: "View expenses", hint: "The expense register and its details" },
+      { key: "expense.create", label: "Record expenses", hint: "Log a spend — held for approval without the pay permission" },
+      { key: "expense.pay", label: "Approve & pay expenses", hint: "Record an expense as paid, or approve and reject others'" },
+      { key: "expense.cancel", label: "Void a paid expense", hint: "Cancel a paid expense and put the money back" },
+    ],
+  },
+  {
     title: "Store admin",
     perms: [
       { key: "store.settings", label: "Store profile & tax", hint: "Name, address, GST, tax rate, thresholds, logo" },
@@ -229,6 +238,9 @@ export const ROLE_PRESETS: Record<PresetRole, PermissionKey[]> = {
     "cashbook.view",
     "cashbook.entry",
     "cashbook.close",
+    "expense.view",
+    "expense.create",
+    "expense.pay",
   ],
   Cashier: [
     "bill.create",
@@ -240,6 +252,8 @@ export const ROLE_PRESETS: Record<PresetRole, PermissionKey[]> = {
     "customers.edit",
     "cashbook.view",
     "cashbook.close",
+    "expense.view",
+    "expense.create",
   ],
   Storekeeper: [
     "stock.view",

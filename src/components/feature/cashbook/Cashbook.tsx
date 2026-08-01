@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeftRight, Plus } from "lucide-react";
+import Link from "next/link";
+import { ArrowLeftRight, Plus, Receipt } from "lucide-react";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { useUIStore } from "@/lib/ui-store";
 import { hasPermission } from "@/lib/permissions";
@@ -131,6 +132,14 @@ export function Cashbook() {
         </div>
         {/* Day close is reached from the Today card below — one route, not two. */}
         <div className="flex gap-2">
+          {hasPermission(user, "expense.view") && (
+            <Link
+              href="/cashbook/expenses"
+              className="inline-flex items-center gap-1.5 rounded-[13px] border border-line bg-warm-white px-3.5 py-2.5 text-xs font-bold text-ink"
+            >
+              <Receipt size={14} /> Expenses
+            </Link>
+          )}
           {canEdit && (
             <>
               <button

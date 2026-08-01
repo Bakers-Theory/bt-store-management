@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@/utils/supabase/client";
-import type { Attendance, AttendanceStatus, AttendanceSummary, AdvanceBalance, Bakery, Batch, Bill, BillLine, BillStatus, CashAccount, CashCategory, CashDay, CashDayStatus, CashDaySummary, CashDirection, CashEntry, CashEntryFilters, CashEntryStatus, CashPaymentMode, CashSourceType, CashbookSummary, Customer, Employee, EmployeeSalary, Item, Log, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, StaffAdvance, StoreLists, Supplier, SupplierProduct, SupplierStatus, InvoiceStatus, PurchaseInvoice, PurchaseInvoiceLine, PurchaseMode, PurchaseReturn, PurchaseReturnLine, SupplierPayment, SupplierSummary, User } from "./types";
+import type { Attendance, AttendanceStatus, AttendanceSummary, AdvanceBalance, Bakery, Batch, Bill, BillLine, BillStatus, CashAccount, CashCategory, CashDay, CashDayStatus, CashDaySummary, CashDirection, CashEntry, CashEntryFilters, CashEntryStatus, CashPaymentMode, CashSourceType, CashbookSummary, Customer, Employee, EmployeeSalary, Expense, ExpenseBankMode, ExpenseEvent, ExpenseEventKind, ExpenseFilters, ExpenseInput, ExpenseMode, ExpenseStatus, Item, Log, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, StaffAdvance, StoreLists, Supplier, SupplierProduct, SupplierStatus, InvoiceStatus, PurchaseInvoice, PurchaseInvoiceLine, PurchaseMode, PurchaseReturn, PurchaseReturnLine, SupplierPayment, SupplierSummary, User } from "./types";
 import type { SupplierInput } from "./supplier";
 import { isPurchaseMode, type DraftLine } from "./purchase";
 import { isAttendanceStatus } from "./attendance";
@@ -2181,4 +2181,262 @@ export async function fetchCashDaySummary(onDate: string): Promise<CashDaySummar
     closingBank: r.closingBank === null ? null : Number(r.closingBank),
     status: r.status as CashDayStatus,
   };
+}
+
+// ─── Expenses ───────────────────────────────────────────────────────────────
+
+export interface ExpenseRow {
+  id: string;
+  expense_no: number;
+  expense_date: string;
+  paid_on: string | null;
+  category_id: string;
+  category_name: string;
+  category_group: string | null;
+  category_path: string;
+  vendor_name: string | null;
+  vendor_supplier_id: string | null;
+  vendor_display: string | null;
+  amount: string | number;
+  gst_included: boolean;
+  gst_amount: string | number;
+  payment_mode: string;
+  split_cash: string | number;
+  split_bank: string | number;
+  split_bank_mode: string | null;
+  invoice_no: string | null;
+  description: string | null;
+  paid_by_name: string | null;
+  approved_by_name: string | null;
+  status: string;
+  reject_reason: string | null;
+  cancel_reason: string | null;
+  created_by: string | null;
+  created_by_name: string | null;
+  created_at: string;
+  updated_by_name: string | null;
+  updated_at: string;
+}
+
+export interface ExpenseEventRow {
+  id: string;
+  expense_id: string;
+  event: string;
+  at: string;
+  actor_name: string | null;
+  detail: Record<string, unknown> | null;
+}
+
+export function mapExpense(r: ExpenseRow): Expense {
+  return {
+    id: r.id,
+    expenseNo: Number(r.expense_no),
+    expenseDate: r.expense_date,
+    paidOn: r.paid_on,
+    categoryId: r.category_id,
+    categoryName: r.category_name,
+    categoryGroup: r.category_group ?? "",
+    categoryPath: r.category_path,
+    vendorName: r.vendor_name ?? "",
+    vendorSupplierId: r.vendor_supplier_id,
+    vendorDisplay: r.vendor_display ?? "",
+    // Postgres numeric arrives as a string over the wire.
+    amount: Number(r.amount),
+    gstIncluded: r.gst_included,
+    gstAmount: Number(r.gst_amount),
+    paymentMode: r.payment_mode as ExpenseMode,
+    splitCash: Number(r.split_cash),
+    splitBank: Number(r.split_bank),
+    splitBankMode: (r.split_bank_mode ?? "") as ExpenseBankMode | "",
+    invoiceNo: r.invoice_no ?? "",
+    description: r.description ?? "",
+    paidByName: r.paid_by_name ?? "",
+    approvedByName: r.approved_by_name ?? "",
+    status: r.status as ExpenseStatus,
+    rejectReason: r.reject_reason ?? "",
+    cancelReason: r.cancel_reason ?? "",
+    createdById: r.created_by,
+    createdByName: r.created_by_name ?? "",
+    createdAt: r.created_at,
+    updatedByName: r.updated_by_name ?? "",
+    updatedAt: r.updated_at,
+  };
+}
+
+export function mapExpenseEvent(r: ExpenseEventRow): ExpenseEvent {
+  return {
+    id: r.id,
+    expenseId: r.expense_id,
+    event: r.event as ExpenseEventKind,
+    actorName: r.actor_name ?? "",
+    at: r.at,
+    detail: r.detail ?? {},
+  };
+}
+
+export interface ExpensesPage {
+  expenses: Expense[];
+  hasMore: boolean;
+}
+
+export async function fetchExpensesPage(
+  offset: number,
+  limit: number,
+  filters: ExpenseFilters = {},
+): Promise<ExpensesPage> {
+  const supabase = createClient();
+  let query = supabase
+    .from("expense_v")
+    .select("*")
+    .order("expense_date", { ascending: false })
+    .order("expense_no", { ascending: false });
+
+  // `expense_date` is a plain date — filters directly, no UTC conversion.
+  if (filters.from) query = query.gte("expense_date", filters.from);
+  if (filters.to) query = query.lte("expense_date", filters.to);
+  if (filters.categoryId) query = query.eq("category_id", filters.categoryId);
+  if (filters.vendor) query = query.ilike("vendor_display", `%${filters.vendor}%`);
+  if (filters.minAmount !== undefined) query = query.gte("amount", filters.minAmount);
+  if (filters.maxAmount !== undefined) query = query.lte("amount", filters.maxAmount);
+  if (filters.paymentMode) query = query.eq("payment_mode", filters.paymentMode);
+  if (filters.status) query = query.eq("status", filters.status);
+  if (filters.paidById) query = query.eq("paid_by", filters.paidById);
+
+  const q = filters.q ? orSafe(filters.q) : "";
+  if (q) {
+    if (/^\d+$/.test(q)) {
+      // A pure number matches the expense number exactly — typing "42" finds
+      // #42, not #42/#420 — while still OR-matching text that contains it.
+      query = query.or(
+        `expense_no.eq.${q},vendor_display.ilike.*${q}*,invoice_no.ilike.*${q}*,description.ilike.*${q}*`,
+      );
+    } else {
+      query = query.or(
+        `vendor_display.ilike.*${q}*,invoice_no.ilike.*${q}*,description.ilike.*${q}*`,
+      );
+    }
+  }
+
+  const { data, error } = await query.range(offset, offset + limit - 1);
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []) as ExpenseRow[];
+  return { expenses: rows.map(mapExpense), hasMore: rows.length === limit };
+}
+
+export async function fetchExpense(id: string): Promise<Expense | null> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("expense_v")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? mapExpense(data as ExpenseRow) : null;
+}
+
+export async function fetchExpenseEvents(expenseId: string): Promise<ExpenseEvent[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("expense_event_v")
+    .select("*")
+    .eq("expense_id", expenseId)
+    .order("at");
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as ExpenseEventRow[]).map(mapExpenseEvent);
+}
+
+export async function fetchExpenseVendors(): Promise<string[]> {
+  return rpc<string[]>("expense_vendors", {});
+}
+
+/**
+ * Backs the duplicate-invoice WARNING. A lookup, not a constraint: one supplier
+ * invoice legitimately splits across two expense records (#32 asks for a
+ * warning). `excludeId` keeps an expense from flagging itself while being edited.
+ */
+export async function fetchInvoiceNosLike(
+  invoiceNo: string,
+  excludeId?: string,
+): Promise<string[]> {
+  const trimmed = invoiceNo.trim();
+  if (trimmed === "") return [];
+  const supabase = createClient();
+  let query = supabase.from("expense_v").select("invoice_no").ilike("invoice_no", trimmed);
+  if (excludeId) query = query.neq("id", excludeId);
+  const { data, error } = await query.limit(5);
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as { invoice_no: string | null }[]).map((r) => r.invoice_no ?? "");
+}
+
+/** The ledger rows a document produced — one, or two for a Mixed payment. */
+export async function fetchCashEntriesForSource(
+  sourceType: string,
+  sourceId: string,
+): Promise<CashEntry[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("cash_entry_v")
+    .select("*")
+    .eq("source_type", sourceType)
+    .eq("source_id", sourceId)
+    .order("created_at");
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as CashEntryRow[]).map(mapCashEntry);
+}
+
+/** `payNow` is honoured only for a caller who holds expense.pay; the RPC re-checks. */
+export async function rpcSaveExpense(
+  p: ExpenseInput,
+  payNow: boolean,
+): Promise<string> {
+  return rpc<string>("save_expense", {
+    p: {
+      id: p.id ?? "",
+      expenseDate: p.expenseDate,
+      categoryId: p.categoryId,
+      vendorName: p.vendorName,
+      vendorSupplierId: p.vendorSupplierId ?? "",
+      amount: p.amount,
+      gstIncluded: p.gstIncluded,
+      gstAmount: p.gstAmount,
+      paymentMode: p.paymentMode,
+      splitCash: p.splitCash,
+      splitBank: p.splitBank,
+      splitBankMode: p.splitBankMode,
+      invoiceNo: p.invoiceNo,
+      description: p.description,
+      paidById: p.paidById,
+      payNow,
+    },
+  });
+}
+
+export async function rpcPayExpense(
+  id: string,
+  paidOn: string,
+  mode: ExpenseMode,
+  splitCash = 0,
+  splitBank = 0,
+  splitBankMode: ExpenseBankMode | "" = "",
+): Promise<void> {
+  await rpc<void>("pay_expense", {
+    p_id: id,
+    p_paid_on: paidOn,
+    p_mode: mode,
+    p_split_cash: splitCash,
+    p_split_bank: splitBank,
+    p_split_bank_mode: splitBankMode,
+  });
+}
+
+export async function rpcRejectExpense(id: string, reason: string): Promise<void> {
+  await rpc<void>("reject_expense", { p_id: id, p_reason: reason });
+}
+
+export async function rpcCancelExpense(id: string, reason: string): Promise<void> {
+  await rpc<void>("cancel_expense", { p_id: id, p_reason: reason });
+}
+
+export async function rpcDeleteExpense(id: string): Promise<void> {
+  await rpc<void>("delete_expense", { p_id: id });
 }

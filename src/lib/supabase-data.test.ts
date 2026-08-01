@@ -6,6 +6,8 @@ import {
   mapCashEntry,
   mapCustomer,
   mapBill,
+  mapExpense,
+  mapExpenseEvent,
   mapItem,
 } from "./supabase-data";
 
@@ -240,6 +242,102 @@ describe("mapBill", () => {
 
   it("maps a null customer_id (legacy bill) to undefined", () => {
     expect(mapBill({ ...baseRow, customer_id: null }, []).customerId).toBeUndefined();
+  });
+});
+
+describe("mapExpense", () => {
+  const row = {
+    id: "x1",
+    expense_no: 42,
+    expense_date: "2026-07-28",
+    paid_on: "2026-07-31",
+    category_id: "c1",
+    category_name: "Cake Boxes",
+    category_group: "Packaging",
+    category_path: "Packaging › Cake Boxes",
+    vendor_name: "Packaging Co",
+    vendor_supplier_id: null,
+    vendor_display: "Packaging Co",
+    // Postgres numeric arrives as a STRING over the wire.
+    amount: "5000.00",
+    gst_included: true,
+    gst_amount: "250.00",
+    payment_mode: "Mixed",
+    split_cash: "2000.00",
+    split_bank: "3000.00",
+    split_bank_mode: "UPI",
+    invoice_no: "PC-119",
+    description: "boxes",
+    paid_by_name: "Ravi",
+    approved_by_name: "Asha",
+    status: "paid",
+    reject_reason: "",
+    cancel_reason: "",
+    created_by: "u1",
+    created_by_name: "Ravi",
+    created_at: "2026-07-28T05:00:00.000Z",
+    updated_by_name: "Asha",
+    updated_at: "2026-07-31T09:00:00.000Z",
+  };
+
+  it("coerces every money column to a number", () => {
+    const e = mapExpense(row as never);
+    expect(e.amount).toBe(5000);
+    expect(e.gstAmount).toBe(250);
+    expect(e.splitCash).toBe(2000);
+    expect(e.splitBank).toBe(3000);
+  });
+
+  it("keeps the two dates distinct — incurred is not paid", () => {
+    const e = mapExpense(row as never);
+    expect(e.expenseDate).toBe("2026-07-28");
+    expect(e.paidOn).toBe("2026-07-31");
+  });
+
+  it("leaves paidOn null on a pending expense", () => {
+    const e = mapExpense({ ...row, paid_on: null, status: "pending" } as never);
+    expect(e.paidOn).toBeNull();
+    expect(e.status).toBe("pending");
+  });
+
+  it("prefers a linked supplier's name for the vendor display", () => {
+    const e = mapExpense({
+      ...row,
+      vendor_supplier_id: "s1",
+      vendor_display: "Amul Distributors",
+    } as never);
+    expect(e.vendorSupplierId).toBe("s1");
+    expect(e.vendorDisplay).toBe("Amul Distributors");
+    // The typed name survives alongside it.
+    expect(e.vendorName).toBe("Packaging Co");
+  });
+});
+
+describe("mapExpenseEvent", () => {
+  it("maps an edit's field diff through unchanged", () => {
+    const ev = mapExpenseEvent({
+      id: "e1",
+      expense_id: "x1",
+      event: "edited",
+      at: "2026-07-30T05:00:00.000Z",
+      actor_name: "Asha",
+      detail: { amount: [5000, 4800] },
+    } as never);
+    expect(ev.event).toBe("edited");
+    expect(ev.actorName).toBe("Asha");
+    expect(ev.detail).toEqual({ amount: [5000, 4800] });
+  });
+
+  it("defaults a null detail to an empty object", () => {
+    const ev = mapExpenseEvent({
+      id: "e2",
+      expense_id: "x1",
+      event: "created",
+      at: "2026-07-28T05:00:00.000Z",
+      actor_name: "Ravi",
+      detail: null,
+    } as never);
+    expect(ev.detail).toEqual({});
   });
 });
 

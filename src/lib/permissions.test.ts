@@ -142,7 +142,9 @@ describe("presets", () => {
   // Everything else in ARCHITECTURE.md §8's counter/back-office split stands.
   // Grew once more when daily closing landed. The counter counts the drawer;
   // that is the job. Reopening a counted day stays with Admin and the Owner.
-  it("Cashier and Manager overlap on customers, reading the cashbook and closing the day", () => {
+  // Final shape. The counter reads the cash book, counts the drawer, and logs
+  // small spends for approval. Paying, adjusting and reopening stay upstairs.
+  it("Cashier and Manager overlap on customers, the cashbook and logging expenses", () => {
     const shared = ROLE_PRESETS.Cashier.filter((k) =>
       ROLE_PRESETS.Manager.includes(k),
     );
@@ -151,7 +153,33 @@ describe("presets", () => {
       "cashbook.view",
       "customers.edit",
       "customers.view",
+      "expense.create",
+      "expense.view",
     ]);
+  });
+
+  it("a Cashier logs an expense but cannot pay or void one", () => {
+    const c = preset("Cashier");
+    expect(hasPermission(c, "expense.view")).toBe(true);
+    expect(hasPermission(c, "expense.create")).toBe(true);
+    // Without expense.pay, what they record lands as `pending` for approval.
+    expect(hasPermission(c, "expense.pay")).toBe(false);
+    expect(hasPermission(c, "expense.cancel")).toBe(false);
+  });
+
+  it("a Manager approves and pays, but voiding a paid expense is Admin only", () => {
+    const m = preset("Manager");
+    expect(hasPermission(m, "expense.pay")).toBe(true);
+    expect(hasPermission(m, "expense.cancel")).toBe(false);
+    expect(hasPermission(preset("Admin"), "expense.cancel")).toBe(true);
+    expect(hasPermission(owner, "expense.cancel")).toBe(true);
+  });
+
+  it("Storekeeper has no expense access at all", () => {
+    const s = preset("Storekeeper");
+    for (const k of ["expense.view", "expense.create", "expense.pay", "expense.cancel"] as const) {
+      expect(hasPermission(s, k), k).toBe(false);
+    }
   });
 
   it("a Cashier counts and closes the drawer but cannot reopen a closed day", () => {
@@ -382,6 +410,7 @@ describe("legacy group aliasing (mirrors has_perm in SQL)", () => {
       // Deliberately ungrouped: the legacy sales/inventory/analytics aliases
       // predate the cashbook, so no pre-0028 policy can reach these keys.
       "cashbook.close", "cashbook.entry", "cashbook.reopen", "cashbook.view",
+      "expense.cancel", "expense.create", "expense.pay", "expense.view",
       "purchases.create", "purchases.pay", "purchases.return",
       "salary.edit", "salary.pay", "salary.view",
       "staff.manage", "store.lists", "store.settings", "store.status",

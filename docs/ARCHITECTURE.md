@@ -427,6 +427,31 @@ deletion through `mark_salary_unpaid`, which does reverse.
 final signatures**, called by all nine money RPCs. Phase B fills in their bodies,
 which arms the day lock everywhere without touching a single call site.
 
+### Expenses: document and posting
+
+An expense is a **document**; a `cash_entry` is its **posting**. This is the same
+relationship `purchase_invoice` → `supplier_payment` already has. Three
+consequences worth knowing:
+
+- **The workflow is two paths, one hop.** A holder of `expense.pay` records a paid
+  expense in one step. Anyone else records a `pending` one that an approver
+  approves-*and*-pays in a single action. There is deliberately no
+  "approved but unpaid" state — that is a *payable*, and suppliers already own
+  payables here. `draft` and `approved` from #32 do not exist.
+- **A Mixed payment is one document and two ledger rows**, one per account,
+  sharing the expense's `source_id`. This is why `cash_entry_source_uniq` keys on
+  `account`, and why cancelling a Mixed expense writes two reversals.
+- **The supplier link is a firewall, not a join into payables.**
+  `supplier_summary_v` is computed from posted invoices, payments and credit notes
+  only. An expense linked to a supplier appears on their page as a separate
+  *Other expenses* line and never reduces what is owed. The form says so, because
+  it is the single easiest thing here to get wrong.
+
+`reject_expense` and `cancel_expense` are distinct on purpose: reject applies to a
+`pending` record and moves no money; cancel applies to a `paid` one and reverses
+the cash. A paid expense is never edited or deleted — editing would desynchronise
+the ledger.
+
 ### The staff API
 
 Creating/editing/deleting staff needs the Supabase **admin** API (create auth
@@ -470,6 +495,8 @@ Supabase SQL editor or `supabase db push`.
 | `attendance` | One row per employee per day (`0029`). Employees *are* `profiles` rows, minus the Owner (excluded from the roster, the view and the write RPC alike). Statuses are Present / Half Day / Leave / Holiday — there is no `absent`, because an unmarked day *is* the absence. A unique `(profile_id, on_date)` constraint makes "no duplicate entries" a database guarantee, so `set_attendance` upserts — re-marking a day *is* the edit path. |
 | `cash_category` | Two-level cashbook categories (`0044`). Eight `is_system` rows are what auto-posting names and cannot be archived; the rest are admin-managed like `store_lists`, seeded from issue #32's category table. Archived, never deleted, so a historical report keeps resolving a label. |
 | `cash_entry` | **The posting ledger** (`0045`). One row per movement of money in or out of `cash` or `bank`. `post_cash` is the only insert path; `reverse_cash` is the only correction path; triggers reject every hard delete and every edit of an auto-posted row. `source_id` is deliberately **not** a FK — `delete_bill` hard-deletes its bill and the ledger row must survive as history. |
+| `expense` | The expense **document** (`0051`). Carries the workflow (`pending → paid \| rejected`, `paid → cancelled`), GST, vendor, invoice number and the Mixed-payment split. Cash moves only at `paid`, through `pay_expense` → `post_cash`. `expense_date` is when the cost was incurred; **`paid_on` is what the ledger uses**, because an invoice dated the 28th paid on the 31st must hit the 31st's cash book. `vendor_supplier_id` is informational — it never enters `supplier_summary_v`. |
+| `expense_event` | The approval and edit history (`0051`). One row per state change, plus a field-level `jsonb` diff on every edit — the same shape `/api/staff/route.ts` writes. Mirrored into `activity_log` so the Activity page needs no second audit surface. |
 | `store_settings.timezone` | The store's calendar (`0044`), read by `store_today()`. `current_date` is the server's UTC date, which is the wrong day for part of every morning; the paths that correct a posting (`cancel_bill`, `mark_salary_unpaid`) take no `p_tz` and cannot be given one. |
 
 ### Views (read surface)
@@ -480,7 +507,10 @@ Supabase SQL editor or `supabase db push`.
 `attendance_v` (with employee + marker names, gated on `attendance.view`),
 `salary_payment_v` (with employee + recorder names, gated on `salary.view`),
 `cash_entry_v` (category path, creator, source handle, derived status and a
-window-function running balance, gated on `cashbook.view`), `cash_category_v`.
+window-function running balance, gated on `cashbook.view`), `cash_category_v`,
+`expense_v` (category path, vendor display — a linked supplier's name wins over
+the typed one — and actor names, gated on `expense.view`), `expense_event_v`
+(the history with `actor_name`, same gate).
 
 ### Migration history (chronological highlights)
 
@@ -501,7 +531,11 @@ approved advance · `0035`–`0043` suppliers & purchasing (master, items,
 invoices, payments, returns, batch source, cancellations) · `0044` cashbook
 categories + store timezone · `0045` the cash ledger · `0046` ledger backfill ·
 `0047` posting hooks into the existing money RPCs · `0048` manual entries &
-transfers.
+transfers · `0049` the day close (`cash_day`, the real `assert_cash_day_open`
+body, reopen) · `0050` bank closing on the day close (`opening_bank` /
+`expected_bank` / `closing_bank`, `adjust_bank_balance`) · `0051` the expense
+document (`expense`, `expense_event`, `expense_v`) · `0052` the expense workflow
+RPCs.
 
 > The full consolidated schema — every table's columns, the views, the complete
 > RPC catalog, the privacy/grants model, and deep-dives on the batch/FIFO and

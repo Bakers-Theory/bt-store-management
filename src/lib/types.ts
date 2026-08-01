@@ -58,6 +58,11 @@ export type PermissionKey =
   | "cashbook.entry"
   | "cashbook.close"
   | "cashbook.reopen"
+  // Expenses
+  | "expense.view"
+  | "expense.create"
+  | "expense.pay"
+  | "expense.cancel"
   // Store admin
   | "store.settings"
   | "store.status"
@@ -717,5 +722,110 @@ export interface CashEntryFilters {
   categoryId?: string;
   paymentMode?: CashPaymentMode;
   sourceType?: CashSourceType;
+  q?: string;
+}
+
+// ─── Expenses ───────────────────────────────────────────────────────────────
+
+/**
+ * Four states, not #32's six. `draft` and `approved` are deliberately absent:
+ * an "approved but unpaid" expense IS a payable, and suppliers already own
+ * payables in this app.
+ */
+export type ExpenseStatus = "pending" | "paid" | "rejected" | "cancelled";
+
+/** `Mixed` means part cash, part bank — two ledger rows, one document. */
+export type ExpenseMode = "Cash" | "UPI" | "Bank Transfer" | "Mixed";
+
+/** The bank leg of a Mixed payment. The cash leg is always `Cash`. */
+export type ExpenseBankMode = "UPI" | "Bank Transfer";
+
+export interface Expense {
+  id: string;
+  expenseNo: number;
+  /** When the cost was incurred. Reports group by this. */
+  expenseDate: string; // "YYYY-MM-DD"
+  /** When cash actually moved. The LEDGER uses this. Null until paid. */
+  paidOn: string | null;
+  categoryId: string;
+  categoryName: string;
+  categoryGroup: string;
+  categoryPath: string;
+  vendorName: string;
+  /** Informational only — NEVER affects `supplier_summary_v`. */
+  vendorSupplierId: string | null;
+  /** The linked supplier's name when linked, else `vendorName`. */
+  vendorDisplay: string;
+  /** Gross, GST-inclusive. This is what posts to cash. */
+  amount: number;
+  gstIncluded: boolean;
+  /** The tax component within `amount`, not on top of it. */
+  gstAmount: number;
+  paymentMode: ExpenseMode;
+  splitCash: number;
+  splitBank: number;
+  splitBankMode: ExpenseBankMode | "";
+  invoiceNo: string;
+  description: string;
+  paidByName: string;
+  approvedByName: string;
+  status: ExpenseStatus;
+  rejectReason: string;
+  cancelReason: string;
+  createdById: string | null;
+  createdByName: string;
+  createdAt: string;
+  updatedByName: string;
+  updatedAt: string;
+}
+
+export type ExpenseEventKind =
+  | "created"
+  | "edited"
+  | "approved"
+  | "rejected"
+  | "paid"
+  | "cancelled"
+  | "deleted";
+
+export interface ExpenseEvent {
+  id: string;
+  expenseId: string;
+  event: ExpenseEventKind;
+  actorName: string;
+  at: string;
+  /** Field-level diff for `edited`, the reason text for `rejected`/`cancelled`. */
+  detail: Record<string, unknown>;
+}
+
+export interface ExpenseInput {
+  id?: string;
+  expenseDate: string;
+  categoryId: string;
+  vendorName: string;
+  vendorSupplierId: string | null;
+  amount: number;
+  gstIncluded: boolean;
+  gstAmount: number;
+  paymentMode: ExpenseMode;
+  splitCash: number;
+  splitBank: number;
+  splitBankMode: ExpenseBankMode | "";
+  invoiceNo: string;
+  description: string;
+  /** Empty means "me". */
+  paidById: string;
+}
+
+export interface ExpenseFilters {
+  from?: string;
+  to?: string;
+  categoryId?: string;
+  vendor?: string;
+  minAmount?: number;
+  maxAmount?: number;
+  paymentMode?: ExpenseMode;
+  status?: ExpenseStatus;
+  paidById?: string;
   q?: string;
 }
