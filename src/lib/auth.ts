@@ -34,5 +34,6 @@ export function profileToUser(p: ProfileRow): User {
     name: p.name,
     role: p.role,
     permissions: (p.perms ?? []).filter(isPermissionKey) as PermissionKey[],
+    dashboardLayout: null,
   };
 }

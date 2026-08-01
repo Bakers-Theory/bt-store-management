@@ -15,10 +15,10 @@ import {
 import type { PermissionKey, PresetRole, User } from "./types";
 
 const owner: User = {
-  id: "owner", name: "O", userId: "o", role: "Owner", permissions: [],
+  id: "owner", name: "O", userId: "o", role: "Owner", permissions: [], dashboardLayout: null
 };
 const staff = (permissions: PermissionKey[]): User => ({
-  id: "s", name: "S", userId: "s", role: "Staff", permissions,
+  id: "s", name: "S", userId: "s", role: "Staff", permissions, dashboardLayout: null
 });
 const preset = (role: PresetRole): User => staff(ROLE_PRESETS[role]);
 
@@ -446,6 +446,7 @@ describe("advance permissions", () => {
     name: "Staff",
     role: "Staff",
     permissions: perms,
+    dashboardLayout: null,
   });
 
   it("puts all four keys in the catalogue", () => {
@@ -468,7 +469,7 @@ describe("advance permissions", () => {
 
   it("still gives the Owner everything", () => {
     const owner: User = {
-      id: "o", userId: "owner", name: "Owner", role: "Owner", permissions: [],
+      id: "o", userId: "owner", name: "Owner", role: "Owner", permissions: [], dashboardLayout: null,
     };
     expect(hasPermission(owner, "advance.approve")).toBe(true);
     expect(hasPermission(owner, "advance.delete")).toBe(true);
@@ -493,7 +494,7 @@ describe("advance permissions", () => {
 
 describe("cashbook reports permissions", () => {
   const staff = (perms: PermissionKey[]): User => ({
-    id: "u1", name: "Staff", userId: "staff", role: "Staff", permissions: perms,
+    id: "u1", name: "Staff", userId: "staff", role: "Staff", permissions: perms, dashboardLayout: null,
   });
 
   it("cashbook reports are supervisory: Admin, Manager and Owner", () => {
@@ -514,6 +515,7 @@ describe("cashbook reports permissions", () => {
       userId: "9",
       role: "Staff",
       permissions: ["cashbook.reports"],
+      dashboardLayout: null,
     };
     expect(canAccessSection(u, "reports")).toBe(true);
     expect(defaultRoute(u)).toBe("/reports");
@@ -522,7 +524,7 @@ describe("cashbook reports permissions", () => {
 
 describe("suppliers & purchasing permissions", () => {
   const staff = (perms: PermissionKey[]): User => ({
-    id: "u1", name: "Staff", userId: "staff", role: "Staff", permissions: perms,
+    id: "u1", name: "Staff", userId: "staff", role: "Staff", permissions: perms, dashboardLayout: null,
   });
 
   it("puts all nine keys in one catalogue group", () => {

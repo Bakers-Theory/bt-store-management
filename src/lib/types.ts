@@ -224,6 +224,23 @@ export type PresetRole = "Admin" | "Manager" | "Cashier" | "Storekeeper";
 /** What the UI shows as someone's role. Derived, never stored. */
 export type RoleLabel = "Owner" | PresetRole | "Custom" | "No access";
 
+/** One widget's position/width within the dashboard grid. */
+export interface DashboardWidgetSlot {
+  id: string;
+  span: number;
+}
+
+/**
+ * A user's saved dashboard layout. `visible` is what's rendered, in order.
+ * `dismissed` holds widgets the user explicitly removed — kept separate from
+ * "just not in visible" so a removed default-visible widget doesn't silently
+ * reappear the moment a new widget ships or a permission changes. See
+ * docs/superpowers/specs/2026-08-01-dashboard-customizable-layout-design.md.
+ */
+export interface StoredLayout {
+  visible: DashboardWidgetSlot[];
+  dismissed: DashboardWidgetSlot[];
+}
 export interface User {
   id: string;
   name: string;
@@ -231,6 +248,8 @@ export interface User {
   role: UserRole;
   /** Granular grants. Empty for the Owner, who bypasses the check entirely. */
   permissions: PermissionKey[];
+  /** null = use the default layout. */
+  dashboardLayout: StoredLayout | null;
 }
 
 /**
