@@ -779,7 +779,7 @@ export function Dashboard() {
             </button>
           )}
         </div>
-        <div className="ml-auto flex flex-col items-end gap-1 lg:ml-0">
+        <div className="ml-auto flex w-full min-w-0 flex-col items-end gap-1 lg:ml-0 lg:w-auto">
           <DateRangeFilter value={range} onChange={setRange} />
           {invalidRange && (
             <p className="text-xs font-semibold text-danger">&quot;From&quot; date must be before &quot;To&quot; date.</p>
