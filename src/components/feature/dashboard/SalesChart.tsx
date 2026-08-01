@@ -9,12 +9,14 @@ const GRAY = "var(--color-line-strong)";
 export const SalesChart = memo(function SalesChart({
   data,
   currency,
+  height = 160,
 }: {
   data: { label: string; total: number }[];
   currency: string;
+  height?: number;
 }) {
   return (
-    <div className="h-[160px] w-full">
+    <div className="w-full" style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 8, right: 4, left: 4, bottom: 0 }}>
           <XAxis
