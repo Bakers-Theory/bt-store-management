@@ -5,10 +5,12 @@ import type { Attendance, AttendanceStatus, AttendanceSummary, AdvanceBalance, B
 import type { SupplierInput } from "./supplier";
 import { isPurchaseMode, type DraftLine } from "./purchase";
 import { isAttendanceStatus } from "./attendance";
-import { isSalaryMode } from "./salary";
+import { isSalaryMode, round2 } from "./salary";
 import type { ProfileRow } from "./auth";
 import { PROFILE_COLUMNS, profileToUser } from "./auth";
 import type { DateRange } from "./date-range";
+import { isoDateLocal } from "./excel";
+import type { CashbookReportData } from "./cashbook-report";
 
 // ─── Row shapes (DB) ────────────────────────────────────────────────────────
 interface ItemRow {
@@ -2439,4 +2441,119 @@ export async function rpcCancelExpense(id: string, reason: string): Promise<void
 
 export async function rpcDeleteExpense(id: string): Promise<void> {
   await rpc<void>("delete_expense", { p_id: id });
+}
+
+/**
+ * The one unbounded fetch in the cashbook, deliberately — the same exception
+ * `fetchReportData` already is. Called only when a report is generated, never on
+ * page load.
+ *
+ * Three things it fetches that the builders cannot derive:
+ *   - `openingCash` / `openingBank`: the balances strictly BEFORE the range.
+ *     Summing the whole prior ledger client-side would be unbounded.
+ *   - `prevEntries`: the immediately preceding window of EQUAL length, for the
+ *     income-vs-expense comparison.
+ *   - `cogs`: null unless the caller holds dashboard.profit.
+ */
+export async function fetchCashbookReportData(
+  shop: CashbookReportData["shop"],
+  range: { from: string | null; to: string | null },
+): Promise<CashbookReportData> {
+  const supabase = createClient();
+
+  let entriesQ = supabase.from("cash_entry_v").select("*").order("on_date").order("created_at");
+  if (range.from) entriesQ = entriesQ.gte("on_date", range.from);
+  if (range.to) entriesQ = entriesQ.lte("on_date", range.to);
+
+  let daysQ = supabase.from("cash_day_v").select("*").order("on_date");
+  if (range.from) daysQ = daysQ.gte("on_date", range.from);
+  if (range.to) daysQ = daysQ.lte("on_date", range.to);
+
+  let expQ = supabase.from("expense_v").select("*").order("expense_date");
+  if (range.from) expQ = expQ.gte("expense_date", range.from);
+  if (range.to) expQ = expQ.lte("expense_date", range.to);
+
+  // The preceding window of equal length. Unbounded ranges have no "previous".
+  let prevQ = supabase.from("cash_entry_v").select("*").order("on_date");
+  if (range.from && range.to) {
+    const from = new Date(`${range.from}T00:00:00`);
+    const to = new Date(`${range.to}T00:00:00`);
+    const days = Math.round((to.getTime() - from.getTime()) / 86_400_000) + 1;
+    const prevTo = new Date(from);
+    prevTo.setDate(prevTo.getDate() - 1);
+    const prevFrom = new Date(prevTo);
+    prevFrom.setDate(prevFrom.getDate() - (days - 1));
+    prevQ = prevQ.gte("on_date", isoDateLocal(prevFrom)).lte("on_date", isoDateLocal(prevTo));
+  } else {
+    // No comparison period for an open-ended range: return nothing rather than
+    // silently comparing against all of history.
+    prevQ = prevQ.eq("on_date", "1900-01-01");
+  }
+
+  const [entriesR, daysR, expR, prevR, opening, cogs] = await Promise.all([
+    entriesQ,
+    daysQ,
+    expQ,
+    prevQ,
+    fetchOpeningBalances(range.from),
+    fetchCashbookCogs(range),
+  ]);
+
+  for (const r of [entriesR, daysR, expR, prevR]) {
+    if (r.error) throw new Error(r.error.message);
+  }
+
+  return {
+    shop,
+    entries: ((entriesR.data ?? []) as CashEntryRow[]).map(mapCashEntry),
+    days: ((daysR.data ?? []) as CashDayRow[]).map(mapCashDay),
+    expenses: ((expR.data ?? []) as ExpenseRow[]).map(mapExpense),
+    prevEntries: ((prevR.data ?? []) as CashEntryRow[]).map(mapCashEntry),
+    openingCash: opening.cash,
+    openingBank: opening.bank,
+    cogs,
+  };
+}
+
+/**
+ * Balances strictly before `from`. With no `from` the range starts at the
+ * beginning of the ledger, so both openings are zero.
+ */
+async function fetchOpeningBalances(
+  from: string | null,
+): Promise<{ cash: number; bank: number }> {
+  if (!from) return { cash: 0, bank: 0 };
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("cash_entry_v")
+    .select("account, direction, amount")
+    .lt("on_date", from);
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []) as {
+    account: string;
+    direction: string;
+    amount: string | number;
+  }[];
+  const net = (account: string) =>
+    round2(
+      rows
+        .filter((r) => r.account === account)
+        .reduce(
+          (s, r) => s + (r.direction === "in" ? Number(r.amount) : -Number(r.amount)),
+          0,
+        ),
+    );
+  return { cash: net("cash"), bank: net("bank") };
+}
+
+/** Null without `dashboard.profit` — the RPC decides, not the client. */
+export async function fetchCashbookCogs(range: {
+  from: string | null;
+  to: string | null;
+}): Promise<number | null> {
+  const v = await rpc<string | number | null>("cashbook_cogs", {
+    p_from: range.from,
+    p_to: range.to,
+  });
+  return v === null ? null : Number(v);
 }
