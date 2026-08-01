@@ -75,7 +75,7 @@ export function SupplierBalanceCard({
             icon={<ArrowUpCircle size={13} />}
             tone="out"
           />
-          <Tile label="Suppliers owing" value={String(totals.suppliersOwing)} icon={<Truck size={13} />} />
+          <Tile label="Owing" value={String(totals.suppliersOwing)} icon={<Truck size={13} />} />
           <Tile
             label="Total purchases"
             value={money(totals.purchases)}

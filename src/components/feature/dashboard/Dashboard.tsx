@@ -2,12 +2,23 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Lightbulb, Download, Receipt, Plus, ArrowUp, ArrowDown, Loader2 } from "lucide-react";
+import {
+  AlertTriangle,
+  Lightbulb,
+  Download,
+  Receipt,
+  Plus,
+  ArrowUp,
+  ArrowDown,
+  Loader2,
+  LayoutGrid,
+  RotateCcw,
+  Check,
+} from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { useUIStore } from "@/lib/ui-store";
 import { hasPermission } from "@/lib/permissions";
-import { exportReport } from "@/lib/excel";
 import {
   fetchDashboardStats,
   fetchReportData,
@@ -15,8 +26,22 @@ import {
   fetchCustomers,
   fetchCashbookSummary,
   fetchSupplierSummaries,
+  fetchAttendanceForDate,
+  fetchEmployees,
+  saveDashboardLayout,
   type DashboardStats,
 } from "@/lib/supabase-data";
+import {
+  DASHBOARD_WIDGETS,
+  DEFAULT_LAYOUT,
+  addWidget,
+  removeWidget,
+  reorderWidgets,
+  resolveLayout,
+  setWidgetSpan,
+} from "@/lib/dashboard-layout";
+import { DashboardGrid } from "./DashboardGrid";
+import { AttendanceCard, type AttendanceCounts } from "./AttendanceCard";
 import { bucketSeries, categoryPLFrom, stockHealthFrom, recommendationsFrom } from "@/lib/analytics";
 import { last7Days, type DateRange } from "@/lib/date-range";
 import { expiryStatus } from "@/lib/expiry";
@@ -36,7 +61,7 @@ import { StockHealthCard } from "./StockHealthCard";
 import { CashbookSummaryCard } from "./CashbookSummaryCard";
 import { SupplierBalanceCard } from "./SupplierBalanceCard";
 import dynamic from "next/dynamic";
-import type { Bill, CashbookSummary, Customer } from "@/lib/types";
+import type { Bill, CashbookSummary, Customer, StoredLayout } from "@/lib/types";
 
 // Charts pull in recharts (~110 kB), which no other route needs. Load them on
 // demand so it stays out of the initial dashboard bundle. Client-only (ssr:
@@ -207,6 +232,52 @@ export function Dashboard() {
     };
   }, [user?.id, range, invalidRange]);
 
+  // The user's dashboard layout — order, width, and visible/dismissed widgets.
+  // Starts from whatever the profile loaded with; resolved against the
+  // registry (permissions, new/removed widgets) on every render via
+  // resolveLayout, never rendered directly.
+  const [rawLayout, setRawLayout] = useState<StoredLayout>(user?.dashboardLayout ?? DEFAULT_LAYOUT);
+  const [editing, setEditing] = useState(false);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+
+  // Re-sync when the signed-in user (and therefore their saved layout)
+  // changes — e.g. a fresh login after a different user's session.
+  useEffect(() => {
+    setRawLayout(user?.dashboardLayout ?? DEFAULT_LAYOUT);
+  }, [user?.id]);
+
+  const { shown, addable } = useMemo(
+    () => (user ? resolveLayout(rawLayout, user) : { shown: [], addable: [] }),
+    [rawLayout, user],
+  );
+
+  // Today's attendance tallies — only fetched if the widget is actually on
+  // the layout, since it's opt-in and most users won't have added it.
+  const [attendanceCounts, setAttendanceCounts] = useState<AttendanceCounts | null>(null);
+  const [attendanceError, setAttendanceError] = useState(false);
+  const attendanceShown = shown.some((s) => s.id === "attendance-today");
+  useEffect(() => {
+    if (!attendanceShown || !hasPermission(user, "attendance.view")) return;
+    let alive = true;
+    const today = isoDateLocal(new Date());
+    Promise.all([fetchAttendanceForDate(today), fetchEmployees()])
+      .then(([records, employees]) => {
+        if (!alive) return;
+        setAttendanceCounts({
+          present: records.filter((r) => r.status === "present").length,
+          halfDay: records.filter((r) => r.status === "half_day").length,
+          leaveOrHoliday: records.filter((r) => r.status === "leave" || r.status === "holiday").length,
+          unmarked: Math.max(0, employees.length - records.length),
+        });
+      })
+      .catch(() => {
+        if (alive) setAttendanceError(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [user?.id, attendanceShown]);
+
   // Supplier payables — a live, all-time snapshot (not range-scoped), same as
   // the Suppliers tab's own balance view.
   const [supplierTotals, setSupplierTotals] = useState<SupplierTotals | null>(null);
@@ -229,6 +300,20 @@ export function Dashboard() {
   const openBill = async (id: string) => {
     const b = await fetchBill(id);
     if (b) setViewBill(b);
+  };
+
+  const toggleEditing = async () => {
+    if (editing) {
+      setEditing(false);
+      setAddMenuOpen(false);
+      try {
+        await saveDashboardLayout(rawLayout);
+      } catch {
+        toast("Couldn't save your layout", "error");
+      }
+    } else {
+      setEditing(true);
+    }
   };
 
   // The page shell renders immediately. `loading` is true only on a cold load
@@ -331,13 +416,345 @@ export function Dashboard() {
         : [],
     [stats, health, currency],
   );
+
+  const widgetBody: Record<string, React.ReactNode> = {
+    "kpi-sales": (
+      <KpiCard
+        variant="hero"
+        label="Sales"
+        corner={showDelta && <DeltaBadge delta={salesDelta} onHero />}
+        value={
+          loading ? (
+            <div aria-hidden className="mt-2 h-8 w-24 animate-pulse rounded-md bg-white/25" />
+          ) : (
+            <div className="num mt-2 text-[28px] font-extrabold tracking-tight">
+              {currency}
+              {rangeSales.toFixed(0)}
+            </div>
+          )
+        }
+        subtitle={
+          <div className="mt-0.5 text-[11.5px] opacity-70">
+            {loading ? (
+              <div aria-hidden className="mt-1 h-3 w-24 animate-pulse rounded bg-white/20" />
+            ) : showDelta ? (
+              <>
+                vs {currency}
+                {prevSales.toFixed(0)}
+                {prevPeriodLabel ? ` · ${prevPeriodLabel}` : " prev period"}
+              </>
+            ) : (
+              <>in selected range</>
+            )}
+          </div>
+        }
+      />
+    ),
+    "kpi-bills": (
+      <KpiCard
+        label="Bills"
+        corner={!loading && showBillsDelta && <DeltaBadge delta={billsDelta} />}
+        value={
+          loading ? (
+            <Skeleton className="mt-2 h-8 w-16" />
+          ) : (
+            <div className="num mt-2 text-[28px] font-extrabold tracking-tight text-ink">{billsInRange}</div>
+          )
+        }
+        subtitle={
+          <div className="mt-0.5 text-[11.5px] text-ink-light">
+            {loading ? (
+              <Skeleton className="mt-1 h-3 w-20" />
+            ) : (
+              <>
+                avg {currency}
+                {avgBill.toFixed(0)} / bill
+              </>
+            )}
+          </div>
+        }
+      />
+    ),
+    "kpi-items": (
+      <KpiCard
+        label="Items Sold"
+        corner={!loading && showItemsDelta && <DeltaBadge delta={itemsDelta} />}
+        value={
+          loading ? (
+            <Skeleton className="mt-2 h-8 w-16" />
+          ) : (
+            <div className="num mt-2 text-[28px] font-extrabold tracking-tight text-ink">{itemsSold}</div>
+          )
+        }
+        subtitle={<div className="mt-0.5 text-[11.5px] text-ink-light">across all categories</div>}
+      />
+    ),
+    "kpi-lowstock": (
+      <KpiCard
+        variant="warn"
+        label="Low Stock"
+        corner={<AlertTriangle size={16} />}
+        value={<div className="num mt-2 text-[28px] font-extrabold tracking-tight text-warn">{lowStock}</div>}
+        subtitle={<div className="mt-0.5 text-[11.5px] text-warn">items need restock</div>}
+      />
+    ),
+    "sales-chart": (
+      <div className="card">
+        <div className="card-header">
+          <h3>{range.from === range.to && range.from ? "Sales" : "Sales over range"}</h3>
+        </div>
+        {loading ? <ChartFallback h={160} /> : <SalesChart data={chartData} currency={currency} />}
+      </div>
+    ),
+    "quick-actions": (
+      <div className="card">
+        <div className="card-header">
+          <h3>Quick Actions</h3>
+        </div>
+        <div className="flex flex-col gap-2.5">
+          {hasPermission(user, "bill.create") && (
+            <button
+              className="btn-primary flex items-center justify-center gap-2 p-3.5 text-sm"
+              onClick={() => router.push("/bill")}
+            >
+              <Receipt size={16} /> Create new bill
+            </button>
+          )}
+          {hasPermission(user, "stock.in") && (
+            <button
+              className="btn-secondary flex items-center justify-center gap-2 p-3.5 text-sm"
+              onClick={() => {
+                setStockInItemId(undefined);
+                setStockInOpen(true);
+              }}
+            >
+              <Plus size={16} /> Add stock
+            </button>
+          )}
+          {hasPermission(user, "items.create") && (
+            <button
+              className="btn-secondary flex items-center justify-center gap-2 p-3.5 text-sm"
+              onClick={() => setAddOpen(true)}
+            >
+              <Plus size={16} /> Add Item
+            </button>
+          )}
+        </div>
+      </div>
+    ),
+    "top-items": (
+      <div className="card">
+        <div className="card-header">
+          <h3>Top items</h3>
+        </div>
+        {loading ? <ChartFallback h={140} /> : <TopItemsChart data={topItemsData} />}
+      </div>
+    ),
+    "category-pl": (
+      <div className="card">
+        <div className="card-header">
+          <h3>Sales &amp; profit by category</h3>
+        </div>
+        {loading ? <ChartFallback h={140} /> : <CategoryChart data={categoryData} currency={currency} />}
+        {categoryPLData.length > 0 && (
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr className="text-left text-ink-muted">
+                  <th className="pb-1.5 font-semibold">Category</th>
+                  <th className="pb-1.5 text-right font-semibold">Revenue</th>
+                  <th className="pb-1.5 text-right font-semibold">Profit</th>
+                  <th className="pb-1.5 text-right font-semibold">Margin</th>
+                </tr>
+              </thead>
+              <tbody>
+                {categoryPLData.map((c) => (
+                  <tr key={c.category} className="border-t border-line-soft">
+                    <td className="py-1.5 font-semibold text-ink">{c.category}</td>
+                    <td className="num py-1.5 text-right">
+                      {currency}
+                      {c.revenue.toFixed(0)}
+                    </td>
+                    <td
+                      className={`num py-1.5 text-right font-bold ${
+                        c.profit >= 0 ? "text-success" : "text-danger"
+                      }`}
+                    >
+                      {currency}
+                      {c.profit.toFixed(0)}
+                    </td>
+                    <td className="num py-1.5 text-right">
+                      {c.marginPct !== null ? c.marginPct.toFixed(0) + "%" : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    ),
+    "business-boosters": (
+      <div className="card">
+        <div className="card-header">
+          <h3 className="flex items-center gap-1.5">
+            <Lightbulb size={16} /> Business Boosters
+          </h3>
+        </div>
+        {loading
+          ? [0, 1, 2].map((i) => (
+              <div key={i} className="flex items-start gap-2.5 border-t border-line-soft py-2.5 first:border-t-0">
+                <Skeleton className="h-5 w-14 flex-shrink-0 rounded-full" />
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <Skeleton className="h-3.5 w-2/3" />
+                  <Skeleton className="h-3 w-full" />
+                </div>
+              </div>
+            ))
+          : recs.map((r, idx) => {
+              const act = r.action;
+              return (
+                <div
+                  key={idx}
+                  className="flex items-start gap-2.5 border-t border-line-soft py-2.5 first:border-t-0"
+                >
+                  <span className={`badge ${priorityBadge[r.priority]} flex-shrink-0`}>{r.priority}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13px] font-bold text-ink">{r.insight}</div>
+                    <div className="text-[11.5px] text-ink-light">{r.detail}</div>
+                  </div>
+                  {act && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (act.kind === "restock") {
+                          setStockInItemId(act.itemId);
+                          setStockInOpen(true);
+                        } else {
+                          setEditItemId(act.itemId);
+                        }
+                      }}
+                      className="shrink-0 self-center rounded-[9px] bg-line-soft px-3 py-1.5 text-[12px] font-bold text-brown"
+                    >
+                      {act.kind === "restock" ? "Reorder" : "Edit"}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+      </div>
+    ),
+    "recent-bills": <RecentBillsCard loading={loading} recent={recent} currency={currency} onView={openBill} />,
+    "top-customers": (
+      <TopCustomersCard loaded={custLoaded} error={custError} customers={topCustomers} currency={currency} />
+    ),
+    "stock-health": (
+      <StockHealthCard
+        loading={loading}
+        health={health}
+        onRestock={(id) => {
+          setStockInItemId(id);
+          setStockInOpen(true);
+        }}
+      />
+    ),
+    "cashbook-summary": (
+      <CashbookSummaryCard
+        loading={!cashSummary && !cashError}
+        error={cashError}
+        summary={cashSummary}
+        currency={currency}
+        periodLabel={cashPeriodLabel(range, isoDateLocal(new Date()))}
+      />
+    ),
+    "supplier-balance": (
+      <SupplierBalanceCard
+        loading={!supplierTotals && !supplierError}
+        error={supplierError}
+        totals={supplierTotals}
+        currency={currency}
+      />
+    ),
+    "attendance-today": (
+      <AttendanceCard loading={!attendanceCounts && !attendanceError} error={attendanceError} counts={attendanceCounts} />
+    ),
+  };
+
   return (
     <>
-      <div className="mb-4 flex flex-col items-end gap-1">
-        <DateRangeFilter value={range} onChange={setRange} />
-        {invalidRange && (
-          <p className="text-xs font-semibold text-danger">&quot;From&quot; date must be before &quot;To&quot; date.</p>
-        )}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        {/* Layout customization (drag/resize/add/remove widgets) is desktop-only —
+            mirrors DashboardGrid/DashboardWidget, whose resize grips are already
+            lg:-only. */}
+        <div className="hidden lg:flex lg:items-center lg:gap-2">
+          {editing ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-cream px-2.5 py-2">
+              <span className="ml-0.5 flex items-center gap-1.5 text-[12.5px] font-bold text-brown">
+                <LayoutGrid size={14} /> Editing layout
+              </span>
+              <div className="relative">
+                <button
+                  type="button"
+                  disabled={addable.length === 0}
+                  className="btn-sm btn-secondary inline-flex items-center gap-1.5 disabled:opacity-50"
+                  onClick={() => setAddMenuOpen((o) => !o)}
+                >
+                  <Plus size={14} /> Add widget
+                </button>
+                {addMenuOpen && addable.length > 0 && (
+                  <div className="absolute z-30 mt-1 w-60 overflow-hidden rounded-xl border border-line bg-warm-white shadow-card">
+                    <div className="border-b border-line-soft px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-ink-muted">
+                      Add a widget
+                    </div>
+                    <div className="max-h-64 overflow-y-auto p-1">
+                      {addable.map((w) => (
+                        <button
+                          key={w.id}
+                          type="button"
+                          className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-ink hover:bg-cream"
+                          onClick={() => {
+                            setRawLayout((l) => addWidget(l, w.id));
+                            setAddMenuOpen(false);
+                          }}
+                        >
+                          {w.title}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                className="btn-sm btn-secondary inline-flex items-center gap-1.5"
+                onClick={() => setRawLayout(DEFAULT_LAYOUT)}
+              >
+                <RotateCcw size={14} /> Reset
+              </button>
+              <button
+                type="button"
+                className="btn-sm btn-primary inline-flex items-center gap-1.5"
+                onClick={toggleEditing}
+              >
+                <Check size={14} /> Done
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="btn-sm btn-secondary inline-flex items-center gap-1.5"
+              onClick={toggleEditing}
+            >
+              <LayoutGrid size={14} /> Customize layout
+            </button>
+          )}
+        </div>
+        <div className="ml-auto flex flex-col items-end gap-1 lg:ml-0">
+          <DateRangeFilter value={range} onChange={setRange} />
+          {invalidRange && (
+            <p className="text-xs font-semibold text-danger">&quot;From&quot; date must be before &quot;To&quot; date.</p>
+          )}
+        </div>
       </div>
 
       {statsError && !stats && (
@@ -370,302 +787,16 @@ export function Dashboard() {
         </div>
       )}
 
-      <div className="mb-5 grid grid-cols-2 gap-3.5 lg:grid-cols-4">
-        <KpiCard
-          variant="hero"
-          label="Sales"
-          corner={showDelta && <DeltaBadge delta={salesDelta} onHero />}
-          value={
-            loading ? (
-              <div aria-hidden className="mt-2 h-8 w-24 animate-pulse rounded-md bg-white/25" />
-            ) : (
-              <div className="num mt-2 text-[28px] font-extrabold tracking-tight">
-                {currency}
-                {rangeSales.toFixed(0)}
-              </div>
-            )
-          }
-          subtitle={
-            <div className="mt-0.5 text-[11.5px] opacity-70">
-              {loading ? (
-                <div aria-hidden className="mt-1 h-3 w-24 animate-pulse rounded bg-white/20" />
-              ) : showDelta ? (
-                <>
-                  vs {currency}
-                  {prevSales.toFixed(0)}
-                  {prevPeriodLabel ? ` · ${prevPeriodLabel}` : " prev period"}
-                </>
-              ) : (
-                <>in selected range</>
-              )}
-            </div>
-          }
-        />
-
-        <KpiCard
-          label="Bills"
-          corner={!loading && showBillsDelta && <DeltaBadge delta={billsDelta} />}
-          value={
-            loading ? (
-              <Skeleton className="mt-2 h-8 w-16" />
-            ) : (
-              <div className="num mt-2 text-[28px] font-extrabold tracking-tight text-ink">
-                {billsInRange}
-              </div>
-            )
-          }
-          subtitle={
-            <div className="mt-0.5 text-[11.5px] text-ink-light">
-              {loading ? (
-                <Skeleton className="mt-1 h-3 w-20" />
-              ) : (
-                <>
-                  avg {currency}
-                  {avgBill.toFixed(0)} / bill
-                </>
-              )}
-            </div>
-          }
-        />
-
-        <KpiCard
-          label="Items Sold"
-          corner={!loading && showItemsDelta && <DeltaBadge delta={itemsDelta} />}
-          value={
-            loading ? (
-              <Skeleton className="mt-2 h-8 w-16" />
-            ) : (
-              <div className="num mt-2 text-[28px] font-extrabold tracking-tight text-ink">
-                {itemsSold}
-              </div>
-            )
-          }
-          subtitle={<div className="mt-0.5 text-[11.5px] text-ink-light">across all categories</div>}
-        />
-
-        <KpiCard
-          variant="warn"
-          label="Low Stock"
-          corner={<AlertTriangle size={16} />}
-          value={
-            <div className="num mt-2 text-[28px] font-extrabold tracking-tight text-warn">
-              {lowStock}
-            </div>
-          }
-          subtitle={<div className="mt-0.5 text-[11.5px] text-warn">items need restock</div>}
-        />
-      </div>
-
-      <div className="flex flex-col gap-4">
-        {/* Hero row — primary chart + quick actions kept equal height so the
-            cards beneath them line up across the two columns. */}
-        <div className="grid gap-4 lg:grid-cols-[1fr_372px] lg:items-stretch">
-          {hasPermission(user, "dashboard.view") ? (
-            <div className="card">
-              <div className="card-header">
-                <h3>{range.from === range.to && range.from ? "Sales" : "Sales over range"}</h3>
-              </div>
-              {loading ? <ChartFallback h={160} /> : <SalesChart data={chartData} currency={currency} />}
-            </div>
-          ) : (
-            <div className="hidden lg:block" />
-          )}
-
-          <div className="card">
-            <div className="card-header">
-              <h3>Quick Actions</h3>
-            </div>
-            <div className="flex flex-col gap-2.5">
-              {hasPermission(user, "bill.create") && (
-                <button
-                  className="btn-primary flex items-center justify-center gap-2 p-3.5 text-sm"
-                  onClick={() => router.push("/bill")}
-                >
-                  <Receipt size={16} /> Create new bill
-                </button>
-              )}
-              {hasPermission(user, "stock.in") && (
-                <button
-                  className="btn-secondary flex items-center justify-center gap-2 p-3.5 text-sm"
-                  onClick={() => {
-                    setStockInItemId(undefined);
-                    setStockInOpen(true);
-                  }}
-                >
-                  <Plus size={16} /> Add stock
-                </button>
-              )}
-              {hasPermission(user, "items.create") && (
-                <button
-                  className="btn-secondary flex items-center justify-center gap-2 p-3.5 text-sm"
-                  onClick={() => setAddOpen(true)}
-                >
-                  <Plus size={16} /> Add Item
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Remaining content in two columns */}
-        <div className="grid gap-4 lg:grid-cols-[1fr_372px] lg:items-start">
-          {/* LEFT COLUMN */}
-          <div className="flex min-w-0 flex-col gap-4">
-            {hasPermission(user, "dashboard.view") && (
-              <>
-                <div className="card">
-                  <div className="card-header">
-                    <h3>Top items</h3>
-                  </div>
-                {loading ? <ChartFallback h={140} /> : <TopItemsChart data={topItemsData} />}
-              </div>
-
-              <div className="card">
-                <div className="card-header">
-                  <h3>Sales &amp; profit by category</h3>
-                </div>
-                {loading ? (
-                  <ChartFallback h={140} />
-                ) : (
-                  <CategoryChart data={categoryData} currency={currency} />
-                )}
-                {categoryPLData.length > 0 && (
-                  <div className="mt-3 overflow-x-auto">
-                    <table className="w-full text-[12px]">
-                      <thead>
-                        <tr className="text-left text-ink-muted">
-                          <th className="pb-1.5 font-semibold">Category</th>
-                          <th className="pb-1.5 text-right font-semibold">Revenue</th>
-                          <th className="pb-1.5 text-right font-semibold">Profit</th>
-                          <th className="pb-1.5 text-right font-semibold">Margin</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {categoryPLData.map((c) => (
-                          <tr key={c.category} className="border-t border-line-soft">
-                            <td className="py-1.5 font-semibold text-ink">{c.category}</td>
-                            <td className="num py-1.5 text-right">
-                              {currency}
-                              {c.revenue.toFixed(0)}
-                            </td>
-                            <td
-                              className={`num py-1.5 text-right font-bold ${
-                                c.profit >= 0 ? "text-success" : "text-danger"
-                              }`}
-                            >
-                              {currency}
-                              {c.profit.toFixed(0)}
-                            </td>
-                            <td className="num py-1.5 text-right">
-                              {c.marginPct !== null ? c.marginPct.toFixed(0) + "%" : "—"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              <div className="card">
-                <div className="card-header">
-                  <h3 className="flex items-center gap-1.5">
-                    <Lightbulb size={16} /> Business Boosters
-                  </h3>
-                </div>
-                {loading
-                  ? [0, 1, 2].map((i) => (
-                      <div
-                        key={i}
-                        className="flex items-start gap-2.5 border-t border-line-soft py-2.5 first:border-t-0"
-                      >
-                        <Skeleton className="h-5 w-14 flex-shrink-0 rounded-full" />
-                        <div className="min-w-0 flex-1 space-y-1.5">
-                          <Skeleton className="h-3.5 w-2/3" />
-                          <Skeleton className="h-3 w-full" />
-                        </div>
-                      </div>
-                    ))
-                  : recs.map((r, idx) => {
-                      const act = r.action;
-                      return (
-                        <div
-                          key={idx}
-                          className="flex items-start gap-2.5 border-t border-line-soft py-2.5 first:border-t-0"
-                        >
-                          <span className={`badge ${priorityBadge[r.priority]} flex-shrink-0`}>
-                            {r.priority}
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <div className="text-[13px] font-bold text-ink">{r.insight}</div>
-                            <div className="text-[11.5px] text-ink-light">{r.detail}</div>
-                          </div>
-                          {act && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (act.kind === "restock") {
-                                  setStockInItemId(act.itemId);
-                                  setStockInOpen(true);
-                                } else {
-                                  setEditItemId(act.itemId);
-                                }
-                              }}
-                              className="shrink-0 self-center rounded-[9px] bg-line-soft px-3 py-1.5 text-[12px] font-bold text-brown"
-                            >
-                              {act.kind === "restock" ? "Reorder" : "Edit"}
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-              </div>
-            </>
-          )}
-
-          <RecentBillsCard loading={loading} recent={recent} currency={currency} onView={openBill} />
-        </div>
-
-          {/* RIGHT COLUMN */}
-          <div className="flex min-w-0 flex-col gap-4">
-            {hasPermission(user, "cashbook.view") && (
-              <CashbookSummaryCard
-                loading={!cashSummary && !cashError}
-                error={cashError}
-                summary={cashSummary}
-                currency={currency}
-                periodLabel={cashPeriodLabel(range, isoDateLocal(new Date()))}
-              />
-            )}
-            {hasPermission(user, "suppliers.financial") && (
-              <SupplierBalanceCard
-                loading={!supplierTotals && !supplierError}
-                error={supplierError}
-                totals={supplierTotals}
-                currency={currency}
-              />
-            )}
-            {hasPermission(user, "stock.view") && (
-              <StockHealthCard
-              loading={loading}
-              health={health}
-              onRestock={(id) => {
-                setStockInItemId(id);
-                setStockInOpen(true);
-              }}
-              />
-            )}
-            {hasPermission(user, "customers.view") && (
-              <TopCustomersCard
-                loaded={custLoaded}
-                error={custError}
-                customers={topCustomers}
-                currency={currency}
-              />
-            )}
-          </div>
-        </div>
-      </div>
+      <DashboardGrid
+        slots={shown}
+        editing={editing}
+        minSpanFor={(id) => DASHBOARD_WIDGETS.find((w) => w.id === id)?.minSpan ?? 1}
+        mobileSpanFor={(id) => DASHBOARD_WIDGETS.find((w) => w.id === id)?.mobileSpan ?? 2}
+        renderWidget={(id) => widgetBody[id] ?? null}
+        onReorder={(activeId, overId) => setRawLayout((l) => reorderWidgets(l, activeId, overId))}
+        onRemove={(id) => setRawLayout((l) => removeWidget(l, id))}
+        onResize={(id, span) => setRawLayout((l) => setWidgetSpan(l, id, span))}
+      />
 
       {addOpen && <ItemModal itemId={null} onClose={() => setAddOpen(false)} />}
       {editItemId && <ItemModal itemId={editItemId} onClose={() => setEditItemId(null)} />}
