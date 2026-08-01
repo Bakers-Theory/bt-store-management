@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@/utils/supabase/client";
-import type { Attendance, AttendanceStatus, AttendanceSummary, AdvanceBalance, Bakery, Batch, Bill, BillLine, BillStatus, Customer, Employee, EmployeeSalary, Item, Log, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, StaffAdvance, StoreLists, Supplier, SupplierProduct, SupplierStatus, InvoiceStatus, PurchaseInvoice, PurchaseInvoiceLine, PurchaseMode, PurchaseReturn, PurchaseReturnLine, SupplierPayment, SupplierSummary, User } from "./types";
+import type { Attendance, AttendanceStatus, AttendanceSummary, AdvanceBalance, Bakery, Batch, Bill, BillLine, BillStatus, CashAccount, CashCategory, CashDay, CashDayStatus, CashDaySummary, CashDirection, CashEntry, CashEntryFilters, CashEntryStatus, CashPaymentMode, CashSourceType, CashbookSummary, Customer, Employee, EmployeeSalary, Expense, ExpenseBankMode, ExpenseEvent, ExpenseEventKind, ExpenseFilters, ExpenseInput, ExpenseMode, ExpenseStatus, Item, Log, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, StaffAdvance, StoreLists, Supplier, SupplierProduct, SupplierStatus, InvoiceStatus, PurchaseInvoice, PurchaseInvoiceLine, PurchaseMode, PurchaseReturn, PurchaseReturnLine, SupplierPayment, SupplierSummary, User } from "./types";
 import type { SupplierInput } from "./supplier";
 import { isPurchaseMode, type DraftLine } from "./purchase";
 import { isAttendanceStatus } from "./attendance";
@@ -1811,4 +1811,632 @@ export async function fetchSupplierReportData(
     returns,
     summaries,
   };
+}
+
+// ─── Cashbook ───────────────────────────────────────────────────────────────
+
+export interface CashEntryRow {
+  id: string;
+  on_date: string;
+  created_at: string;
+  account: string;
+  direction: string;
+  amount: string | number;
+  payment_mode: string;
+  category_id: string;
+  category_name: string;
+  category_group: string | null;
+  category_path: string;
+  source_type: string;
+  source_id: string | null;
+  reverses_id: string | null;
+  transfer_id: string | null;
+  reference_no: string | null;
+  note: string | null;
+  created_by: string | null;
+  created_by_name: string | null;
+  status: string;
+  source_ref: string | null;
+  running_balance: string | number;
+}
+
+export interface CashCategoryRow {
+  id: string;
+  parent_id: string | null;
+  name: string;
+  direction: string;
+  is_system: boolean;
+  sort_order: number;
+}
+
+export function mapCashEntry(r: CashEntryRow): CashEntry {
+  return {
+    id: r.id,
+    onDate: r.on_date,
+    createdAt: r.created_at,
+    account: r.account as CashAccount,
+    direction: r.direction as CashDirection,
+    // Postgres numeric arrives as a string over the wire.
+    amount: Number(r.amount),
+    paymentMode: r.payment_mode as CashPaymentMode,
+    categoryId: r.category_id,
+    categoryName: r.category_name,
+    categoryGroup: r.category_group ?? "",
+    categoryPath: r.category_path,
+    sourceType: r.source_type as CashSourceType,
+    sourceId: r.source_id,
+    sourceRef: r.source_ref ?? "",
+    reversesId: r.reverses_id,
+    transferId: r.transfer_id,
+    referenceNo: r.reference_no ?? "",
+    note: r.note ?? "",
+    createdById: r.created_by,
+    createdByName: r.created_by_name ?? "",
+    status: r.status as CashEntryStatus,
+    runningBalance: Number(r.running_balance),
+  };
+}
+
+export function mapCashCategory(r: CashCategoryRow): CashCategory {
+  return {
+    id: r.id,
+    parentId: r.parent_id,
+    name: r.name,
+    direction: r.direction as CashCategory["direction"],
+    isSystem: r.is_system,
+    sortOrder: r.sort_order,
+  };
+}
+
+export interface CashEntriesPage {
+  entries: CashEntry[];
+  hasMore: boolean;
+}
+
+/**
+ * The ledger is unbounded and time-sensitive, so it is paginated and never
+ * cached in the Zustand store — the same rule bills and logs follow.
+ *
+ * `on_date` is a plain `date`, so it filters directly. Do NOT wrap the bounds
+ * in dayStartISO/dayEndISO: that turns a date into a timestamp and matches
+ * nothing.
+ */
+export async function fetchCashEntriesPage(
+  offset: number,
+  limit: number,
+  filters: CashEntryFilters = {},
+): Promise<CashEntriesPage> {
+  const supabase = createClient();
+  let query = supabase
+    .from("cash_entry_v")
+    .select("*")
+    .order("on_date", { ascending: false })
+    .order("created_at", { ascending: false });
+
+  if (filters.from) query = query.gte("on_date", filters.from);
+  if (filters.to) query = query.lte("on_date", filters.to);
+  if (filters.account) query = query.eq("account", filters.account);
+  if (filters.direction) query = query.eq("direction", filters.direction);
+  if (filters.categoryId) query = query.eq("category_id", filters.categoryId);
+  if (filters.paymentMode) query = query.eq("payment_mode", filters.paymentMode);
+  if (filters.sourceType) query = query.eq("source_type", filters.sourceType);
+
+  const q = filters.q ? orSafe(filters.q) : "";
+  if (q) {
+    query = query.or(
+      `note.ilike.*${q}*,reference_no.ilike.*${q}*,source_ref.ilike.*${q}*,category_path.ilike.*${q}*`,
+    );
+  }
+
+  const { data, error } = await query.range(offset, offset + limit - 1);
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []) as CashEntryRow[];
+  return { entries: rows.map(mapCashEntry), hasMore: rows.length === limit };
+}
+
+/** Bounded and slow-changing, so it is fetched once per page mount. */
+export async function fetchCashCategories(): Promise<CashCategory[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("cash_category_v")
+    .select("id, parent_id, name, direction, is_system, sort_order")
+    .order("sort_order");
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as CashCategoryRow[]).map(mapCashCategory);
+}
+
+/**
+ * The client passes its own local dates: `current_date` inside a view would be
+ * the server's UTC date, which is the wrong day for part of every morning.
+ *
+ * The range scopes the `period*` figures only — the balances are live, so the
+ * tiles keep telling the truth about the drawer while the list below them is
+ * filtered.
+ */
+export async function fetchCashbookSummary(
+  range: { from: string | null; to: string | null } = { from: null, to: null },
+): Promise<CashbookSummary> {
+  const r = await rpc<Record<string, string | number>>("cashbook_summary", {
+    p_from: range.from,
+    p_to: range.to,
+  });
+  return {
+    cashBalance: Number(r.cashBalance),
+    bankBalance: Number(r.bankBalance),
+    periodSales: Number(r.periodSales),
+    periodExpenses: Number(r.periodExpenses),
+    periodCashIn: Number(r.periodCashIn),
+    periodCashOut: Number(r.periodCashOut),
+  };
+}
+
+export interface CashEntryInput {
+  onDate: string;
+  direction: CashDirection;
+  amount: number;
+  mode: CashPaymentMode;
+  categoryId: string;
+  note: string;
+  referenceNo: string;
+}
+
+export async function rpcAddCashEntry(p: CashEntryInput): Promise<string> {
+  return rpc<string>("add_cash_entry", {
+    p_on_date: p.onDate,
+    p_direction: p.direction,
+    p_amount: p.amount,
+    p_mode: p.mode,
+    p_category_id: p.categoryId,
+    p_note: p.note,
+    p_reference_no: p.referenceNo,
+  });
+}
+
+/** `direction` is not editable — delete and re-record to change which way it went. */
+export async function rpcUpdateCashEntry(
+  id: string,
+  p: Omit<CashEntryInput, "direction">,
+): Promise<void> {
+  await rpc<void>("update_cash_entry", {
+    p_id: id,
+    p_on_date: p.onDate,
+    p_amount: p.amount,
+    p_mode: p.mode,
+    p_category_id: p.categoryId,
+    p_note: p.note,
+    p_reference_no: p.referenceNo,
+  });
+}
+
+export async function rpcDeleteCashEntry(id: string): Promise<void> {
+  await rpc<void>("delete_cash_entry", { p_id: id });
+}
+
+export async function rpcTransferCash(p: {
+  onDate: string;
+  fromAccount: CashAccount;
+  amount: number;
+  note: string;
+}): Promise<string> {
+  return rpc<string>("transfer_cash", {
+    p_on_date: p.onDate,
+    p_from_account: p.fromAccount,
+    p_amount: p.amount,
+    p_note: p.note,
+  });
+}
+
+export interface CashDayRow {
+  on_date: string;
+  opening_cash: string | number;
+  expected_cash: string | number;
+  counted_cash: string | number;
+  difference: string | number;
+  opening_bank: string | number | null;
+  expected_bank: string | number | null;
+  closing_bank: string | number | null;
+  bank_difference: string | number | null;
+  remarks: string | null;
+  status: string;
+  closed_by_name: string | null;
+  closed_at: string | null;
+  reopened_by_name: string | null;
+  reopened_at: string | null;
+  reopen_reason: string | null;
+}
+
+export function mapCashDay(r: CashDayRow): CashDay {
+  return {
+    onDate: r.on_date,
+    openingCash: Number(r.opening_cash),
+    expectedCash: Number(r.expected_cash),
+    countedCash: Number(r.counted_cash),
+    difference: Number(r.difference),
+    // Null survives as null: it means the bank was never checked that day.
+    openingBank: r.opening_bank === null ? null : Number(r.opening_bank),
+    expectedBank: r.expected_bank === null ? null : Number(r.expected_bank),
+    closingBank: r.closing_bank === null ? null : Number(r.closing_bank),
+    bankDifference: r.bank_difference === null ? null : Number(r.bank_difference),
+    remarks: r.remarks ?? "",
+    status: r.status as CashDayStatus,
+    closedByName: r.closed_by_name ?? "",
+    closedAt: r.closed_at,
+    reopenedByName: r.reopened_by_name ?? "",
+    reopenedAt: r.reopened_at,
+    reopenReason: r.reopen_reason ?? "",
+  };
+}
+
+export interface CashDayFilters {
+  from?: string;
+  to?: string;
+  /** Only days whose count didn't match. Backs the discrepancy view. */
+  varianceOnly?: boolean;
+}
+
+export interface CashDaysPage {
+  days: CashDay[];
+  hasMore: boolean;
+}
+
+export async function fetchCashDaysPage(
+  offset: number,
+  limit: number,
+  filters: CashDayFilters = {},
+): Promise<CashDaysPage> {
+  const supabase = createClient();
+  let query = supabase
+    .from("cash_day_v")
+    .select("*")
+    .order("on_date", { ascending: false });
+  // `on_date` is a plain date, so it filters directly — no UTC conversion.
+  if (filters.from) query = query.gte("on_date", filters.from);
+  if (filters.to) query = query.lte("on_date", filters.to);
+  if (filters.varianceOnly) query = query.neq("difference", 0);
+
+  const { data, error } = await query.range(offset, offset + limit - 1);
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []) as CashDayRow[];
+  return { days: rows.map(mapCashDay), hasMore: rows.length === limit };
+}
+
+/** Null when the day has never been closed — i.e. it is open. */
+export async function fetchCashDay(onDate: string): Promise<CashDay | null> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("cash_day_v")
+    .select("*")
+    .eq("on_date", onDate)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? mapCashDay(data as CashDayRow) : null;
+}
+
+/** `closingBank` is null when nobody read a balance off the bank. */
+export async function rpcCloseCashDay(
+  onDate: string,
+  countedCash: number,
+  remarks: string,
+  closingBank: number | null = null,
+): Promise<void> {
+  await rpc<void>("close_cash_day", {
+    p_date: onDate,
+    p_counted_cash: countedCash,
+    p_remarks: remarks,
+    p_closing_bank: closingBank,
+  });
+}
+
+/**
+ * Posts an "Other › Adjustment" bank entry for the gap between the book and the
+ * bank, so the ledger ends at `closingBank`. Only works while the day is open.
+ */
+export async function rpcAdjustBankBalance(
+  onDate: string,
+  closingBank: number,
+  note = "",
+): Promise<string> {
+  return rpc<string>("adjust_bank_balance", {
+    p_on_date: onDate,
+    p_closing_bank: closingBank,
+    p_note: note,
+  });
+}
+
+export async function rpcReopenCashDay(onDate: string, reason: string): Promise<void> {
+  await rpc<void>("reopen_cash_day", { p_date: onDate, p_reason: reason });
+}
+
+export interface CashDaySummaryRow {
+  onDate: string;
+  openingCash: string | number;
+  expectedCash: string | number;
+  cashIn: string | number;
+  cashOut: string | number;
+  countedCash: string | number | null;
+  openingBank: string | number;
+  expectedBank: string | number;
+  bankIn: string | number;
+  bankOut: string | number;
+  closingBank: string | number | null;
+  status: string;
+}
+
+/** The reconciliation figures for one day. Backs the day-close page. */
+export async function fetchCashDaySummary(onDate: string): Promise<CashDaySummary> {
+  const r = await rpc<CashDaySummaryRow>("cash_day_summary", { p_on_date: onDate });
+  return {
+    onDate: r.onDate,
+    openingCash: Number(r.openingCash),
+    expectedCash: Number(r.expectedCash),
+    cashIn: Number(r.cashIn),
+    cashOut: Number(r.cashOut),
+    // Null means the day has never been counted, which is different from 0.
+    countedCash: r.countedCash === null ? null : Number(r.countedCash),
+    openingBank: Number(r.openingBank),
+    expectedBank: Number(r.expectedBank),
+    bankIn: Number(r.bankIn),
+    bankOut: Number(r.bankOut),
+    // Null means the bank was never checked, which is different from 0.
+    closingBank: r.closingBank === null ? null : Number(r.closingBank),
+    status: r.status as CashDayStatus,
+  };
+}
+
+// ─── Expenses ───────────────────────────────────────────────────────────────
+
+export interface ExpenseRow {
+  id: string;
+  expense_no: number;
+  expense_date: string;
+  paid_on: string | null;
+  category_id: string;
+  category_name: string;
+  category_group: string | null;
+  category_path: string;
+  vendor_name: string | null;
+  vendor_supplier_id: string | null;
+  vendor_display: string | null;
+  amount: string | number;
+  gst_included: boolean;
+  gst_amount: string | number;
+  payment_mode: string;
+  split_cash: string | number;
+  split_bank: string | number;
+  split_bank_mode: string | null;
+  invoice_no: string | null;
+  description: string | null;
+  paid_by_name: string | null;
+  approved_by_name: string | null;
+  status: string;
+  reject_reason: string | null;
+  cancel_reason: string | null;
+  created_by: string | null;
+  created_by_name: string | null;
+  created_at: string;
+  updated_by_name: string | null;
+  updated_at: string;
+}
+
+export interface ExpenseEventRow {
+  id: string;
+  expense_id: string;
+  event: string;
+  at: string;
+  actor_name: string | null;
+  detail: Record<string, unknown> | null;
+}
+
+export function mapExpense(r: ExpenseRow): Expense {
+  return {
+    id: r.id,
+    expenseNo: Number(r.expense_no),
+    expenseDate: r.expense_date,
+    paidOn: r.paid_on,
+    categoryId: r.category_id,
+    categoryName: r.category_name,
+    categoryGroup: r.category_group ?? "",
+    categoryPath: r.category_path,
+    vendorName: r.vendor_name ?? "",
+    vendorSupplierId: r.vendor_supplier_id,
+    vendorDisplay: r.vendor_display ?? "",
+    // Postgres numeric arrives as a string over the wire.
+    amount: Number(r.amount),
+    gstIncluded: r.gst_included,
+    gstAmount: Number(r.gst_amount),
+    paymentMode: r.payment_mode as ExpenseMode,
+    splitCash: Number(r.split_cash),
+    splitBank: Number(r.split_bank),
+    splitBankMode: (r.split_bank_mode ?? "") as ExpenseBankMode | "",
+    invoiceNo: r.invoice_no ?? "",
+    description: r.description ?? "",
+    paidByName: r.paid_by_name ?? "",
+    approvedByName: r.approved_by_name ?? "",
+    status: r.status as ExpenseStatus,
+    rejectReason: r.reject_reason ?? "",
+    cancelReason: r.cancel_reason ?? "",
+    createdById: r.created_by,
+    createdByName: r.created_by_name ?? "",
+    createdAt: r.created_at,
+    updatedByName: r.updated_by_name ?? "",
+    updatedAt: r.updated_at,
+  };
+}
+
+export function mapExpenseEvent(r: ExpenseEventRow): ExpenseEvent {
+  return {
+    id: r.id,
+    expenseId: r.expense_id,
+    event: r.event as ExpenseEventKind,
+    actorName: r.actor_name ?? "",
+    at: r.at,
+    detail: r.detail ?? {},
+  };
+}
+
+export interface ExpensesPage {
+  expenses: Expense[];
+  hasMore: boolean;
+}
+
+export async function fetchExpensesPage(
+  offset: number,
+  limit: number,
+  filters: ExpenseFilters = {},
+): Promise<ExpensesPage> {
+  const supabase = createClient();
+  let query = supabase
+    .from("expense_v")
+    .select("*")
+    .order("expense_date", { ascending: false })
+    .order("expense_no", { ascending: false });
+
+  // `expense_date` is a plain date — filters directly, no UTC conversion.
+  if (filters.from) query = query.gte("expense_date", filters.from);
+  if (filters.to) query = query.lte("expense_date", filters.to);
+  if (filters.categoryId) query = query.eq("category_id", filters.categoryId);
+  if (filters.vendor) query = query.ilike("vendor_display", `%${filters.vendor}%`);
+  if (filters.minAmount !== undefined) query = query.gte("amount", filters.minAmount);
+  if (filters.maxAmount !== undefined) query = query.lte("amount", filters.maxAmount);
+  if (filters.paymentMode) query = query.eq("payment_mode", filters.paymentMode);
+  if (filters.status) query = query.eq("status", filters.status);
+  if (filters.paidById) query = query.eq("paid_by", filters.paidById);
+
+  const q = filters.q ? orSafe(filters.q) : "";
+  if (q) {
+    if (/^\d+$/.test(q)) {
+      // A pure number matches the expense number exactly — typing "42" finds
+      // #42, not #42/#420 — while still OR-matching text that contains it.
+      query = query.or(
+        `expense_no.eq.${q},vendor_display.ilike.*${q}*,invoice_no.ilike.*${q}*,description.ilike.*${q}*`,
+      );
+    } else {
+      query = query.or(
+        `vendor_display.ilike.*${q}*,invoice_no.ilike.*${q}*,description.ilike.*${q}*`,
+      );
+    }
+  }
+
+  const { data, error } = await query.range(offset, offset + limit - 1);
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []) as ExpenseRow[];
+  return { expenses: rows.map(mapExpense), hasMore: rows.length === limit };
+}
+
+export async function fetchExpense(id: string): Promise<Expense | null> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("expense_v")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? mapExpense(data as ExpenseRow) : null;
+}
+
+export async function fetchExpenseEvents(expenseId: string): Promise<ExpenseEvent[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("expense_event_v")
+    .select("*")
+    .eq("expense_id", expenseId)
+    .order("at");
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as ExpenseEventRow[]).map(mapExpenseEvent);
+}
+
+export async function fetchExpenseVendors(): Promise<string[]> {
+  return rpc<string[]>("expense_vendors", {});
+}
+
+/**
+ * Backs the duplicate-invoice WARNING. A lookup, not a constraint: one supplier
+ * invoice legitimately splits across two expense records (#32 asks for a
+ * warning). `excludeId` keeps an expense from flagging itself while being edited.
+ */
+export async function fetchInvoiceNosLike(
+  invoiceNo: string,
+  excludeId?: string,
+): Promise<string[]> {
+  const trimmed = invoiceNo.trim();
+  if (trimmed === "") return [];
+  const supabase = createClient();
+  let query = supabase.from("expense_v").select("invoice_no").ilike("invoice_no", trimmed);
+  if (excludeId) query = query.neq("id", excludeId);
+  const { data, error } = await query.limit(5);
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as { invoice_no: string | null }[]).map((r) => r.invoice_no ?? "");
+}
+
+/** The ledger rows a document produced — one, or two for a Mixed payment. */
+export async function fetchCashEntriesForSource(
+  sourceType: string,
+  sourceId: string,
+): Promise<CashEntry[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("cash_entry_v")
+    .select("*")
+    .eq("source_type", sourceType)
+    .eq("source_id", sourceId)
+    .order("created_at");
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as CashEntryRow[]).map(mapCashEntry);
+}
+
+/** `payNow` is honoured only for a caller who holds expense.pay; the RPC re-checks. */
+export async function rpcSaveExpense(
+  p: ExpenseInput,
+  payNow: boolean,
+): Promise<string> {
+  return rpc<string>("save_expense", {
+    p: {
+      id: p.id ?? "",
+      expenseDate: p.expenseDate,
+      categoryId: p.categoryId,
+      vendorName: p.vendorName,
+      vendorSupplierId: p.vendorSupplierId ?? "",
+      amount: p.amount,
+      gstIncluded: p.gstIncluded,
+      gstAmount: p.gstAmount,
+      paymentMode: p.paymentMode,
+      splitCash: p.splitCash,
+      splitBank: p.splitBank,
+      splitBankMode: p.splitBankMode,
+      invoiceNo: p.invoiceNo,
+      description: p.description,
+      paidById: p.paidById,
+      payNow,
+    },
+  });
+}
+
+export async function rpcPayExpense(
+  id: string,
+  paidOn: string,
+  mode: ExpenseMode,
+  splitCash = 0,
+  splitBank = 0,
+  splitBankMode: ExpenseBankMode | "" = "",
+): Promise<void> {
+  await rpc<void>("pay_expense", {
+    p_id: id,
+    p_paid_on: paidOn,
+    p_mode: mode,
+    p_split_cash: splitCash,
+    p_split_bank: splitBank,
+    p_split_bank_mode: splitBankMode,
+  });
+}
+
+export async function rpcRejectExpense(id: string, reason: string): Promise<void> {
+  await rpc<void>("reject_expense", { p_id: id, p_reason: reason });
+}
+
+export async function rpcCancelExpense(id: string, reason: string): Promise<void> {
+  await rpc<void>("cancel_expense", { p_id: id, p_reason: reason });
+}
+
+export async function rpcDeleteExpense(id: string): Promise<void> {
+  await rpc<void>("delete_expense", { p_id: id });
 }

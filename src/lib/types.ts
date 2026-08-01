@@ -53,6 +53,16 @@ export type PermissionKey =
   | "purchases.return"
   | "suppliers.financial"
   | "suppliers.reports"
+  // Cashbook
+  | "cashbook.view"
+  | "cashbook.entry"
+  | "cashbook.close"
+  | "cashbook.reopen"
+  // Expenses
+  | "expense.view"
+  | "expense.create"
+  | "expense.pay"
+  | "expense.cancel"
   // Store admin
   | "store.settings"
   | "store.status"
@@ -566,4 +576,256 @@ export interface SupplierSummary {
   /** An invoice IS the order record; there is no separate PO entity. */
   purchaseOrderCount: number;
   transactionCount: number;
+}
+
+// ─── Cashbook ───────────────────────────────────────────────────────────────
+
+/** The two accounts the cashbook tracks. Physical drawer, and the bank. */
+export type CashAccount = "cash" | "bank";
+
+export type CashDirection = "in" | "out";
+
+/**
+ * Modes a posting can carry. `Cheque` exists only to read historical
+ * `supplier_payment` rows (0038) — no form offers it. `Mixed` is not here:
+ * a mixed payment is two entries, each with its own real mode.
+ */
+export type CashPaymentMode = "Cash" | "UPI" | "Bank Transfer" | "Cheque";
+
+export type CashSourceType =
+  | "bill"
+  | "expense"
+  | "salary"
+  | "advance"
+  | "supplier_payment"
+  | "manual"
+  | "transfer"
+  | "opening";
+
+/** Derived in `cash_entry_v`, never stored — a posting either happened or it didn't. */
+export type CashEntryStatus = "posted" | "reversed" | "reversal";
+
+export interface CashEntry {
+  id: string;
+  onDate: string; // "YYYY-MM-DD" — the local business date
+  createdAt: string; // ISO instant, gives the Time column
+  account: CashAccount;
+  direction: CashDirection;
+  amount: number;
+  paymentMode: CashPaymentMode;
+  categoryId: string;
+  categoryName: string;
+  categoryGroup: string; // "" for a top-level (system) category
+  categoryPath: string; // "Utilities › Rent", or just "Sales"
+  sourceType: CashSourceType;
+  sourceId: string | null;
+  sourceRef: string; // "#412", an employee name, a supplier name, or ""
+  reversesId: string | null;
+  transferId: string | null;
+  referenceNo: string;
+  note: string;
+  // The id, not just the name: two staff can share a name, and "is this mine?"
+  // decides whether the edit button renders.
+  createdById: string | null;
+  createdByName: string;
+  status: CashEntryStatus;
+  runningBalance: number; // computed by cash_entry_v over the whole ledger
+}
+
+export interface CashCategory {
+  id: string;
+  parentId: string | null;
+  name: string;
+  direction: "in" | "out" | "both";
+  isSystem: boolean;
+  sortOrder: number;
+}
+
+export type CashDayStatus = "open" | "closed";
+
+/**
+ * A day that has been closed at least once. A date with NO row is open — the
+ * same "absence is data, not a state" rule `attendance` uses.
+ */
+export interface CashDay {
+  onDate: string; // "YYYY-MM-DD"
+  openingCash: number;
+  expectedCash: number;
+  countedCash: number;
+  /** counted − expected. Negative is short, positive is excess. */
+  difference: number;
+  /**
+   * The bank side (migration 0050). Null on every day closed before it existed,
+   * and on any day closed without reading a balance off the bank — "not
+   * checked", which is different from "checked and it was zero".
+   */
+  openingBank: number | null;
+  expectedBank: number | null;
+  closingBank: number | null;
+  /** closingBank − expectedBank. Null whenever either side is. */
+  bankDifference: number | null;
+  remarks: string;
+  status: CashDayStatus;
+  closedByName: string;
+  closedAt: string | null;
+  reopenedByName: string;
+  reopenedAt: string | null;
+  reopenReason: string;
+}
+
+/**
+ * Two kinds of figure, deliberately. The balances are point-in-time and ignore
+ * the filter range — "cash in hand" is what is in the drawer now. The `period*`
+ * figures follow the range, so the tiles and the transaction list below them
+ * always describe the same slice of time.
+ */
+export interface CashbookSummary {
+  cashBalance: number;
+  bankBalance: number;
+  periodSales: number;
+  periodExpenses: number;
+  periodCashIn: number;
+  periodCashOut: number;
+}
+
+/**
+ * The reconciliation figures for one day, from `cash_day_summary(date)`.
+ * Deliberately separate from `CashbookSummary`, which summarises a user-chosen
+ * date RANGE and has no single day to reconcile against.
+ */
+export interface CashDaySummary {
+  onDate: string; // "YYYY-MM-DD"
+  /** The ledger's cash balance strictly before `onDate`. */
+  openingCash: number;
+  /** openingCash + the day's cash movements. */
+  expectedCash: number;
+  cashIn: number;
+  cashOut: number;
+  /** Null until the day has been closed. */
+  countedCash: number | null;
+  /** The ledger's bank balance strictly before `onDate`. */
+  openingBank: number;
+  /** openingBank + the day's bank movements — what the book says the bank holds. */
+  expectedBank: number;
+  bankIn: number;
+  bankOut: number;
+  /** The balance read off the bank. Null means it was never checked. */
+  closingBank: number | null;
+  status: CashDayStatus;
+}
+
+export interface CashEntryFilters {
+  from?: string;
+  to?: string;
+  account?: CashAccount;
+  direction?: CashDirection;
+  categoryId?: string;
+  paymentMode?: CashPaymentMode;
+  sourceType?: CashSourceType;
+  q?: string;
+}
+
+// ─── Expenses ───────────────────────────────────────────────────────────────
+
+/**
+ * Four states, not #32's six. `draft` and `approved` are deliberately absent:
+ * an "approved but unpaid" expense IS a payable, and suppliers already own
+ * payables in this app.
+ */
+export type ExpenseStatus = "pending" | "paid" | "rejected" | "cancelled";
+
+/** `Mixed` means part cash, part bank — two ledger rows, one document. */
+export type ExpenseMode = "Cash" | "UPI" | "Bank Transfer" | "Mixed";
+
+/** The bank leg of a Mixed payment. The cash leg is always `Cash`. */
+export type ExpenseBankMode = "UPI" | "Bank Transfer";
+
+export interface Expense {
+  id: string;
+  expenseNo: number;
+  /** When the cost was incurred. Reports group by this. */
+  expenseDate: string; // "YYYY-MM-DD"
+  /** When cash actually moved. The LEDGER uses this. Null until paid. */
+  paidOn: string | null;
+  categoryId: string;
+  categoryName: string;
+  categoryGroup: string;
+  categoryPath: string;
+  vendorName: string;
+  /** Informational only — NEVER affects `supplier_summary_v`. */
+  vendorSupplierId: string | null;
+  /** The linked supplier's name when linked, else `vendorName`. */
+  vendorDisplay: string;
+  /** Gross, GST-inclusive. This is what posts to cash. */
+  amount: number;
+  gstIncluded: boolean;
+  /** The tax component within `amount`, not on top of it. */
+  gstAmount: number;
+  paymentMode: ExpenseMode;
+  splitCash: number;
+  splitBank: number;
+  splitBankMode: ExpenseBankMode | "";
+  invoiceNo: string;
+  description: string;
+  paidByName: string;
+  approvedByName: string;
+  status: ExpenseStatus;
+  rejectReason: string;
+  cancelReason: string;
+  createdById: string | null;
+  createdByName: string;
+  createdAt: string;
+  updatedByName: string;
+  updatedAt: string;
+}
+
+export type ExpenseEventKind =
+  | "created"
+  | "edited"
+  | "approved"
+  | "rejected"
+  | "paid"
+  | "cancelled"
+  | "deleted";
+
+export interface ExpenseEvent {
+  id: string;
+  expenseId: string;
+  event: ExpenseEventKind;
+  actorName: string;
+  at: string;
+  /** Field-level diff for `edited`, the reason text for `rejected`/`cancelled`. */
+  detail: Record<string, unknown>;
+}
+
+export interface ExpenseInput {
+  id?: string;
+  expenseDate: string;
+  categoryId: string;
+  vendorName: string;
+  vendorSupplierId: string | null;
+  amount: number;
+  gstIncluded: boolean;
+  gstAmount: number;
+  paymentMode: ExpenseMode;
+  splitCash: number;
+  splitBank: number;
+  splitBankMode: ExpenseBankMode | "";
+  invoiceNo: string;
+  description: string;
+  /** Empty means "me". */
+  paidById: string;
+}
+
+export interface ExpenseFilters {
+  from?: string;
+  to?: string;
+  categoryId?: string;
+  vendor?: string;
+  minAmount?: number;
+  maxAmount?: number;
+  paymentMode?: ExpenseMode;
+  status?: ExpenseStatus;
+  paidById?: string;
+  q?: string;
 }

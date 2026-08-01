@@ -62,6 +62,12 @@
   select,
   textarea {
     width: 100%;
+    /* A form control's default `min-width: auto` resolves to its min-CONTENT
+       width inside a grid or flex cell, which beats `width: 100%` and pushes the
+       control out of its column. Every two-up field pair in the app depends on
+       this being 0. */
+    min-width: 0;
+    max-width: 100%;
     padding: 10px 12px;
     font-size: 15px;
     border: 1.5px solid var(--color-line);
@@ -70,6 +76,18 @@
     color: var(--color-ink);
     outline: none;
     transition: border 0.2s;
+  }
+  /* iOS Safari gives date/time inputs a fixed intrinsic width from their native
+     control and ignores `width: 100%` entirely, so they spill over whatever
+     contains them — the Date/Amount pair in the entry modals and the From/To
+     pair in the date-range picker both broke this way on a phone. Dropping the
+     native appearance makes them size to their box like any other input; the
+     tap-to-open picker is unaffected. */
+  input[type="date"],
+  input[type="time"],
+  input[type="datetime-local"] {
+    -webkit-appearance: none;
+    appearance: none;
   }
   input:focus,
   select:focus,

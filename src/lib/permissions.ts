@@ -117,6 +117,24 @@ export const PERMISSION_CATALOG: PermissionGroup[] = [
     ],
   },
   {
+    title: "Cashbook",
+    perms: [
+      { key: "cashbook.view", label: "View cashbook", hint: "Cash and bank balances, and every transaction" },
+      { key: "cashbook.entry", label: "Add & adjust entries", hint: "Record cash taken out or added, and move money between cash and bank" },
+      { key: "cashbook.close", label: "Close the day", hint: "Count the drawer and lock the day's cash book" },
+      { key: "cashbook.reopen", label: "Reopen a closed day", hint: "Unlock a day that was already counted — needs a written reason" },
+    ],
+  },
+  {
+    title: "Expenses",
+    perms: [
+      { key: "expense.view", label: "View expenses", hint: "The expense register and its details" },
+      { key: "expense.create", label: "Record expenses", hint: "Log a spend — held for approval without the pay permission" },
+      { key: "expense.pay", label: "Approve & pay expenses", hint: "Record an expense as paid, or approve and reject others'" },
+      { key: "expense.cancel", label: "Void a paid expense", hint: "Cancel a paid expense and put the money back" },
+    ],
+  },
+  {
     title: "Store admin",
     perms: [
       { key: "store.settings", label: "Store profile & tax", hint: "Name, address, GST, tax rate, thresholds, logo" },
@@ -217,6 +235,12 @@ export const ROLE_PRESETS: Record<PresetRole, PermissionKey[]> = {
     "suppliers.reports",
     "attendance.view",
     "attendance.edit",
+    "cashbook.view",
+    "cashbook.entry",
+    "cashbook.close",
+    "expense.view",
+    "expense.create",
+    "expense.pay",
   ],
   Cashier: [
     "bill.create",
@@ -226,6 +250,10 @@ export const ROLE_PRESETS: Record<PresetRole, PermissionKey[]> = {
     "bill.history",
     "customers.view",
     "customers.edit",
+    "cashbook.view",
+    "cashbook.close",
+    "expense.view",
+    "expense.create",
   ],
   Storekeeper: [
     "stock.view",
@@ -274,6 +302,8 @@ export function navItems(user: User | null): NavItem[] {
     items.push({ key: "dashboard", href: "/dashboard", icon: "📊", label: "Dashboard" });
   if (hasPermission(user, "stock.view"))
     items.push({ key: "stock", href: "/stock", icon: "📦", label: "Stock" });
+  if (hasPermission(user, "cashbook.view"))
+   items.push({ key: "cashbook", href: "/cashbook", icon: "📒", label: "Cashbook" });
   if (hasPermission(user, "suppliers.view"))
     items.push({ key: "suppliers", href: "/suppliers", icon: "🚚", label: "Suppliers" });
   if (hasAnyPermission(user, ["purchases.create", "purchases.pay", "purchases.return"]))
@@ -282,14 +312,12 @@ export function navItems(user: User | null): NavItem[] {
     items.push({ key: "bill", href: "/bill", icon: "🧾", label: "Bill" });
   if (hasPermission(user, "customers.view"))
     items.push({ key: "customers", href: "/customers", icon: "👥", label: "Customers" });
-  if (hasAnyPermission(user, ["bill.history", "activity.view"]))
-    items.push({ key: "history", href: "/history", icon: "📋", label: "History" });
   if (hasPermission(user, "attendance.view"))
     items.push({ key: "attendance", href: "/attendance", icon: "🗓️", label: "Attendance" });
-  // advance.view alone must reach the page too — Salary.tsx renders only the
-  // tabs the holder can actually open.
   if (hasAnyPermission(user, ["salary.view", "advance.view"]))
     items.push({ key: "salary", href: "/salary", icon: "💰", label: "Salary" });
+  if (hasAnyPermission(user, ["bill.history", "activity.view"]))
+    items.push({ key: "history", href: "/history", icon: "📋", label: "History" });
   return items;
 }
 
@@ -314,9 +342,9 @@ export function canAccessSection(user: User | null, section: string): boolean {
       return hasPermission(user, "suppliers.view");
     case "purchases":
       return hasAnyPermission(user, ["purchases.create", "purchases.pay", "purchases.return"]);
+    case "cashbook":
+      return hasPermission(user, "cashbook.view");
     case "reports":
-      // Someone may hold suppliers.reports without reports.view — the page
-      // renders only the tabs they can actually open.
       return hasAnyPermission(user, ["reports.view", "suppliers.reports"]);
     case "settings":
       return true; // My Account is always reachable
@@ -335,6 +363,7 @@ export function defaultRoute(user: User | null): string {
     return "/purchases";
   if (hasPermission(user, "customers.view")) return "/customers";
   if (hasAnyPermission(user, ["bill.history", "activity.view"])) return "/history";
+  if (hasPermission(user, "cashbook.view")) return "/cashbook";
   if (hasPermission(user, "attendance.view")) return "/attendance";
   if (hasAnyPermission(user, ["salary.view", "advance.view"])) return "/salary";
   if (hasAnyPermission(user, ["reports.view", "suppliers.reports"])) return "/reports";

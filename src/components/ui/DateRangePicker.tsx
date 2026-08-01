@@ -56,7 +56,7 @@ function CustomRange({
 }) {
   return (
     <div className="grid grid-cols-2 gap-3">
-      <div>
+      <div className="min-w-0">
         <label className={labelCls} htmlFor="dr-from">From</label>
         <input
           id="dr-from"
@@ -66,7 +66,7 @@ function CustomRange({
           onChange={(e) => onChange({ ...value, from: e.target.value || null })}
         />
       </div>
-      <div>
+      <div className="min-w-0">
         <label className={labelCls} htmlFor="dr-to">To</label>
         <input
           id="dr-to"
