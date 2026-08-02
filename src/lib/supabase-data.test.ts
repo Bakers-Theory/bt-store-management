@@ -229,6 +229,8 @@ describe("mapBill", () => {
     discount_percent: 0,
     discount_type: "percent" as const,
     discount_amount: 0,
+    shortfall: 0,
+    shortfall_note: "",
     status: "active" as const,
     created_at: "2026-06-30T10:00:00Z",
     cancelled_at: null,
@@ -242,6 +244,22 @@ describe("mapBill", () => {
 
   it("maps a null customer_id (legacy bill) to undefined", () => {
     expect(mapBill({ ...baseRow, customer_id: null }, []).customerId).toBeUndefined();
+  });
+
+  it("carries a shortfall and its note through", () => {
+    const b = mapBill(
+      { ...baseRow, customer_id: null, shortfall: 2, shortfall_note: "no change" },
+      [],
+    );
+    expect(b.shortfall).toBe(2);
+    expect(b.shortfallNote).toBe("no change");
+  });
+
+  it("coerces a numeric-as-string shortfall and defaults a missing one to 0", () => {
+    // Postgres numeric can arrive as a string over the wire, and a bill cached
+    // before this feature has no column at all.
+    expect(mapBill({ ...baseRow, customer_id: null, shortfall: "2.50" as unknown as number }, []).shortfall).toBe(2.5);
+    expect(mapBill({ ...baseRow, customer_id: null, shortfall: undefined as unknown as number }, []).shortfall).toBe(0);
   });
 });
 

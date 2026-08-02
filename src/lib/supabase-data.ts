@@ -41,6 +41,8 @@ interface BillRow {
   discount_percent: number;
   discount_type: "percent" | "flat";
   discount_amount: number;
+  shortfall: number;
+  shortfall_note: string;
   status: "active" | "cancelled";
   created_at: string;
   cancelled_at: string | null;
@@ -153,6 +155,10 @@ export const mapBill = (r: BillRow, lines: BillLine[]): Bill => ({
   discountPercent: r.discount_percent,
   discountType: r.discount_type,
   discountAmount: r.discount_amount,
+  // Number(): a numeric can arrive as a string over the wire, and a bill cached
+  // from before this column existed has nothing here at all.
+  shortfall: Number(r.shortfall ?? 0),
+  shortfallNote: r.shortfall_note ?? "",
   billerName: r.biller_name ?? "",
   date: r.created_at,
   status: r.status,
@@ -712,6 +718,8 @@ export const rpcGenerateBill = async (
   customer: {
     name: string; phone: string; payment: PaymentMethod;
     discount: number; discountType: "percent" | "flat";
+    /** What the customer actually handed over; omitted means paid in full. */
+    received?: number; shortfallNote?: string;
   },
   lines: { itemId: string; qty: number }[],
   clientRef: string,

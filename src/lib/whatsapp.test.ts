@@ -36,6 +36,8 @@ const bill = (over: Partial<Bill> = {}): Bill => ({
   discountPercent: 0,
   discountType: "percent",
   discountAmount: 0,
+  shortfall: 0,
+  shortfallNote: "",
   billerName: "Asha",
   date: "2026-07-27T12:45:00.000Z",
   status: "active",
