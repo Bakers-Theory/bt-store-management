@@ -1,6 +1,6 @@
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
-import { Figtree, Newsreader, Satisfy } from "next/font/google";
+import { Figtree, Satisfy } from "next/font/google";
 import { AuthProvider } from "@/components/system/AuthProvider";
 import { StoreHydrator } from "@/components/system/StoreHydrator";
 import { ToastHost } from "@/components/system/ToastHost";
@@ -16,17 +16,6 @@ const figtree = Figtree({
   weight: ["400", "500", "600", "700", "800"],
   variable: "--font-figtree",
   display: "swap",
-});
-const newsreader = Newsreader({
-  subsets: ["latin"],
-  style: ["italic", "normal"],
-  weight: ["400", "500"],
-  variable: "--font-newsreader",
-  display: "swap",
-  // Next.js has no fallback metrics for Newsreader; skip the size-adjust
-  // fallback (and its build warning). Provide an explicit serif fallback.
-  adjustFontFallback: false,
-  fallback: ["Georgia", "Cambria", "Times New Roman", "serif"],
 });
 // Satisfy is a script/handwriting face — used for the "Bakers Theory" wordmark.
 const satisfy = Satisfy({
@@ -74,7 +63,7 @@ const supabaseOrigin = process.env.NEXT_PUBLIC_SUPABASE_URL
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${figtree.variable} ${newsreader.variable} ${satisfy.variable}`}>
+    <html lang="en" className={`${figtree.variable} ${satisfy.variable}`}>
       <head>
         {supabaseOrigin && (
           <link rel="preconnect" href={supabaseOrigin} crossOrigin="anonymous" />

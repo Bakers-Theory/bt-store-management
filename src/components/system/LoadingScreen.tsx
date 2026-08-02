@@ -9,7 +9,7 @@ export function LoadingScreen() {
       <div className="flex flex-col items-center gap-5">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src="/apple-touch-icon.png"
+          src="/logo-144.webp"
           alt="Bakers Theory"
           width={62}
           height={62}

@@ -107,6 +107,8 @@ interface StoreState {
     discount: { mode: "percent" | "flat"; value: number },
     /** Idempotency key for this checkout attempt; reuse it when retrying. */
     clientRef: string,
+    /** Set only when the biller entered an amount; the server derives the gap. */
+    shortfall?: { received: number; note: string },
   ) => Promise<Bill>;
   cancelBill: (id: string, byName: string) => Promise<Result>;
   deleteBill: (id: string, byName: string) => Promise<Result>;
@@ -293,11 +295,15 @@ export const useBakeryStore = create<StoreState>()(
     // A bill can consume stock across many items at once (FIFO, per line), so
     // it refreshes the item list rather than patching a single row — still far
     // cheaper than the old full reload, since settings/lists never change here.
-    generateBill: async (customer, lines, paymentMethod, discount, clientRef) => {
+    generateBill: async (customer, lines, paymentMethod, discount, clientRef, shortfall) => {
       // The bill comes back built from the stored rows — prices, lines and
       // biller included — so nothing here is reconstructed from the cart.
       const bill = await rpcGenerateBill(
-        { ...customer, payment: paymentMethod, discount: discount.value, discountType: discount.mode },
+        {
+          ...customer, payment: paymentMethod,
+          discount: discount.value, discountType: discount.mode,
+          ...(shortfall ? { received: shortfall.received, shortfallNote: shortfall.note } : {}),
+        },
         lines.map((l) => ({ itemId: l.itemId, qty: l.qty })),
         clientRef,
       );

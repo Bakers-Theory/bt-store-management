@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeTotals } from "./bill";
+import { computeTotals, shortfallFor } from "./bill";
 import type { BillLine } from "./types";
 
 const line = (qty: number, price: number): BillLine => ({
@@ -25,5 +25,32 @@ describe("computeTotals", () => {
     expect(computeTotals([line(1, 100)], 5, 10)).toEqual({
       subtotal: 100, discount: 10, tax: 4.5, total: 94.5,
     });
+  });
+});
+
+describe("shortfallFor", () => {
+  it("is the gap when the customer pays less than the total", () => {
+    expect(shortfallFor(72, 70)).toBe(2);
+  });
+  it("is zero on exact payment", () => {
+    expect(shortfallFor(72, 72)).toBe(0);
+  });
+  it("is zero on an overpayment — that is change due, not a loss", () => {
+    expect(shortfallFor(72, 80)).toBe(0);
+  });
+  it("is the whole total when nothing was received", () => {
+    expect(shortfallFor(72, 0)).toBe(72);
+  });
+  it("treats a blank entry (null) as paid in full", () => {
+    expect(shortfallFor(72, null)).toBe(0);
+  });
+  it("treats a non-finite amount as paid in full", () => {
+    expect(shortfallFor(72, NaN)).toBe(0);
+  });
+  it("clamps a negative received amount to the total", () => {
+    expect(shortfallFor(72, -5)).toBe(72);
+  });
+  it("rounds the gap to two decimals", () => {
+    expect(shortfallFor(72.55, 70.1)).toBe(2.45);
   });
 });

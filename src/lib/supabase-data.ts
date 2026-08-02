@@ -41,6 +41,8 @@ interface BillRow {
   discount_percent: number;
   discount_type: "percent" | "flat";
   discount_amount: number;
+  shortfall: number;
+  shortfall_note: string;
   status: "active" | "cancelled";
   created_at: string;
   cancelled_at: string | null;
@@ -153,6 +155,10 @@ export const mapBill = (r: BillRow, lines: BillLine[]): Bill => ({
   discountPercent: r.discount_percent,
   discountType: r.discount_type,
   discountAmount: r.discount_amount,
+  // Number(): a numeric can arrive as a string over the wire, and a bill cached
+  // from before this column existed has nothing here at all.
+  shortfall: Number(r.shortfall ?? 0),
+  shortfallNote: r.shortfall_note ?? "",
   billerName: r.biller_name ?? "",
   date: r.created_at,
   status: r.status,
@@ -712,6 +718,8 @@ export const rpcGenerateBill = async (
   customer: {
     name: string; phone: string; payment: PaymentMethod;
     discount: number; discountType: "percent" | "flat";
+    /** What the customer actually handed over; omitted means paid in full. */
+    received?: number; shortfallNote?: string;
   },
   lines: { itemId: string; qty: number }[],
   clientRef: string,
@@ -1919,7 +1927,11 @@ export async function fetchCashEntriesPage(
     .from("cash_entry_v")
     .select("*")
     .order("on_date", { ascending: false })
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    // Entries written by one RPC share a created_at (it is the transaction
+    // timestamp), so without seq the tie is arbitrary and the page boundary
+    // can repeat or skip a row.
+    .order("seq", { ascending: false });
 
   if (filters.from) query = query.gte("on_date", filters.from);
   if (filters.to) query = query.lte("on_date", filters.to);
@@ -2387,7 +2399,8 @@ export async function fetchCashEntriesForSource(
     .select("*")
     .eq("source_type", sourceType)
     .eq("source_id", sourceId)
-    .order("created_at");
+    .order("created_at")
+    .order("seq");
   if (error) throw new Error(error.message);
   return ((data ?? []) as CashEntryRow[]).map(mapCashEntry);
 }
@@ -2467,7 +2480,12 @@ export async function fetchCashbookReportData(
 ): Promise<CashbookReportData> {
   const supabase = createClient();
 
-  let entriesQ = supabase.from("cash_entry_v").select("*").order("on_date").order("created_at");
+  let entriesQ = supabase
+    .from("cash_entry_v")
+    .select("*")
+    .order("on_date")
+    .order("created_at")
+    .order("seq");
   if (range.from) entriesQ = entriesQ.gte("on_date", range.from);
   if (range.to) entriesQ = entriesQ.lte("on_date", range.to);
 

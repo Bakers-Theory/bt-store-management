@@ -64,7 +64,7 @@ export function AppSkeleton() {
         <header className="sticky top-0 z-40 flex flex-shrink-0 items-center gap-3.5 border-b border-line bg-warm-white/90 px-4 py-3.5 backdrop-blur lg:px-[22px]">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/apple-touch-icon.png"
+            src="/logo-144.webp"
             alt=""
             width={36}
             height={36}

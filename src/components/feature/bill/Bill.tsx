@@ -6,7 +6,7 @@ import { useBakeryStore } from "@/lib/store";
 import { shareBillOnWhatsApp } from "@/lib/whatsapp";
 import { useUIStore } from "@/lib/ui-store";
 import { useCurrentUser } from "@/components/system/AuthProvider";
-import { computeTotals } from "@/lib/bill";
+import { computeTotals, shortfallFor } from "@/lib/bill";
 import { hasPermission } from "@/lib/permissions";
 import { expiryStatus } from "@/lib/expiry";
 import { formatDate } from "@/lib/format";
@@ -65,6 +65,10 @@ export function Bill() {
   const [customer, setCustomer] = useState({ name: "", phone: "" });
   const [payment, setPayment] = useState<PaymentMethod>("Cash");
   const [cashReceived, setCashReceived] = useState("");
+  const [shortNote, setShortNote] = useState("");
+  // Set when Generate is pressed on a short-paid bill; the dialog it opens is
+  // the only path to actually recording a loss, so a mistyped amount cannot.
+  const [confirmShort, setConfirmShort] = useState(false);
   const [clearArmed, setClearArmed] = useState(false);
   const [discount, setDiscount] = useState("");
   const [discountMode, setDiscountMode] = useState<"percent" | "flat">("percent");
@@ -91,7 +95,13 @@ export function Bill() {
     discountMode,
   );
   const cartCount = lines.reduce((n, l) => n + l.qty, 0);
-  const changeDue = (parseFloat(cashReceived) || 0) - total;
+  // "" means the biller has not entered an amount at all — that is paid in
+  // full, not a ₹0 payment. A half-typed "-" parses to NaN and is treated the
+  // same way, so nothing downstream ever sees a non-number.
+  const parsedReceived = cashReceived === "" ? NaN : parseFloat(cashReceived);
+  const received = Number.isFinite(parsedReceived) ? parsedReceived : null;
+  const changeDue = (received ?? total) - total;
+  const shortfall = shortfallFor(total, received);
 
   // Why the Generate button is disabled — shown inline so it's never a silent
   // dead-end (a disabled button can't fire its own click handler).
@@ -230,6 +240,42 @@ export function Bill() {
     setClearArmed(false);
     setLines([]);
     setCashReceived("");
+    setShortNote("");
+  };
+
+  const runGenerate = async () => {
+    setConfirmShort(false);
+    // Held across retries: if a previous attempt committed the bill but the
+    // response never made it back, reusing the ref returns that same bill
+    // instead of ringing up a second one. Cleared only once we have the bill.
+    clientRef.current ??= crypto.randomUUID();
+    setGenerating(true);
+    try {
+      const bill = await generateBill(
+        customer,
+        lines,
+        payment,
+        { mode: discountMode, value: discountValue },
+        clientRef.current,
+        received === null ? undefined : { received, note: shortNote.trim() },
+      );
+      clientRef.current = null;
+      setLines([]);
+      setCustomer({ name: "", phone: "" });
+      setPayment("Cash");
+      setCashReceived("");
+      setShortNote("");
+      setDiscount("");
+      setPhoneErr("");
+      setNameErr("");
+      setClearArmed(false);
+      setCartOpen(false);
+      setReceipt(bill);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not generate bill", "error");
+    } finally {
+      setGenerating(false);
+    }
   };
 
   const generate = async () => {
@@ -250,35 +296,13 @@ export function Bill() {
       setPhoneErr("Phone number must be exactly 10 digits");
       return;
     }
-    // Held across retries: if a previous attempt committed the bill but the
-    // response never made it back, reusing the ref returns that same bill
-    // instead of ringing up a second one. Cleared only once we have the bill.
-    clientRef.current ??= crypto.randomUUID();
-    setGenerating(true);
-    try {
-      const bill = await generateBill(
-        customer,
-        lines,
-        payment,
-        { mode: discountMode, value: discountValue },
-        clientRef.current,
-      );
-      clientRef.current = null;
-      setLines([]);
-      setCustomer({ name: "", phone: "" });
-      setPayment("Cash");
-      setCashReceived("");
-      setDiscount("");
-      setPhoneErr("");
-      setNameErr("");
-      setClearArmed(false);
-      setCartOpen(false);
-      setReceipt(bill);
-    } catch (e) {
-      toast(e instanceof Error ? e.message : "Could not generate bill", "error");
-    } finally {
-      setGenerating(false);
+    // A shortfall is an unrecoverable loss, and the amount box is one keystroke
+    // away from a wrong one — so it is confirmed, never assumed.
+    if (shortfall > 0) {
+      setConfirmShort(true);
+      return;
     }
+    await runGenerate();
   };
 
   const done = () => setReceipt(null);
@@ -814,39 +838,50 @@ export function Bill() {
                     ))}
                   </div>
                 </div>
-                {payment === "Cash" && (
-                  <>
-                    <div className="mt-2 flex items-center justify-between">
-                      <span className="text-[13px] font-semibold text-ink-muted">Cash received</span>
-                      <div className="relative w-[110px]">
-                        <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[13px] font-semibold text-ink-light">
-                          {currency}
-                        </span>
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          inputMode="decimal"
-                          placeholder="0.00"
-                          value={cashReceived}
-                          onChange={(e) => setCashReceived(e.target.value)}
-                          className="num w-full rounded-[8px] border border-line bg-warm-white py-1 pl-6 pr-2 text-right text-[13px] outline-none focus:border-brown"
-                        />
-                      </div>
+                <>
+                  <div className="mt-2 flex items-center justify-between">
+                    <span className="text-[13px] font-semibold text-ink-muted">
+                      {payment === "Cash" ? "Cash received" : "Amount received"}
+                    </span>
+                    <div className="relative w-[110px]">
+                      <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[13px] font-semibold text-ink-light">
+                        {currency}
+                      </span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        inputMode="decimal"
+                        placeholder="0.00"
+                        value={cashReceived}
+                        onChange={(e) => setCashReceived(e.target.value)}
+                        className="num w-full rounded-[8px] border border-line bg-warm-white py-1 pl-6 pr-2 text-right text-[13px] outline-none focus:border-brown"
+                      />
                     </div>
-                    {cashReceived !== "" && (
-                      <div className="mt-1.5 flex justify-between text-[13px] font-bold">
-                        <span className={changeDue < 0 ? "text-danger" : "text-ink"}>
-                          {changeDue < 0 ? "Short by" : "Change due"}
-                        </span>
-                        <span className={`num ${changeDue < 0 ? "text-danger" : "text-success"}`}>
-                          {currency}
-                          {Math.abs(changeDue).toFixed(2)}
-                        </span>
-                      </div>
-                    )}
-                  </>
-                )}
+                  </div>
+                  {cashReceived !== "" && (
+                    <div className="mt-1.5 flex justify-between text-[13px] font-bold">
+                      <span className={shortfall > 0 ? "text-danger" : "text-ink"}>
+                        {shortfall > 0 ? "Short by" : "Change due"}
+                      </span>
+                      <span className={`num ${shortfall > 0 ? "text-danger" : "text-success"}`}>
+                        {currency}
+                        {(shortfall > 0 ? shortfall : changeDue).toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                  {shortfall > 0 && (
+                    <input
+                      type="text"
+                      maxLength={200}
+                      placeholder="Reason (optional)"
+                      value={shortNote}
+                      onChange={(e) => setShortNote(e.target.value)}
+                      className="mt-1.5 w-full rounded-[8px] border border-line bg-warm-white px-2.5 py-1 text-[13px] outline-none focus:border-brown"
+                    />
+                  )}
+                </>
+
                 <button
                   onClick={generate}
                   disabled={
@@ -904,6 +939,38 @@ export function Bill() {
               Print to a 3&quot; (80mm) thermal printer
             </div>
           )}
+        </Modal>
+      )}
+
+      {confirmShort && (
+        <Modal title="Accept a short payment?" onClose={() => setConfirmShort(false)}>
+          <p className="text-sm text-ink-muted">
+            Customer paid{" "}
+            <span className="font-bold text-ink">
+              {currency}
+              {(received ?? 0).toFixed(2)}
+            </span>{" "}
+            of{" "}
+            <span className="font-bold text-ink">
+              {currency}
+              {total.toFixed(2)}
+            </span>
+            . The bill stays at {currency}
+            {total.toFixed(2)} and{" "}
+            <span className="font-bold text-danger">
+              {currency}
+              {shortfall.toFixed(2)}
+            </span>{" "}
+            is recorded as a loss. This cannot be undone without cancelling the bill.
+          </p>
+          <div className="mt-5 flex gap-2.5">
+            <button className="btn-secondary flex-1" onClick={() => setConfirmShort(false)}>
+              Go back
+            </button>
+            <button className="btn-primary flex-1" onClick={runGenerate}>
+              Record loss &amp; generate
+            </button>
+          </div>
         </Modal>
       )}
     </>

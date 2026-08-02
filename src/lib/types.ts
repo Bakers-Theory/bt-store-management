@@ -167,6 +167,10 @@ export interface Bill {
   discountPercent: number;
   discountType: "percent" | "flat";
   discountAmount: number; // actual money discounted (₹), for percent and flat alike
+  /** Unrecoverable gap when the customer paid less than `total` (0 = paid in full). */
+  shortfall: number;
+  /** Optional reason the biller gave for the shortfall ("" when none). */
+  shortfallNote: string;
   billerName: string; // name of the user who generated the bill ("" for legacy bills)
   date: string; // ISO
   status: BillStatus;

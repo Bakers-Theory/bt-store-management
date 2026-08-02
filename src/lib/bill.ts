@@ -36,3 +36,15 @@ export function computeTotals(
   const total = round2(taxable + tax);
   return { subtotal, discount, tax, total };
 }
+
+/**
+ * The unrecoverable gap when a customer pays less than the bill total — ₹2 on a
+ * ₹72 bill settled with ₹70. Clamped to [0, total]: an overpayment is change
+ * due, not a loss, and `null` (nothing typed yet) means paid in full. Mirrors
+ * generate_bill's server-side clamp exactly, so the preview and the stored
+ * figure always agree.
+ */
+export function shortfallFor(total: number, received: number | null): number {
+  if (received === null || !Number.isFinite(received)) return 0;
+  return round2(Math.min(total, Math.max(0, total - received)));
+}

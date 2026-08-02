@@ -17,6 +17,27 @@ export function ViewBillModal({ bill, onClose }: { bill: Bill; onClose: () => vo
   return (
     <Modal title={`Bill #${bill.billNo}`} onClose={onClose}>
       <Receipt bill={bill} />
+      {bill.shortfall > 0 && (
+        <div className="mt-3 rounded-xl border border-danger/30 bg-danger-bg px-3 py-2.5 text-[13px]">
+          <div className="flex justify-between font-semibold text-ink">
+            <span>Received</span>
+            <span className="num">
+              {bakery.currency}
+              {(bill.total - bill.shortfall).toFixed(2)}
+            </span>
+          </div>
+          <div className="mt-1 flex justify-between font-bold text-danger">
+            <span>Shortfall (loss)</span>
+            <span className="num">
+              {bakery.currency}
+              {bill.shortfall.toFixed(2)}
+            </span>
+          </div>
+          {bill.shortfallNote !== "" && (
+            <p className="mt-1.5 text-[12px] text-ink-muted">{bill.shortfallNote}</p>
+          )}
+        </div>
+      )}
       {hasPermission(user, "bill.print") && (
         <div className="mt-4 flex gap-2.5">
           <button

@@ -22,7 +22,6 @@
 
   --shadow-card: 0 2px 12px rgba(100, 60, 20, 0.12);
   --font-sans: var(--font-figtree), system-ui, sans-serif;
-  --font-serif: var(--font-newsreader), Georgia, serif;
 
   --animate-fade-in: fade-in 0.2s ease;
   @keyframes fade-in {
