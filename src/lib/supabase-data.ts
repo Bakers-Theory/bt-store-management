@@ -1927,7 +1927,11 @@ export async function fetchCashEntriesPage(
     .from("cash_entry_v")
     .select("*")
     .order("on_date", { ascending: false })
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    // Entries written by one RPC share a created_at (it is the transaction
+    // timestamp), so without seq the tie is arbitrary and the page boundary
+    // can repeat or skip a row.
+    .order("seq", { ascending: false });
 
   if (filters.from) query = query.gte("on_date", filters.from);
   if (filters.to) query = query.lte("on_date", filters.to);
@@ -2395,7 +2399,8 @@ export async function fetchCashEntriesForSource(
     .select("*")
     .eq("source_type", sourceType)
     .eq("source_id", sourceId)
-    .order("created_at");
+    .order("created_at")
+    .order("seq");
   if (error) throw new Error(error.message);
   return ((data ?? []) as CashEntryRow[]).map(mapCashEntry);
 }
@@ -2475,7 +2480,12 @@ export async function fetchCashbookReportData(
 ): Promise<CashbookReportData> {
   const supabase = createClient();
 
-  let entriesQ = supabase.from("cash_entry_v").select("*").order("on_date").order("created_at");
+  let entriesQ = supabase
+    .from("cash_entry_v")
+    .select("*")
+    .order("on_date")
+    .order("created_at")
+    .order("seq");
   if (range.from) entriesQ = entriesQ.gte("on_date", range.from);
   if (range.to) entriesQ = entriesQ.lte("on_date", range.to);
 
