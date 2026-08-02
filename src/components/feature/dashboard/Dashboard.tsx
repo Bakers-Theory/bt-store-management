@@ -49,9 +49,6 @@ import { expiryStatus } from "@/lib/expiry";
 import { periodLabel as cashPeriodLabel } from "@/lib/cashbook";
 import { summaryTotals, type SupplierTotals } from "@/lib/purchase";
 import { isoDateLocal } from "@/lib/excel";
-import { ItemModal } from "@/components/feature/stock/ItemModal";
-import { ViewBillModal } from "@/components/feature/bill/ViewBillModal";
-import { StockInForm } from "@/components/feature/stock/StockInForm";
 import { Modal } from "@/components/ui/Modal";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { DateRangeFilter } from "@/components/ui/DateRangePicker";
@@ -83,6 +80,21 @@ const CategoryChart = dynamic(() => import("./CategoryChart").then((m) => m.Cate
   ssr: false,
   loading: () => <ChartFallback h={140} />,
 });
+
+// These modals only ever mount after a click, so keep their trees (and the
+// stock/bill code they pull in) out of the initial dashboard bundle.
+const ItemModal = dynamic(
+  () => import("@/components/feature/stock/ItemModal").then((m) => m.ItemModal),
+  { ssr: false },
+);
+const ViewBillModal = dynamic(
+  () => import("@/components/feature/bill/ViewBillModal").then((m) => m.ViewBillModal),
+  { ssr: false },
+);
+const StockInForm = dynamic(
+  () => import("@/components/feature/stock/StockInForm").then((m) => m.StockInForm),
+  { ssr: false },
+);
 
 const priorityBadge: Record<string, string> = {
   High: "badge-danger",

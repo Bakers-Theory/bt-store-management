@@ -105,7 +105,7 @@ export default function LoginPage() {
               animate={{ scale: 1, opacity: 1 }}
               transition={{ delay: 0.1, duration: 0.5, type: "spring" }}
               fetchPriority="high"
-              src="/apple-touch-icon.png"
+              src="/logo-144.webp"
               alt="Bakers Theory"
               className="h-[72px] w-[72px] rounded-[22px] object-cover shadow-[0_8px_24px_rgba(90,52,20,0.28)]"
             />
