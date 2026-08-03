@@ -42,6 +42,30 @@ export function accountLabel(a: CashAccount): string {
 }
 
 /**
+ * "Is there enough to pay this?", for a form that already knows the live
+ * balance. Returns the shortfall message, or null when the money is there.
+ *
+ * A MIRROR of assert_funds() in migration 0059, which is what actually refuses
+ * the payment — this only saves the operator a round trip and a red toast.
+ * `available` must be the live balance, not an as-of-the-date one, because that
+ * is what the SQL side compares against.
+ *
+ * `excludeAmount` is the money-out row being edited: raising a 100 entry to 150
+ * needs 50 more, not 150 more, so its own effect comes off the balance first.
+ */
+export function fundsShortfall(
+  account: CashAccount,
+  available: number,
+  amount: number,
+  excludeAmount = 0,
+): string | null {
+  if (!(amount > 0)) return null;
+  const usable = available + excludeAmount;
+  if (usable >= amount) return null;
+  return `Not enough ${account === "cash" ? "cash in hand" : "money in the bank"} — ${usable.toLocaleString("en-IN")} available, this needs ${amount.toLocaleString("en-IN")}.`;
+}
+
+/**
  * The nine entry types from #32, derived rather than stored. A reversal reads as
  * a Refund whatever it reverses — that is what it is to the person holding the
  * money.
@@ -118,6 +142,39 @@ export function postableCategories(
       .filter((g) => g.leaves.length > 0),
     flat: user.filter((c) => c.parentId === null && !hasChild(c.id) && flows(c)),
   };
+}
+
+export interface CategoryTreeNode {
+  category: CashCategory;
+  children: CashCategory[];
+}
+
+/**
+ * The whole tree, for the management panel.
+ *
+ * The counterpart to `postableCategories`, which answers a different question:
+ * that one is for a PICKER, so it hides system categories and returns leaves
+ * only. This one is for EDITING, so system categories are present (rendered
+ * locked) and a childless group is kept (so you can add into it).
+ *
+ * A child whose parent is absent is dropped rather than promoted — it can only
+ * mean the parent was archived out of `cash_category_v`, and showing an
+ * archived group's children as top-level would be a lie.
+ */
+export function categoryTree(categories: CashCategory[]): CategoryTreeNode[] {
+  // sortOrder is only unique per sibling set, and two rows added in the same
+  // second can share it. The name tiebreak stops the list reordering between
+  // renders.
+  const byOrder = (a: CashCategory, b: CashCategory) =>
+    a.sortOrder - b.sortOrder || a.name.localeCompare(b.name);
+
+  return categories
+    .filter((c) => c.parentId === null)
+    .sort(byOrder)
+    .map((category) => ({
+      category,
+      children: categories.filter((c) => c.parentId === category.id).sort(byOrder),
+    }));
 }
 
 // ─── Period labelling ───────────────────────────────────────────────────────

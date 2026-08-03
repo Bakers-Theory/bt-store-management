@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Info, Loader2 } from "lucide-react";
+import { AlertTriangle, Info, Loader2,Settings2 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
+import { CategoryManager } from "@/components/feature/cashbook/CategoryManager";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { useCurrentUser } from "@/components/system/AuthProvider";
@@ -36,12 +37,14 @@ const inputCls =
 export function ExpenseForm({
   expense,
   categories,
+  onCategoriesChanged,
   vendors,
   onClose,
   onSaved,
 }: {
   expense: Expense | null;
   categories: CashCategory[];
+  onCategoriesChanged: () => void;
   vendors: string[];
   onClose: () => void;
   onSaved: () => void;
@@ -51,7 +54,9 @@ export function ExpenseForm({
   const toast = useUIStore((s) => s.toast);
   const canPay = hasPermission(user, "expense.pay");
   const today = isoDateLocal(new Date());
-
+  const canManageCategories = hasPermission(user, "expense.create");
+  
+  const [managingCategories, setManagingCategories] = useState(false);
   const [expenseDate, setExpenseDate] = useState(expense?.expenseDate ?? today);
   const [categoryId, setCategoryId] = useState(expense?.categoryId ?? "");
   const [vendorName, setVendorName] = useState(expense?.vendorName ?? "");
@@ -187,7 +192,22 @@ export function ExpenseForm({
         </div>
 
         <div>
-          <label className={labelCls} htmlFor="ex-cat">Category</label>
+          <div className="mb-1.5 flex items-center justify-between">
+            <label className={labelCls.replace("mb-1.5 ", "")} htmlFor="ex-cat">
+              Category
+            </label>
+            {canManageCategories && (
+              <button
+                type="button"
+                onClick={() => setManagingCategories((v) => !v)}
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-brown"
+                aria-expanded={managingCategories}
+              >
+                <Settings2 size={12} />
+                {managingCategories ? "Done" : "Manage"}
+              </button>
+            )}
+          </div>
           <select
             id="ex-cat"
             value={categoryId}
@@ -210,6 +230,12 @@ export function ExpenseForm({
               </optgroup>
             ))}
           </select>
+          {managingCategories && (
+            <CategoryManager
+              categories={categories}
+              onChanged={onCategoriesChanged}
+            />
+          )}
         </div>
 
         <div>

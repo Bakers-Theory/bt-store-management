@@ -69,10 +69,14 @@ export function Expenses() {
     [filters, toast],
   );
 
-  useEffect(() => {
+  const reloadCategories = useCallback(() => {
     fetchCashCategories()
       .then(setCategories)
       .catch(() => toast("Couldn't load the categories", "error"));
+  }, [toast]);
+
+  useEffect(() => {
+    reloadCategories();
     // A failed vendor list must not block the register — it only fills a select.
     fetchExpenseVendors()
       .then(setVendors)
@@ -147,6 +151,7 @@ export function Expenses() {
         <ExpenseForm
           expense={editing}
           categories={categories}
+          onCategoriesChanged={reloadCategories}
           vendors={vendors}
           onClose={() => {
             setAdding(false);

@@ -1,17 +1,21 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Settings2 } from "lucide-react";
+import { useCurrentUser } from "@/components/system/AuthProvider";
 import { Modal } from "@/components/ui/Modal";
+import { CategoryManager } from "@/components/feature/cashbook/CategoryManager";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import {
   ENTRY_MODES,
   accountLabel,
+  fundsShortfall,
   modeToAccount,
   postableCategories,
 } from "@/lib/cashbook";
 import { rpcAddCashEntry, rpcUpdateCashEntry } from "@/lib/supabase-data";
+import { hasPermission } from "@/lib/permissions";
 import { isoDateLocal } from "@/lib/excel";
 import type { CashCategory, CashDirection, CashEntry, CashPaymentMode } from "@/lib/types";
 
@@ -22,17 +26,24 @@ const inputCls =
 export function CashEntryModal({
   entry,
   categories,
+  balances,
+  onCategoriesChanged,
   onClose,
   onSaved,
 }: {
   entry: CashEntry | null;
   categories: CashCategory[];
+  /** Live cash and bank balances, so money out can be checked before saving. */
+  balances: { cash: number; bank: number } | null;
+  onCategoriesChanged: () => void;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const currency = useBakeryStore((s) => s.bakery.currency);
   const toast = useUIStore((s) => s.toast);
   const today = isoDateLocal(new Date());
+  const user = useCurrentUser();
+  const canManageCategories = hasPermission(user, "expense.create");
 
   // Direction is fixed once an entry exists: flipping it would turn an expense
   // into income on the same audit row. Delete and re-record instead.
@@ -42,6 +53,7 @@ export function CashEntryModal({
   const [mode, setMode] = useState<CashPaymentMode>(
     entry && ENTRY_MODES.includes(entry.paymentMode) ? entry.paymentMode : "Cash",
   );
+  const [managingCategories, setManagingCategories] = useState(false);
   const [categoryId, setCategoryId] = useState(entry?.categoryId ?? "");
   const [note, setNote] = useState(entry?.note ?? "");
   const [referenceNo, setReferenceNo] = useState(entry?.referenceNo ?? "");
@@ -56,8 +68,31 @@ export function CashEntryModal({
   );
 
   const value = Number(amount);
+  const account = modeToAccount(mode);
+
+  // Money out only, and only once the balances have loaded — an unknown balance
+  // must not block a save. assert_funds() in 0059 is the real gate; this is the
+  // early, quieter version of the same refusal.
+  const shortfall =
+    direction === "out" && balances
+      ? fundsShortfall(
+          account,
+          balances[account],
+          value,
+          // An edit is measured by what it ADDS to the spend: its own posted
+          // amount is already out of the balance, and only when it has not
+          // switched accounts.
+          entry && modeToAccount(entry.paymentMode) === account ? entry.amount : 0,
+        )
+      : null;
+
   const valid =
-    value > 0 && !!categoryId && note.trim() !== "" && onDate !== "" && onDate <= today;
+    value > 0 &&
+    !!categoryId &&
+    note.trim() !== "" &&
+    onDate !== "" &&
+    onDate <= today &&
+    !shortfall;
 
   const submit = () => {
     if (!valid || saving) return;
@@ -153,12 +188,35 @@ export function CashEntryModal({
           {/* The mirror of mode_to_account(), used to tell the operator which
               balance is about to move. The SQL copy is what actually decides. */}
           <p className="mt-1 text-[11px] text-ink-muted">
-            This will move <strong>{accountLabel(modeToAccount(mode))}</strong>.
+            This will move <strong>{accountLabel(account)}</strong>
+            {balances && (
+              <>
+                {" "}
+                — {currency}
+                {balances[account].toLocaleString("en-IN")} available
+              </>
+            )}
+            .
           </p>
         </div>
 
         <div>
-          <label className={labelCls} htmlFor="cb-category">Category</label>
+          <div className="mb-1.5 flex items-center justify-between">
+            <label className={labelCls.replace("mb-1.5 ", "")} htmlFor="cb-category">
+              Category
+            </label>
+            {canManageCategories && (
+              <button
+                type="button"
+                onClick={() => setManagingCategories((v) => !v)}
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-brown"
+                aria-expanded={managingCategories}
+              >
+                <Settings2 size={12} />
+                {managingCategories ? "Done" : "Manage"}
+              </button>
+            )}
+          </div>
           <select
             id="cb-category"
             value={categoryId}
@@ -181,6 +239,12 @@ export function CashEntryModal({
               </optgroup>
             ))}
           </select>
+          {managingCategories && (
+            <CategoryManager
+              categories={categories}
+              onChanged={onCategoriesChanged}
+            />
+          )}
         </div>
 
         <div>
@@ -203,6 +267,12 @@ export function CashEntryModal({
             className={inputCls}
           />
         </div>
+
+        {shortfall && (
+          <p className="rounded-[11px] bg-danger-bg px-3 py-2 text-[12px] font-semibold text-danger">
+            {shortfall}
+          </p>
+        )}
 
         <button
           disabled={!valid || saving}

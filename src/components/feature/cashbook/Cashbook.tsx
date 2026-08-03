@@ -84,12 +84,16 @@ export function Cashbook() {
     [filters, toast],
   );
 
-  // Categories are bounded and slow-changing: fetched once, not per range.
-  useEffect(() => {
+  const reloadCategories = useCallback(() => {
     fetchCashCategories()
       .then(setCategories)
       .catch(() => toast("Couldn't load the categories", "error"));
   }, [toast]);
+
+  // Categories are bounded and slow-changing: fetched once, not per range.
+  useEffect(() => {
+    reloadCategories();
+  }, [reloadCategories]);
 
   // Today's reconciliation figures don't depend on the range filter, so fetch
   // once rather than on every range change.
@@ -113,8 +117,14 @@ export function Cashbook() {
     void loadPage(0);
   }, [loadPage, loadSummary]);
 
+  // The balances inside `summary` are live whatever the filter range, which is
+  // exactly what a money-out form needs to check against.
+  const balances = summary
+    ? { cash: summary.cashBalance, bank: summary.bankBalance }
+    : null;
+
+  // CashbookTable arms its own in-row confirm before calling this.
   const remove = (e: CashEntry) => {
-    if (!confirm(`Remove this entry?\n\n${e.categoryPath} — ${e.note}`)) return;
     rpcDeleteCashEntry(e.id)
       .then(() => {
         toast("Entry removed", "success");
@@ -198,6 +208,8 @@ export function Cashbook() {
         <CashEntryModal
           entry={editing}
           categories={categories}
+          balances={balances}
+          onCategoriesChanged={reloadCategories}
           onClose={() => {
             setAdding(false);
             setEditing(null);
@@ -212,6 +224,7 @@ export function Cashbook() {
 
       {transferring && (
         <CashTransferModal
+          balances={balances}
           onClose={() => setTransferring(false)}
           onSaved={() => {
             setTransferring(false);

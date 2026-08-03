@@ -5,7 +5,7 @@ import { ArrowRight, Loader2 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
-import { accountLabel } from "@/lib/cashbook";
+import { accountLabel, fundsShortfall } from "@/lib/cashbook";
 import { rpcTransferCash } from "@/lib/supabase-data";
 import { isoDateLocal } from "@/lib/excel";
 import type { CashAccount } from "@/lib/types";
@@ -15,9 +15,12 @@ const inputCls =
   "w-full rounded-[11px] border border-line bg-warm-white px-3 py-2.5 text-sm text-ink";
 
 export function CashTransferModal({
+  balances,
   onClose,
   onSaved,
 }: {
+  /** Live cash and bank balances; only the sending side is checked. */
+  balances: { cash: number; bank: number } | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -32,8 +35,14 @@ export function CashTransferModal({
   const [saving, setSaving] = useState(false);
 
   const value = Number(amount);
-  const valid = value > 0 && note.trim() !== "" && onDate !== "" && onDate <= today;
   const to: CashAccount = fromAccount === "cash" ? "bank" : "cash";
+  // The receiving leg can only raise the other account, so only the sending
+  // side is checked — the same rule transfer_cash() applies in 0059.
+  const shortfall = balances
+    ? fundsShortfall(fromAccount, balances[fromAccount], value)
+    : null;
+  const valid =
+    value > 0 && note.trim() !== "" && onDate !== "" && onDate <= today && !shortfall;
 
   const submit = () => {
     if (!valid || saving) return;
@@ -72,6 +81,12 @@ export function CashTransferModal({
           </div>
           <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-ink-muted">
             {accountLabel(fromAccount)} <ArrowRight size={11} /> {accountLabel(to)}
+            {balances && (
+              <span>
+                — {currency}
+                {balances[fromAccount].toLocaleString("en-IN")} available
+              </span>
+            )}
           </p>
         </div>
 
@@ -112,6 +127,12 @@ export function CashTransferModal({
             className={inputCls}
           />
         </div>
+
+        {shortfall && (
+          <p className="rounded-[11px] bg-danger-bg px-3 py-2 text-[12px] font-semibold text-danger">
+            {shortfall}
+          </p>
+        )}
 
         <button
           disabled={!valid || saving}
