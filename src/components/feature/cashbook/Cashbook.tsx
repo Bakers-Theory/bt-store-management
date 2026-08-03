@@ -117,6 +117,12 @@ export function Cashbook() {
     void loadPage(0);
   }, [loadPage, loadSummary]);
 
+  // The balances inside `summary` are live whatever the filter range, which is
+  // exactly what a money-out form needs to check against.
+  const balances = summary
+    ? { cash: summary.cashBalance, bank: summary.bankBalance }
+    : null;
+
   // CashbookTable arms its own in-row confirm before calling this.
   const remove = (e: CashEntry) => {
     rpcDeleteCashEntry(e.id)
@@ -202,6 +208,7 @@ export function Cashbook() {
         <CashEntryModal
           entry={editing}
           categories={categories}
+          balances={balances}
           onCategoriesChanged={reloadCategories}
           onClose={() => {
             setAdding(false);
@@ -217,6 +224,7 @@ export function Cashbook() {
 
       {transferring && (
         <CashTransferModal
+          balances={balances}
           onClose={() => setTransferring(false)}
           onSaved={() => {
             setTransferring(false);

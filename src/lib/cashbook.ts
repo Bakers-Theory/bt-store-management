@@ -42,6 +42,30 @@ export function accountLabel(a: CashAccount): string {
 }
 
 /**
+ * "Is there enough to pay this?", for a form that already knows the live
+ * balance. Returns the shortfall message, or null when the money is there.
+ *
+ * A MIRROR of assert_funds() in migration 0059, which is what actually refuses
+ * the payment — this only saves the operator a round trip and a red toast.
+ * `available` must be the live balance, not an as-of-the-date one, because that
+ * is what the SQL side compares against.
+ *
+ * `excludeAmount` is the money-out row being edited: raising a 100 entry to 150
+ * needs 50 more, not 150 more, so its own effect comes off the balance first.
+ */
+export function fundsShortfall(
+  account: CashAccount,
+  available: number,
+  amount: number,
+  excludeAmount = 0,
+): string | null {
+  if (!(amount > 0)) return null;
+  const usable = available + excludeAmount;
+  if (usable >= amount) return null;
+  return `Not enough ${account === "cash" ? "cash in hand" : "money in the bank"} — ${usable.toLocaleString("en-IN")} available, this needs ${amount.toLocaleString("en-IN")}.`;
+}
+
+/**
  * The nine entry types from #32, derived rather than stored. A reversal reads as
  * a Refund whatever it reverses — that is what it is to the person holding the
  * money.

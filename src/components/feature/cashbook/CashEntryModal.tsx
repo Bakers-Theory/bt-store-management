@@ -10,6 +10,7 @@ import { useUIStore } from "@/lib/ui-store";
 import {
   ENTRY_MODES,
   accountLabel,
+  fundsShortfall,
   modeToAccount,
   postableCategories,
 } from "@/lib/cashbook";
@@ -25,12 +26,15 @@ const inputCls =
 export function CashEntryModal({
   entry,
   categories,
+  balances,
   onCategoriesChanged,
   onClose,
   onSaved,
 }: {
   entry: CashEntry | null;
   categories: CashCategory[];
+  /** Live cash and bank balances, so money out can be checked before saving. */
+  balances: { cash: number; bank: number } | null;
   onCategoriesChanged: () => void;
   onClose: () => void;
   onSaved: () => void;
@@ -64,8 +68,31 @@ export function CashEntryModal({
   );
 
   const value = Number(amount);
+  const account = modeToAccount(mode);
+
+  // Money out only, and only once the balances have loaded — an unknown balance
+  // must not block a save. assert_funds() in 0059 is the real gate; this is the
+  // early, quieter version of the same refusal.
+  const shortfall =
+    direction === "out" && balances
+      ? fundsShortfall(
+          account,
+          balances[account],
+          value,
+          // An edit is measured by what it ADDS to the spend: its own posted
+          // amount is already out of the balance, and only when it has not
+          // switched accounts.
+          entry && modeToAccount(entry.paymentMode) === account ? entry.amount : 0,
+        )
+      : null;
+
   const valid =
-    value > 0 && !!categoryId && note.trim() !== "" && onDate !== "" && onDate <= today;
+    value > 0 &&
+    !!categoryId &&
+    note.trim() !== "" &&
+    onDate !== "" &&
+    onDate <= today &&
+    !shortfall;
 
   const submit = () => {
     if (!valid || saving) return;
@@ -161,7 +188,15 @@ export function CashEntryModal({
           {/* The mirror of mode_to_account(), used to tell the operator which
               balance is about to move. The SQL copy is what actually decides. */}
           <p className="mt-1 text-[11px] text-ink-muted">
-            This will move <strong>{accountLabel(modeToAccount(mode))}</strong>.
+            This will move <strong>{accountLabel(account)}</strong>
+            {balances && (
+              <>
+                {" "}
+                — {currency}
+                {balances[account].toLocaleString("en-IN")} available
+              </>
+            )}
+            .
           </p>
         </div>
 
@@ -232,6 +267,12 @@ export function CashEntryModal({
             className={inputCls}
           />
         </div>
+
+        {shortfall && (
+          <p className="rounded-[11px] bg-danger-bg px-3 py-2 text-[12px] font-semibold text-danger">
+            {shortfall}
+          </p>
+        )}
 
         <button
           disabled={!valid || saving}

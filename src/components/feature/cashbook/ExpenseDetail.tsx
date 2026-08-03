@@ -14,8 +14,10 @@ import {
   expenseStatusTone,
   gstSplit,
 } from "@/lib/expense";
+import { fundsShortfall } from "@/lib/cashbook";
 import {
   fetchCashEntriesForSource,
+  fetchCashbookSummary,
   fetchExpense,
   fetchExpenseEvents,
   rpcCancelExpense,
@@ -100,6 +102,9 @@ export function ExpenseDetail({
   const [expense, setExpense] = useState<Expense | null>(null);
   const [events, setEvents] = useState<ExpenseEvent[]>([]);
   const [entries, setEntries] = useState<CashEntry[]>([]);
+  // Live cash and bank, so "Approve & pay" can say up front that the money is
+  // not there. pay_expense() (0059) is what actually refuses it.
+  const [balances, setBalances] = useState<{ cash: number; bank: number } | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   // Remove arms an inline confirm in the action bar rather than a browser
@@ -111,11 +116,18 @@ export function ExpenseDetail({
       fetchExpense(expenseId),
       fetchExpenseEvents(expenseId),
       fetchCashEntriesForSource("expense", expenseId),
+      // Kept out of the group above and swallowed on failure: cashbook_summary
+      // needs `cashbook.view`, which an approver may not hold, and a missing
+      // balance must not turn into "couldn't load this expense".
+      fetchCashbookSummary()
+        .then((s) => ({ cash: s.cashBalance, bank: s.bankBalance }))
+        .catch(() => null),
     ])
-      .then(([e, ev, ce]) => {
+      .then(([e, ev, ce, b]) => {
         setExpense(e);
         setEvents(ev);
         setEntries(ce);
+        setBalances(b);
       })
       .catch(() => toast("Couldn't load this expense", "error"))
       .finally(() => setLoaded(true));
@@ -208,6 +220,17 @@ export function ExpenseDetail({
   const { base, gst } = gstSplit(expense.amount, expense.gstIncluded, expense.gstAmount);
   const mine = expense.createdById === user?.id;
   const canEdit = expense.status === "pending" && (mine || perms.canPay);
+
+  // A Mixed payment must clear on BOTH sides — pay_expense() checks each half
+  // before posting either, so a payment that only half fits is refused whole.
+  const payShortfall = !balances
+    ? null
+    : expense.paymentMode === "Mixed"
+      ? (fundsShortfall("cash", balances.cash, expense.splitCash) ??
+        fundsShortfall("bank", balances.bank, expense.splitBank))
+      : expense.paymentMode === "Cash"
+        ? fundsShortfall("cash", balances.cash, expense.amount)
+        : fundsShortfall("bank", balances.bank, expense.amount);
 
   return (
     <Modal title={`Expense #${expense.expenseNo}`} onClose={onClose}>
@@ -368,14 +391,22 @@ export function ExpenseDetail({
             </button>
           )}
           {canTransition(expense.status, "paid", perms) && (
-            <button
-              disabled={busy}
-              onClick={pay}
-              className="inline-flex items-center gap-1.5 rounded-[11px] bg-brown px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
-            >
-              {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-              Approve &amp; pay
-            </button>
+            <>
+              <button
+                disabled={busy || !!payShortfall}
+                onClick={pay}
+                className="inline-flex items-center gap-1.5 rounded-[11px] bg-brown px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
+              >
+                {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                Approve &amp; pay
+              </button>
+              {payShortfall && (
+                <p className="w-full rounded-[11px] bg-danger-bg px-3 py-2 text-[12px] font-semibold text-danger">
+                  {payShortfall} Take money in, or move some from the other
+                  account, before paying this.
+                </p>
+              )}
+            </>
           )}
           {canTransition(expense.status, "rejected", perms) && (
             <button disabled={busy} onClick={reject} className={`${btnCls} text-red-700`}>

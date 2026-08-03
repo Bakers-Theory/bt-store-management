@@ -6,6 +6,7 @@ import {
   differenceLabel,
   entryTypeLabel,
   expectedCash,
+  fundsShortfall,
   modeToAccount,
   periodLabel,
   postableCategories,
@@ -287,5 +288,28 @@ describe("categoryTree", () => {
   it("drops a child whose parent is not in the array", () => {
     const tree = categoryTree([cat({ id: "orphan", name: "Orphan", parentId: "gone" })]);
     expect(tree).toEqual([]);
+  });
+});
+describe("fundsShortfall", () => {
+  it("passes when the balance covers the amount exactly", () => {
+    expect(fundsShortfall("cash", 500, 500)).toBeNull();
+  });
+
+  it("names the account and both figures when it is short", () => {
+    expect(fundsShortfall("cash", 300, 500)).toContain("cash in hand");
+    expect(fundsShortfall("bank", 300, 500)).toContain("money in the bank");
+    expect(fundsShortfall("bank", 300, 500)).toContain("500");
+  });
+
+  it("measures an edit by what it adds, not by its whole amount", () => {
+    // 400 in the drawer, a 100 entry already posted out of it, raised to 150:
+    // only the extra 50 has to be there.
+    expect(fundsShortfall("cash", 400, 150, 100)).toBeNull();
+    expect(fundsShortfall("cash", 0, 150, 100)).not.toBeNull();
+  });
+
+  it("ignores a zero or empty amount — that is the form's own validation", () => {
+    expect(fundsShortfall("cash", 0, 0)).toBeNull();
+    expect(fundsShortfall("cash", 0, Number.NaN)).toBeNull();
   });
 });
