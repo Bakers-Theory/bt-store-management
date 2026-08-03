@@ -42,6 +42,10 @@ export function CategoryManager({
   const [busy, setBusy] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftName, setDraftName] = useState("");
+  // Removing a category is not routine, so the trash icon arms an inline
+  // confirm rather than firing straight away. Inline and not window.confirm:
+  // the OS dialog steals focus from the surrounding Modal and looks foreign.
+  const [confirmId, setConfirmId] = useState<string | null>(null);
 
   const [newName, setNewName] = useState("");
   const [newParent, setNewParent] = useState(""); // "" = top level
@@ -73,6 +77,7 @@ export function CategoryManager({
   };
 
   const startEdit = (c: CashCategory) => {
+    setConfirmId(null);
     setEditingId(c.id);
     setDraftName(c.name);
   };
@@ -89,8 +94,9 @@ export function CategoryManager({
   };
 
   const remove = (c: CashCategory) => {
-    if (!confirm(`Remove "${c.name}"?\n\nPast entries keep this label.`)) return;
-    run(c.id, rpcArchiveCashCategory(c.id), `Removed "${c.name}"`);
+    run(c.id, rpcArchiveCashCategory(c.id), `Removed "${c.name}"`, () =>
+      setConfirmId(null),
+    );
   };
 
   const add = () => {
@@ -110,7 +116,39 @@ export function CategoryManager({
 
   const row = (c: CashCategory, indented: boolean) => {
     const editing = editingId === c.id;
+    const confirming = confirmId === c.id;
     const working = busy === c.id;
+
+    if (confirming) {
+      return (
+        <div
+          key={c.id}
+          className={`flex items-center gap-1.5 py-1 ${indented ? "pl-4" : ""}`}
+        >
+          <span className="flex-1 text-[11.5px] text-ink-muted">
+            Remove &ldquo;{c.name}&rdquo;? Past entries keep this label.
+          </span>
+          <button
+            type="button"
+            onClick={() => setConfirmId(null)}
+            disabled={working}
+            className="shrink-0 rounded-lg border border-line bg-warm-white px-2.5 py-1 text-[11.5px] font-bold text-ink-muted disabled:opacity-60"
+          >
+            Keep
+          </button>
+          <button
+            type="button"
+            onClick={() => remove(c)}
+            disabled={working}
+            className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-danger px-2.5 py-1 text-[11.5px] font-bold text-warm-white disabled:opacity-60"
+          >
+            {working && <Loader2 size={12} className="animate-spin" />}
+            Remove
+          </button>
+        </div>
+      );
+    }
+
     return (
       <div
         key={c.id}
@@ -179,16 +217,12 @@ export function CategoryManager({
                 </button>
                 <button
                   type="button"
-                  onClick={() => remove(c)}
+                  onClick={() => setConfirmId(c.id)}
                   disabled={working}
                   className={iconBtnCls}
                   aria-label={`Remove ${c.name}`}
                 >
-                  {working ? (
-                    <Loader2 size={14} className="animate-spin" />
-                  ) : (
-                    <Trash2 size={14} />
-                  )}
+                  <Trash2 size={14} />
                 </button>
               </>
             )}

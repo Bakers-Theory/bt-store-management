@@ -1,6 +1,7 @@
 "use client";
 
-import { Pencil, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { Pencil, Trash2, X } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { entryTypeLabel } from "@/lib/cashbook";
 import type { CashEntry } from "@/lib/types";
@@ -35,6 +36,8 @@ export function CashbookTable({
 }) {
   const currency = useBakeryStore((s) => s.bakery.currency);
   const money = (n: number) => `${currency}${n.toLocaleString("en-IN")}`;
+  // The trash icon arms an in-row confirm instead of a browser dialog.
+  const [confirmId, setConfirmId] = useState<string | null>(null);
 
   if (entries.length === 0) {
     return (
@@ -60,7 +63,7 @@ export function CashbookTable({
             <th className="px-4 py-3">By</th>
             <th className="px-4 py-3 text-right">Amount</th>
             <th className="px-4 py-3 text-right">Balance</th>
-            <th className="px-4 py-3" />
+            <th className="w-[136px] px-4 py-3" />
           </tr>
         </thead>
         <tbody>
@@ -114,8 +117,33 @@ export function CashbookTable({
                   {money(e.runningBalance)}
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-right">
-                  {canEdit && mine && (
-                    <span className="inline-flex gap-1">
+                  {/* Armed state: a filled red "Remove" is the confirmation,
+                      with an X to back out. Both states sit in the same
+                      fixed-width, right-aligned box (matching the <th>), so
+                      arming a row cannot resize the column and shift the
+                      other columns left. */}
+                  {canEdit && mine && confirmId === e.id && (
+                    <span className="inline-flex w-[104px] items-center justify-end gap-1">
+                      <button
+                        onClick={() => {
+                          setConfirmId(null);
+                          onDelete(e);
+                        }}
+                        className="rounded-lg bg-danger px-2 py-1 text-[11px] font-bold text-warm-white"
+                      >
+                        Remove
+                      </button>
+                      <button
+                        onClick={() => setConfirmId(null)}
+                        aria-label="Keep entry"
+                        className="rounded-lg p-1.5 text-ink-muted hover:bg-[#f6ecdd]"
+                      >
+                        <X size={13} />
+                      </button>
+                    </span>
+                  )}
+                  {canEdit && mine && confirmId !== e.id && (
+                    <span className="inline-flex w-[104px] justify-end gap-1">
                       <button
                         onClick={() => onEdit(e)}
                         aria-label="Edit entry"
@@ -124,7 +152,7 @@ export function CashbookTable({
                         <Pencil size={13} />
                       </button>
                       <button
-                        onClick={() => onDelete(e)}
+                        onClick={() => setConfirmId(e.id)}
                         aria-label="Remove entry"
                         className="rounded-lg p-1.5 text-red-700 hover:bg-red-50"
                       >

@@ -117,8 +117,8 @@ export function Cashbook() {
     void loadPage(0);
   }, [loadPage, loadSummary]);
 
+  // CashbookTable arms its own in-row confirm before calling this.
   const remove = (e: CashEntry) => {
-    if (!confirm(`Remove this entry?\n\n${e.categoryPath} — ${e.note}`)) return;
     rpcDeleteCashEntry(e.id)
       .then(() => {
         toast("Entry removed", "success");

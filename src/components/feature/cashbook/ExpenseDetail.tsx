@@ -102,6 +102,9 @@ export function ExpenseDetail({
   const [entries, setEntries] = useState<CashEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Remove arms an inline confirm in the action bar rather than a browser
+  // dialog, so the question stays inside the modal it belongs to.
+  const [confirmRemove, setConfirmRemove] = useState(false);
 
   const load = useCallback(() => {
     return Promise.all([
@@ -180,7 +183,6 @@ export function ExpenseDetail({
   // closing first unmounts this component while its own reload is in flight.
   const remove = () => {
     if (!expense) return;
-    if (!confirm(`Remove expense #${expense.expenseNo}?`)) return;
     setBusy(true);
     rpcDeleteExpense(expense.id)
       .then(() => {
@@ -190,6 +192,7 @@ export function ExpenseDetail({
       })
       .catch((err: Error) => {
         toast(err.message, "error");
+        setConfirmRemove(false);
         setBusy(false);
       });
   };
@@ -385,15 +388,39 @@ export function ExpenseDetail({
             </button>
           )}
           {perms.canCancel &&
-            (expense.status === "pending" || expense.status === "rejected") && (
+            (expense.status === "pending" || expense.status === "rejected") &&
+            (confirmRemove ? (
+              <div className="flex w-full items-center gap-2 rounded-[11px] border border-line bg-cream/60 px-3 py-2">
+                <span className="flex-1 text-[11.5px] text-ink-muted">
+                  Remove expense #{expense.expenseNo}? This cannot be undone.
+                </span>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setConfirmRemove(false)}
+                  className="shrink-0 rounded-lg border border-line bg-warm-white px-2.5 py-1 text-[11.5px] font-bold text-ink-muted disabled:opacity-60"
+                >
+                  Keep
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={remove}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-danger px-2.5 py-1 text-[11.5px] font-bold text-warm-white disabled:opacity-60"
+                >
+                  {busy && <Loader2 size={12} className="animate-spin" />}
+                  Remove
+                </button>
+              </div>
+            ) : (
               <button
                 disabled={busy}
-                onClick={remove}
+                onClick={() => setConfirmRemove(true)}
                 className={`${btnCls} text-red-700`}
               >
                 <Trash2 size={13} /> Remove
               </button>
-            )}
+            ))}
         </div>
       </div>
     </Modal>
