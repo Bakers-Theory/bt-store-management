@@ -84,12 +84,16 @@ export function Cashbook() {
     [filters, toast],
   );
 
-  // Categories are bounded and slow-changing: fetched once, not per range.
-  useEffect(() => {
+  const reloadCategories = useCallback(() => {
     fetchCashCategories()
       .then(setCategories)
       .catch(() => toast("Couldn't load the categories", "error"));
   }, [toast]);
+
+  // Categories are bounded and slow-changing: fetched once, not per range.
+  useEffect(() => {
+    reloadCategories();
+  }, [reloadCategories]);
 
   // Today's reconciliation figures don't depend on the range filter, so fetch
   // once rather than on every range change.
@@ -198,6 +202,7 @@ export function Cashbook() {
         <CashEntryModal
           entry={editing}
           categories={categories}
+          onCategoriesChanged={reloadCategories}
           onClose={() => {
             setAdding(false);
             setEditing(null);

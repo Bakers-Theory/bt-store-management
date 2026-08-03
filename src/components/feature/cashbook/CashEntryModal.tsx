@@ -1,8 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Settings2 } from "lucide-react";
+import { useCurrentUser } from "@/components/system/AuthProvider";
 import { Modal } from "@/components/ui/Modal";
+import { CategoryManager } from "@/components/feature/cashbook/CategoryManager";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import {
@@ -12,6 +14,7 @@ import {
   postableCategories,
 } from "@/lib/cashbook";
 import { rpcAddCashEntry, rpcUpdateCashEntry } from "@/lib/supabase-data";
+import { hasPermission } from "@/lib/permissions";
 import { isoDateLocal } from "@/lib/excel";
 import type { CashCategory, CashDirection, CashEntry, CashPaymentMode } from "@/lib/types";
 
@@ -22,17 +25,21 @@ const inputCls =
 export function CashEntryModal({
   entry,
   categories,
+  onCategoriesChanged,
   onClose,
   onSaved,
 }: {
   entry: CashEntry | null;
   categories: CashCategory[];
+  onCategoriesChanged: () => void;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const currency = useBakeryStore((s) => s.bakery.currency);
   const toast = useUIStore((s) => s.toast);
   const today = isoDateLocal(new Date());
+  const user = useCurrentUser();
+  const canManageCategories = hasPermission(user, "expense.create");
 
   // Direction is fixed once an entry exists: flipping it would turn an expense
   // into income on the same audit row. Delete and re-record instead.
@@ -42,6 +49,7 @@ export function CashEntryModal({
   const [mode, setMode] = useState<CashPaymentMode>(
     entry && ENTRY_MODES.includes(entry.paymentMode) ? entry.paymentMode : "Cash",
   );
+  const [managingCategories, setManagingCategories] = useState(false);
   const [categoryId, setCategoryId] = useState(entry?.categoryId ?? "");
   const [note, setNote] = useState(entry?.note ?? "");
   const [referenceNo, setReferenceNo] = useState(entry?.referenceNo ?? "");
@@ -158,7 +166,22 @@ export function CashEntryModal({
         </div>
 
         <div>
-          <label className={labelCls} htmlFor="cb-category">Category</label>
+          <div className="mb-1.5 flex items-center justify-between">
+            <label className={labelCls.replace("mb-1.5 ", "")} htmlFor="cb-category">
+              Category
+            </label>
+            {canManageCategories && (
+              <button
+                type="button"
+                onClick={() => setManagingCategories((v) => !v)}
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-brown"
+                aria-expanded={managingCategories}
+              >
+                <Settings2 size={12} />
+                {managingCategories ? "Done" : "Manage"}
+              </button>
+            )}
+          </div>
           <select
             id="cb-category"
             value={categoryId}
@@ -181,6 +204,12 @@ export function CashEntryModal({
               </optgroup>
             ))}
           </select>
+          {managingCategories && (
+            <CategoryManager
+              categories={categories}
+              onChanged={onCategoriesChanged}
+            />
+          )}
         </div>
 
         <div>

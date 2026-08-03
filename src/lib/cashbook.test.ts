@@ -10,6 +10,7 @@ import {
   periodLabel,
   postableCategories,
   signedAmount,
+  categoryTree
 } from "./cashbook";
 import type { CashCategory, CashEntry } from "./types";
 
@@ -241,5 +242,50 @@ describe("differenceLabel", () => {
     expect(differenceLabel(-50)).toEqual({ tone: "short", label: "Short" });
     expect(differenceLabel(200)).toEqual({ tone: "excess", label: "Excess" });
     expect(differenceLabel(0)).toEqual({ tone: "exact", label: "Tallied" });
+  });
+});
+
+describe("categoryTree", () => {
+  const cat = (p: Partial<CashCategory> & { id: string; name: string }): CashCategory => ({
+    parentId: null,
+    direction: "out",
+    isSystem: false,
+    sortOrder: 0,
+    ...p,
+  });
+
+  it("nests children under their parent, both in sortOrder", () => {
+    const tree = categoryTree([
+      cat({ id: "b", name: "Beta", sortOrder: 1 }),
+      cat({ id: "a", name: "Alpha", sortOrder: 0 }),
+      cat({ id: "a2", name: "Second", parentId: "a", sortOrder: 1 }),
+      cat({ id: "a1", name: "First", parentId: "a", sortOrder: 0 }),
+    ]);
+    expect(tree.map((n) => n.category.name)).toEqual(["Alpha", "Beta"]);
+    expect(tree[0].children.map((c) => c.name)).toEqual(["First", "Second"]);
+  });
+
+  it("keeps a childless top-level category, with an empty children array", () => {
+    const tree = categoryTree([cat({ id: "a", name: "Alpha" })]);
+    expect(tree).toHaveLength(1);
+    expect(tree[0].children).toEqual([]);
+  });
+
+  it("includes system categories — the panel shows them locked, not hidden", () => {
+    const tree = categoryTree([cat({ id: "s", name: "Sales", isSystem: true })]);
+    expect(tree.map((n) => n.category.name)).toEqual(["Sales"]);
+  });
+
+  it("breaks a sortOrder tie by name, so the order never flickers", () => {
+    const tree = categoryTree([
+      cat({ id: "z", name: "Zebra", sortOrder: 5 }),
+      cat({ id: "m", name: "Mango", sortOrder: 5 }),
+    ]);
+    expect(tree.map((n) => n.category.name)).toEqual(["Mango", "Zebra"]);
+  });
+
+  it("drops a child whose parent is not in the array", () => {
+    const tree = categoryTree([cat({ id: "orphan", name: "Orphan", parentId: "gone" })]);
+    expect(tree).toEqual([]);
   });
 });

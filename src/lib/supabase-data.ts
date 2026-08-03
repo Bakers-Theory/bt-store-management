@@ -1927,11 +1927,7 @@ export async function fetchCashEntriesPage(
     .from("cash_entry_v")
     .select("*")
     .order("on_date", { ascending: false })
-    .order("created_at", { ascending: false })
-    // Entries written by one RPC share a created_at (it is the transaction
-    // timestamp), so without seq the tie is arbitrary and the page boundary
-    // can repeat or skip a row.
-    .order("seq", { ascending: false });
+    .order("created_at", { ascending: false });
 
   if (filters.from) query = query.gte("on_date", filters.from);
   if (filters.to) query = query.lte("on_date", filters.to);
@@ -1964,6 +1960,30 @@ export async function fetchCashCategories(): Promise<CashCategory[]> {
   if (error) throw new Error(error.message);
   return ((data ?? []) as CashCategoryRow[]).map(mapCashCategory);
 }
+
+
+/**
+ * The three category writes. Gated server-side on `expense.create` or
+ * `store.lists` (migration 0058); the client mirrors that with
+ * `hasPermission(user, "expense.create")` before rendering the controls.
+ */
+export const rpcAddCashCategory = (p: {
+  parentId: string | null;
+  name: string;
+  direction: CashCategory["direction"];
+}) =>
+  rpc<void>("add_cash_category", {
+    p_parent_id: p.parentId,
+    p_name: p.name,
+    p_direction: p.direction,
+  });
+
+export const rpcRenameCashCategory = (id: string, name: string) =>
+  rpc<void>("rename_cash_category", { p_id: id, p_name: name });
+
+/** "Remove" in the UI. Archives — history keeps its label. */
+export const rpcArchiveCashCategory = (id: string) =>
+  rpc<void>("archive_cash_category", { p_id: id });
 
 /**
  * The client passes its own local dates: `current_date` inside a view would be
@@ -2399,8 +2419,7 @@ export async function fetchCashEntriesForSource(
     .select("*")
     .eq("source_type", sourceType)
     .eq("source_id", sourceId)
-    .order("created_at")
-    .order("seq");
+    .order("created_at");
   if (error) throw new Error(error.message);
   return ((data ?? []) as CashEntryRow[]).map(mapCashEntry);
 }
@@ -2480,12 +2499,7 @@ export async function fetchCashbookReportData(
 ): Promise<CashbookReportData> {
   const supabase = createClient();
 
-  let entriesQ = supabase
-    .from("cash_entry_v")
-    .select("*")
-    .order("on_date")
-    .order("created_at")
-    .order("seq");
+  let entriesQ = supabase.from("cash_entry_v").select("*").order("on_date").order("created_at");
   if (range.from) entriesQ = entriesQ.gte("on_date", range.from);
   if (range.to) entriesQ = entriesQ.lte("on_date", range.to);
 

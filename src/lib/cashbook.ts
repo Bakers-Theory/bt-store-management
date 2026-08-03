@@ -120,6 +120,39 @@ export function postableCategories(
   };
 }
 
+export interface CategoryTreeNode {
+  category: CashCategory;
+  children: CashCategory[];
+}
+
+/**
+ * The whole tree, for the management panel.
+ *
+ * The counterpart to `postableCategories`, which answers a different question:
+ * that one is for a PICKER, so it hides system categories and returns leaves
+ * only. This one is for EDITING, so system categories are present (rendered
+ * locked) and a childless group is kept (so you can add into it).
+ *
+ * A child whose parent is absent is dropped rather than promoted — it can only
+ * mean the parent was archived out of `cash_category_v`, and showing an
+ * archived group's children as top-level would be a lie.
+ */
+export function categoryTree(categories: CashCategory[]): CategoryTreeNode[] {
+  // sortOrder is only unique per sibling set, and two rows added in the same
+  // second can share it. The name tiebreak stops the list reordering between
+  // renders.
+  const byOrder = (a: CashCategory, b: CashCategory) =>
+    a.sortOrder - b.sortOrder || a.name.localeCompare(b.name);
+
+  return categories
+    .filter((c) => c.parentId === null)
+    .sort(byOrder)
+    .map((category) => ({
+      category,
+      children: categories.filter((c) => c.parentId === category.id).sort(byOrder),
+    }));
+}
+
 // ─── Period labelling ───────────────────────────────────────────────────────
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
