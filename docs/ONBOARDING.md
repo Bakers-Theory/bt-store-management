@@ -261,17 +261,10 @@ runs `lint` + `typecheck` + `test` and won't ship a red build.
 
 ## 8. Shipping
 
-Deployment is decoupled from pushing to `main`:
-
-1. Merge your PR to `main` (nothing deploys yet).
-2. Run the **Release** workflow (`.github/workflows/release.yml`) via
-   `workflow_dispatch`, choosing patch/minor/major. It computes the version +
-   notes and cuts a GitHub Release.
-3. Publishing that Release triggers **Deploy** (`.github/workflows/deploy.yml`):
-   lint/typecheck/test, then a prebuilt Vercel CLI deploy to production.
-
-So: **cutting a release is what promotes to production.** Details in
-[ARCHITECTURE §13](./ARCHITECTURE.md#13-build-ci--deploy).
+Deployment uses two environments: staging (automatic on `develop` merges) and
+production (manual promotion of an rc tag). For the full day-to-day workflow,
+cutover checklist, and bootstrap for the production database, see
+[Deployment](./DEPLOYMENT.md).
 
 ---
 

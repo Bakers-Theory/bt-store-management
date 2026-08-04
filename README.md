@@ -13,6 +13,8 @@ The detail lives in [`docs/`](docs/) — start there:
   changes, including Supabase setup, environment variables, and login. **Start here.**
 - **[Architecture](docs/ARCHITECTURE.md)** — how each subsystem is built and,
   more importantly, *why*.
+- **[Deployment](docs/DEPLOYMENT.md)** — the two environments, how a merge
+  becomes a release candidate, and how to promote one to production.
 - **[Database schema reference](docs/supabase-schema-plan.md)** — every table,
   view, and RPC, plus the privacy model, merged from the SQL in
   `supabase/migrations/`.

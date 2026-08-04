@@ -1,0 +1,108 @@
+name: Production
+
+# Promotion is deliberate and manual: pick a release candidate, ship it, and
+# move `main` to it. `main` is a record of what is live, not a PR target.
+on:
+  workflow_dispatch:
+    inputs:
+      rc_tag:
+        description: "RC tag to promote (blank = the newest rc)"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - name: Checkout (full history + tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch tags and main
+        run: |
+          git fetch --tags --force
+          git fetch origin +refs/heads/main:refs/remotes/origin/main
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+
+      # Validates the tag exists, is an rc, is not already live, and is a
+      # descendant of main — then computes the stable tag and the notes.
+      - name: Resolve and validate the rc
+        id: version
+        env:
+          MODE: promote
+          RC_TAG: ${{ inputs.rc_tag }}
+        run: node scripts/version.mjs
+
+      - name: Check out the promoted commit
+        run: git checkout --detach "${{ steps.version.outputs.sha }}"
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint
+      - run: pnpm run typecheck
+      - run: pnpm run test
+
+      - name: Install Vercel CLI
+        run: pnpm add -g vercel@latest
+
+      - name: Pull Vercel project settings
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: vercel pull --yes --environment=production --token="${{ secrets.VERCEL_TOKEN }}"
+
+      - name: Build
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: vercel build --prod --token="${{ secrets.VERCEL_TOKEN }}"
+
+      - name: Deploy prebuilt output
+        id: deploy
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          url=$(vercel deploy --prebuilt --prod --token="${{ secrets.VERCEL_TOKEN }}")
+          echo "Deployed: $url"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      # Tag only after a successful deploy: MODE=promote refuses to run when the
+      # stable tag already exists, so a tag left behind by a failed deploy would
+      # need deleting by hand before a retry.
+      - name: Create stable tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" \
+            --title "${{ steps.version.outputs.tag }}" \
+            --notes-file release-notes.md \
+            --target "${{ steps.version.outputs.sha }}"
+
+      # A fast-forward by construction: the validation step already proved this
+      # commit is a descendant of main.
+      - name: Fast-forward main
+        run: git push origin "${{ steps.version.outputs.sha }}:refs/heads/main"
