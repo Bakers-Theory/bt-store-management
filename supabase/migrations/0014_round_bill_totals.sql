@@ -7,10 +7,25 @@
 -- the columns so bad data can't re-enter through a future RPC either.
 -- ============================================================================
 
+-- bills_v (0013) is `select b.*`, so it depends on these three columns and
+-- Postgres refuses to retype them underneath it. Drop it, retype, recreate it
+-- verbatim from 0013 — the same dance 0026/0028/0055 do for this view.
+drop view if exists public.bills_v;
+
 alter table public.bills
   alter column subtotal type numeric(12,2),
   alter column tax      type numeric(12,2),
   alter column total    type numeric(12,2);
+
+create view public.bills_v as
+  select
+    b.*,
+    p.name as biller_name
+  from public.bills b
+  left join public.profiles p on p.id = b.created_by
+  where public.has_perm('sales') or public.has_perm('inventory');
+
+grant select on public.bills_v to authenticated;
 
 create or replace function public.generate_bill(customer jsonb, lines jsonb)
 returns public.bills language plpgsql security definer set search_path = public as $$
