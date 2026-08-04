@@ -52,17 +52,6 @@ jobs:
           RANGE: ${{ github.event.before }}..${{ github.sha }}
         run: node scripts/version.mjs
 
-      - name: Create tag and prerelease
-        if: steps.version.outputs.skip != 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "${{ steps.version.outputs.tag }}" \
-            --title "${{ steps.version.outputs.tag }}" \
-            --notes-file release-notes.md \
-            --prerelease \
-            --target "$GITHUB_SHA"
-
       - name: Install Vercel CLI
         if: steps.version.outputs.skip != 'true'
         run: pnpm add -g vercel@latest
@@ -97,3 +86,17 @@ jobs:
           url=$(vercel deploy --prebuilt --prod --token="${{ secrets.VERCEL_TOKEN }}")
           echo "Deployed: $url"
           echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      # Last, so a tag and prerelease only ever exist for a commit that is
+      # actually live on staging. A failed deploy leaves no tag, and the next
+      # push recomputes the same rc number.
+      - name: Create tag and prerelease
+        if: steps.version.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" \
+            --title "${{ steps.version.outputs.tag }}" \
+            --notes-file release-notes.md \
+            --prerelease \
+            --target "$GITHUB_SHA"
