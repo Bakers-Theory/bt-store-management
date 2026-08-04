@@ -164,7 +164,7 @@ src/
 supabase/migrations/            # ordered SQL: schema, RLS, RPCs, views
 scripts/                        # seed-owner.mjs, release-notes.mjs
 docs/                           # this file, ONBOARDING.md, supabase-schema-plan.md
-.github/workflows/              # release.yml, deploy.yml
+.github/workflows/              # ci.yml, staging.yml, production.yml
 ```
 
 ---
@@ -654,16 +654,9 @@ display) via `next/font`.
 
 Scripts (`package.json`): `dev`, `build`, `start`, `lint`, `typecheck`, `test`.
 
-- **`.github/workflows/deploy.yml`** — fires on **GitHub Release published** (and
-  manual `workflow_dispatch`). Runs lint + typecheck + test, then does a
-  **prebuilt Vercel CLI deploy** (`vercel build --prod` in the runner, then
-  `vercel deploy --prebuilt --prod`). Building in the runner bypasses Vercel's
-  git-triggered pipeline and its "Ignored Build Step" gate. Supabase env vars
-  come from GitHub secrets. This means **cutting a release is what promotes to
-  production** — decoupled from pushes to `main`.
-- **`.github/workflows/release.yml`** — manual `workflow_dispatch` with a
-  patch/minor/major bump; computes the version + notes (`scripts/release-notes.mjs`)
-  and creates the tag + GitHub Release (which in turn triggers deploy).
+The CI/build/deploy workflows are described in [Deployment](./DEPLOYMENT.md): `ci.yml`
+runs on PR checks, `staging.yml` tags and deploys on `develop` merges, and
+`production.yml` is manually dispatched to promote an rc to production.
 
 ### Environment variables
 
@@ -704,4 +697,4 @@ key). See ONBOARDING for the exact steps.
 | Change money math | `lib/bill.ts` (+ its test) |
 | Change the schema | a new numbered file in `supabase/migrations/` |
 | Debug auth/blank page | `AuthProvider.tsx` (keep the callback synchronous!) |
-| Change the deploy | `.github/workflows/deploy.yml` |
+| Change the deploy | [Deployment](./DEPLOYMENT.md) |

@@ -1,0 +1,99 @@
+name: Staging
+
+# Every push to develop is a release candidate: tag it, cut a GitHub
+# prerelease, and deploy it to the staging Vercel project. Tagging and
+# deploying live in one job because releases created with the default
+# GITHUB_TOKEN do not trigger other workflows — a separate workflow listening
+# for `release: published` would never fire.
+on:
+  push:
+    branches: [develop]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: true
+
+jobs:
+  release-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - name: Checkout (full history + tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch tags
+        run: git fetch --tags --force
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint
+      - run: pnpm run typecheck
+      - run: pnpm run test
+
+      - name: Compute rc version and notes
+        id: version
+        env:
+          MODE: rc
+          RANGE: ${{ github.event.before }}..${{ github.sha }}
+        run: node scripts/version.mjs
+
+      - name: Create tag and prerelease
+        if: steps.version.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" \
+            --title "${{ steps.version.outputs.tag }}" \
+            --notes-file release-notes.md \
+            --prerelease \
+            --target "$GITHUB_SHA"
+
+      - name: Install Vercel CLI
+        if: steps.version.outputs.skip != 'true'
+        run: pnpm add -g vercel@latest
+
+      # A prebuilt CLI deploy skips Vercel's own git-triggered build pipeline:
+      # the app is built here in the runner and the finished output uploaded, so
+      # "Ignored Build Step" never gets a chance to cancel it.
+      - name: Pull Vercel project settings
+        if: steps.version.outputs.skip != 'true'
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: vercel pull --yes --environment=production --token="${{ secrets.VERCEL_TOKEN }}"
+
+      - name: Build
+        if: steps.version.outputs.skip != 'true'
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: vercel build --prod --token="${{ secrets.VERCEL_TOKEN }}"
+
+      - name: Deploy prebuilt output
+        id: deploy
+        if: steps.version.outputs.skip != 'true'
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          url=$(vercel deploy --prebuilt --prod --token="${{ secrets.VERCEL_TOKEN }}")
+          echo "Deployed: $url"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
