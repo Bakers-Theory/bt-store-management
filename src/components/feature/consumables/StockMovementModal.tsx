@@ -16,10 +16,17 @@ import {
   stockAfter,
 } from "@/lib/consumable";
 import {
+  draftToInput,
+  emptyLinkedExpense,
+  linkedExpenseError,
+} from "@/lib/linked-expense";
+import { LinkedExpenseFields } from "@/components/feature/cashbook/LinkedExpenseFields";
+import {
   fetchAssetHolders,
   fetchSuppliers,
   rpcRecordStockMovement,
 } from "@/lib/supabase-data";
+import { round2 } from "@/lib/salary";
 import { isoDateLocal } from "@/lib/excel";
 import { qtyLabel } from "./ConsumableList";
 import type { Consumable, Employee, MovementType, Supplier } from "@/lib/types";
@@ -73,6 +80,14 @@ export function StockMovementModal({
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [holders, setHolders] = useState<Employee[]>([]);
   const [saving, setSaving] = useState(false);
+  // The cash book side of a purchase (0066). Defaults follow the permissions:
+  // whoever can record spending gets it on, whoever can pay gets it marked paid.
+  const [spend, setSpend] = useState(() =>
+    emptyLinkedExpense(today, {
+      canRecord: hasPermission(user, "expense.create"),
+      canPay: hasPermission(user, "expense.pay"),
+    }),
+  );
 
   useEffect(() => {
     fetchSuppliers()
@@ -99,8 +114,20 @@ export function StockMovementModal({
     ? stockAfter(item.currentStock, movementType, value)
     : item.currentStock;
 
+  // What the stock cost, and therefore what the expense will be. The server
+  // computes the same figure from the movement it just wrote — this is only so
+  // the operator can see it before committing.
+  const cost =
+    isPurchase && unitCost !== "" && Number.isFinite(value)
+      ? round2(Number(unitCost) * Math.abs(value))
+      : 0;
+  // Offered only once there is a cost to post — a purchase may be recorded with
+  // no price known, and there is nothing to file until there is one.
+  const offerSpend = isPurchase && cost > 0;
+  const spendError = offerSpend ? linkedExpenseError(spend, cost, today) : null;
+
   const submit = async () => {
-    if (error) return;
+    if (error || spendError) return;
     setSaving(true);
     try {
       const r = await rpcRecordStockMovement({
@@ -113,9 +140,12 @@ export function StockMovementModal({
         issuedTo: movementType === "issue" ? issuedTo || null : null,
         reason,
         remarks,
+        // Purchases only — the server refuses a spend on anything else.
+        expense: offerSpend ? draftToInput(spend) : null,
       });
       toast(
-        `${movementTypeLabel(movementType)} recorded — ${qtyLabel(r.currentStock)} ${item.unit} on hand`,
+        `${movementTypeLabel(movementType)} recorded — ${qtyLabel(r.currentStock)} ${item.unit} on hand` +
+          (r.expenseId ? `, and filed in the cash book` : ""),
         "success",
       );
       onDone();
@@ -285,11 +315,15 @@ export function StockMovementModal({
           </p>
         )}
 
-        {isPurchase && (
-          <p className="rounded-[10px] bg-[#faf4ea] px-2.5 py-2 text-[11px] text-ink-muted">
-            This records the stock, not the payment. Record what you paid as an
-            expense or a purchase invoice.
-          </p>
+        {offerSpend && (
+          <LinkedExpenseFields
+            draft={spend}
+            onChange={setSpend}
+            amount={cost}
+            today={today}
+            error={spendError}
+            vendorSuffix={item.name}
+          />
         )}
 
         {error && qty !== "" && (
@@ -297,7 +331,7 @@ export function StockMovementModal({
         )}
 
         <button
-          disabled={!!error || saving}
+          disabled={!!error || !!spendError || saving}
           onClick={() => void submit()}
           className="inline-flex w-full items-center justify-center gap-2 rounded-[13px] bg-brown py-3 text-sm font-bold text-white disabled:opacity-50"
         >

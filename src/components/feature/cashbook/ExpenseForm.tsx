@@ -111,6 +111,7 @@ export function ExpenseForm({
       .catch(() => setDupWarning(false));
   };
 
+  const amountLocked = !!expense && expense.originType !== "";
   const gstValid = !gstIncluded || (gst >= 0 && gst < value);
   const valid =
     value > 0 &&
@@ -186,8 +187,18 @@ export function ExpenseForm({
               inputMode="decimal"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              className={inputCls}
+              // 0066: an expense created from a stock movement, an asset or a
+              // repair mirrors that record's cost. The server refuses a change,
+              // so the field says so rather than letting it be typed and bounced.
+              readOnly={amountLocked}
+              className={`${inputCls}${amountLocked ? " text-ink-muted" : ""}`}
             />
+            {amountLocked && (
+              <p className="mt-1 text-[11px] text-ink-muted">
+                From {expense?.originRef || "the record this came from"} — change it
+                there.
+              </p>
+            )}
           </div>
         </div>
 

@@ -220,6 +220,9 @@ export function ExpenseDetail({
   const { base, gst } = gstSplit(expense.amount, expense.gstIncluded, expense.gstAmount);
   const mine = expense.createdById === user?.id;
   const canEdit = expense.status === "pending" && (mine || perms.canPay);
+  // 0066: a linked expense's amount is frozen to the record it mirrors, so the
+  // form can fix a mis-picked category or vendor but not the figure.
+  const linked = expense.originType !== "";
 
   // A Mixed payment must clear on BOTH sides — pay_expense() checks each half
   // before posting either, so a payment that only half fits is refused whole.
@@ -301,6 +304,22 @@ export function ExpenseDetail({
             <div className={`border-t border-line-soft ${rowCls}`}>
               <span className="text-ink-muted">Notes</span>
               <span className="text-right text-ink">{expense.description}</span>
+            </div>
+          )}
+          {/* 0066: this one was not typed in here — it mirrors a stock movement,
+              an asset purchase or a repair bill, and its amount is frozen to it. */}
+          {expense.originType !== "" && (
+            <div className={`border-t border-line-soft ${rowCls}`}>
+              <span className="text-ink-muted">
+                {expense.originType === "consumable"
+                  ? "Stock received"
+                  : expense.originType === "asset_maintenance"
+                    ? "Repair on"
+                    : "Asset bought"}
+              </span>
+              <span className="text-right font-semibold text-ink">
+                {expense.originRef || "—"}
+              </span>
             </div>
           )}
           <div className={`border-t border-line-soft ${rowCls}`}>
@@ -386,7 +405,15 @@ export function ExpenseDetail({
 
         <div className="flex flex-wrap gap-2">
           {canEdit && (
-            <button onClick={() => onEdit(expense)} className={`${btnCls} text-ink`}>
+            <button
+              onClick={() => onEdit(expense)}
+              className={`${btnCls} text-ink`}
+              title={
+                linked
+                  ? "The amount comes from the record this expense was created with and cannot be changed here"
+                  : undefined
+              }
+            >
               <Pencil size={13} /> Edit
             </button>
           )}
