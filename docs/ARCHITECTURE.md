@@ -32,6 +32,7 @@ and its tests could stay stable while the storage layer changed underneath.
 | Backend | Supabase — Postgres, Auth, Row-Level Security, RPCs, Storage |
 | Charts | Recharts (dashboard) |
 | Excel export | `xlsx` (dynamically imported) |
+| QR codes | `qrcode-generator` (dynamically imported) |
 | Icons | `lucide-react` + inline SVG |
 | Hosting | Vercel (prebuilt CLI deploy, gated on GitHub Releases) |
 | Tests | Vitest (jsdom) over the logic layer |
@@ -152,7 +153,9 @@ src/
     asset-report.ts             # the 4 asset reports (print / Excel / CSV)
     consumable-report.ts        # the 6 consumable reports (print / Excel / CSV)
     csv-import.ts               # CSV parse + row validation for bulk import
+    asset-label.ts              # what a label carries: kinds + the QR payload
     barcode.ts                  # Code 39 encoder for the asset label
+    qr.ts                       # QR matrix (qrcode-generator, dynamic import)
     expiry.ts  date-range.ts  format.ts  image.ts   # small pure helpers
     *.test.ts                   # Vitest suites (logic layer only)
 
@@ -508,12 +511,25 @@ permission gates and the stock arithmetic for the UI, under the same rule as
 
 Two smaller decisions in this module worth not re-litigating:
 
-- **The asset label is Code 39, drawn as inline SVG** (`lib/barcode.ts`), not a QR
-  image from a library. Its charset covers an asset code exactly, it is
-  self-checking so no check digit has to stay in sync with the server, and it
-  encodes as two bar widths — which means no dependency and no canvas.
-  `LabelPrintHost` prints it through the same `data-print` mechanism the report
-  host uses.
+- **A label carries two codes, and by default both** (`lib/asset-label.ts`). The
+  **barcode** is Code 39 drawn from a 44-row table (`lib/barcode.ts`) — no
+  dependency, no canvas, and its correctness is pinned by structural tests. The
+  **QR** comes from `qrcode-generator` (`lib/qr.ts`), because Reed–Solomon,
+  version selection and mask evaluation are several hundred lines whose output no
+  test here could prove a scanner would read. The two readers are different
+  hardware and a stockroom has both, so `both` is the default kind.
+  `LabelPrintHost` prints through the same `data-print` mechanism the report host
+  uses, and draws only rectangles: the QR matrix is encoded by the *caller*, so
+  the dynamic-import encoder never enters the root layout's bundle and the
+  on-screen preview is literally the matrix that prints.
+- **The QR payload carries durable facts plus a link, and deliberately omits the
+  volatile ones.** Code, name, category, make, serial, purchase date and warranty
+  are safe to print; status, holder and location are not — an asset is reassigned
+  every few months and a sticker claiming it lives with Asha starts lying
+  immediately. The first line is an absolute `/assets?code=…` URL, which is what a
+  phone camera offers to open and what the Assets page resolves on mount (it
+  filters to that code and opens the record). The purchase price is never printed:
+  a label is a public surface.
 - **Asset documents live in a private bucket and are stored as object PATHS**, not
   URLs; `signedDocUrl` mints a five-minute link when someone opens one. A stored
   public URL to a purchase invoice would be a permanent unguarded link to a
@@ -624,7 +640,9 @@ layout, bill shortfall and cashbook fixes · `0060` the asset register
 `stock_movement`, `consumable_v`, `consumable_alert_v`) · `0063` the consumable
 RPCs (`record_stock_movement` and `consumable_stats`) · `0064` storage for asset
 photos and documents — two buckets, because a photo of a machine is public and a
-purchase invoice is not.
+purchase invoice is not · `0065` asset codes move to `BT-AST-001` (a label leaves
+the building on the asset, so the code says whose it is), rewriting existing codes
+and keeping their number.
 
 > The full consolidated schema — every table's columns, the views, the complete
 > RPC catalog, the privacy/grants model, and deep-dives on the batch/FIFO and
@@ -676,7 +694,10 @@ unit-tested in plain functions. These are the files with `*.test.ts` siblings:
   sign typed), `movementError` mirrors `record_stock_movement`'s validation
   including the negative-stock block, and `stockStatusOf` / `recommendedQty`
   mirror the derived columns in `consumable_v`.
-- **`barcode.ts`** — a Code 39 encoder, so the asset label needs no dependency
+- **`asset-label.ts`** — the label contract: which codes each kind draws, and
+  `assetQrPayload`, whose tests pin what must NOT be on a sticker (holder, status,
+  location, price) as firmly as what must.
+- **`barcode.ts`** — a Code 39 encoder, so the barcode needs no dependency
   and no canvas. The symbology is chosen for its charset (an asset code fits
   exactly) and because it is self-checking, so no check digit has to stay in sync
   with the server. Its hand-entered pattern table is guarded by structural tests —

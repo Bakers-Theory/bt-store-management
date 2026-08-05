@@ -27,12 +27,10 @@ import {
   assetStatusLabel,
   conditionLabel,
   maintenanceKindLabel,
-  qrPayload,
   serviceStatus,
   warrantyStatus,
   type AssetAction,
 } from "@/lib/asset";
-import { canEncode } from "@/lib/barcode";
 import { formatDateFull } from "@/lib/format";
 import {
   fetchAsset,
@@ -42,6 +40,7 @@ import {
   rpcArchiveAsset,
   rpcDeleteAsset,
 } from "@/lib/supabase-data";
+import { AssetLabelModal } from "./AssetLabelModal";
 import { AssignModal, type AssignMode } from "./AssignModal";
 import { MaintenanceModal } from "./MaintenanceModal";
 import { StatusModal, type StatusTarget } from "./StatusModal";
@@ -101,7 +100,7 @@ const ACTION_META: Record<
   archive: { label: "Archive", icon: Archive },
   restore: { label: "Restore", icon: ArchiveRestore },
   delete: { label: "Remove", icon: Trash2, danger: true },
-  printQr: { label: "Print label", icon: Printer },
+  printLabel: { label: "Print label", icon: Printer },
 };
 
 /**
@@ -128,7 +127,7 @@ export function AssetDetail({
   const currency = useBakeryStore((s) => s.bakery.currency);
   const toast = useUIStore((s) => s.toast);
   const requireOwnerAuth = useUIStore((s) => s.requireOwnerAuth);
-  const requestLabel = useUIStore((s) => s.requestLabel);
+  const [labelling, setLabelling] = useState(false);
 
   const [asset, setAsset] = useState<Asset | null>(null);
   const [custody, setCustody] = useState<AssetAssignment[]>([]);
@@ -203,21 +202,6 @@ export function AssetDetail({
     });
   };
 
-  const printLabel = () => {
-    if (!asset) return;
-    if (!canEncode(asset.code)) {
-      toast("This code cannot go on a barcode label", "error");
-      return;
-    }
-    requestLabel({
-      code: qrPayload(asset.code),
-      name: asset.name,
-      category: asset.category,
-      location: asset.location,
-      copies: 1,
-    });
-  };
-
   const run = (action: AssetAction) => {
     if (!asset) return;
     switch (action) {
@@ -244,8 +228,9 @@ export function AssetDetail({
         return void archive(false);
       case "delete":
         return remove();
-      case "printQr":
-        return printLabel();
+      case "printLabel":
+        // The label modal chooses barcode / QR / both and previews it.
+        return setLabelling(true);
     }
   };
 
@@ -500,6 +485,10 @@ export function AssetDetail({
           onClose={() => setMaintaining(false)}
           onDone={afterAction}
         />
+      )}
+
+      {labelling && (
+        <AssetLabelModal asset={asset} onClose={() => setLabelling(false)} />
       )}
 
       {statusTarget && (

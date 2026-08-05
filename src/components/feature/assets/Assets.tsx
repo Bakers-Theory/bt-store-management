@@ -61,6 +61,11 @@ export function Assets() {
   // default and nothing about the normal flow changes.
   const [picked, setPicked] = useState<Set<string> | null>(null);
   const [bulkAssigning, setBulkAssigning] = useState(false);
+  // A label's QR links to /assets?code=BT-AST-001, so that URL has to land on the
+  // asset. Read from `window` rather than `useSearchParams`, which would force
+  // this statically-rendered route behind a Suspense boundary for a client-only
+  // concern.
+  const [pendingCode, setPendingCode] = useState<string | null>(null);
 
   const loadPage = useCallback(
     (offset: number) =>
@@ -83,6 +88,14 @@ export function Assets() {
   }, []);
 
   useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get("code");
+    if (code) {
+      setPendingCode(code.toUpperCase());
+      setFilters({ ...DEFAULT_ASSET_FILTERS, q: code, includeArchived: true });
+    }
+  }, []);
+
+  useEffect(() => {
     loadStats();
     fetchAssetHolders()
       .then(setHolders)
@@ -97,6 +110,16 @@ export function Assets() {
     void loadPage(0);
     loadStats();
   }, [loadPage, loadStats]);
+
+  // Once the scanned code's asset is on screen, open it — a scan should land on
+  // the record, not on a filtered list of one. Cleared either way, so a later
+  // search never reopens it.
+  useEffect(() => {
+    if (!pendingCode || !loaded) return;
+    const hit = assets.find((a) => a.code.toUpperCase() === pendingCode);
+    if (hit) setViewingId(hit.id);
+    setPendingCode(null);
+  }, [pendingCode, loaded, assets]);
 
   // The tiles double as filters — tapping one is how you get to the list behind
   // the number.

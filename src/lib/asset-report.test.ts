@@ -14,7 +14,7 @@ const shop = { name: "Bakers Theory", address: "MG Road", phone: "9876543210", c
 
 const asset = (over: Partial<Asset> = {}): Asset => ({
   id: "a1",
-  code: "AST-0001",
+  code: "BT-AST-001",
   name: "POS machine",
   category: "Electronics",
   brand: "",
@@ -55,7 +55,7 @@ const asset = (over: Partial<Asset> = {}): Asset => ({
 const custody = (over: Partial<AssetAssignment> = {}): AssetAssignment => ({
   id: "s1",
   assetId: "a1",
-  assetCode: "AST-0001",
+  assetCode: "BT-AST-001",
   assetName: "POS machine",
   assetCategory: "Electronics",
   employeeId: "e1",
@@ -76,7 +76,7 @@ const custody = (over: Partial<AssetAssignment> = {}): AssetAssignment => ({
 const job = (over: Partial<AssetMaintenance> = {}): AssetMaintenance => ({
   id: "m1",
   assetId: "a1",
-  assetCode: "AST-0001",
+  assetCode: "BT-AST-001",
   assetName: "POS machine",
   assetCategory: "Electronics",
   kind: "repair",
@@ -138,9 +138,9 @@ describe("asset register", () => {
     const d = data({
       assets: [
         asset(),
-        asset({ id: "a2", code: "AST-0002", isArchived: true }),
-        asset({ id: "a3", code: "AST-0003", status: "retired" }),
-        asset({ id: "a4", code: "AST-0004", status: "lost" }),
+        asset({ id: "a2", code: "BT-AST-002", isArchived: true }),
+        asset({ id: "a3", code: "BT-AST-003", status: "retired" }),
+        asset({ id: "a4", code: "BT-AST-004", status: "lost" }),
       ],
     });
     const [table] = assetReportTables("register", d, all);
@@ -292,11 +292,11 @@ describe("warranty report", () => {
     const d = data({
       assets: [
         asset({ id: "a1", warrantyExpiry: "2027-01-01", warrantyDaysLeft: 500 }),
-        asset({ id: "a2", code: "AST-0002", warrantyExpiry: "2026-08-10", warrantyDaysLeft: 5 }),
+        asset({ id: "a2", code: "BT-AST-002", warrantyExpiry: "2026-08-10", warrantyDaysLeft: 5 }),
       ],
     });
     const [covered] = assetReportTables("warranty", d, all);
-    expect(covered.rows[0][0]).toBe("AST-0002");
+    expect(covered.rows[0][0]).toBe("BT-AST-002");
   });
 });
 

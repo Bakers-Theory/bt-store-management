@@ -350,10 +350,6 @@ export function navItems(user: User | null): NavItem[] {
     items.push({ key: "stock", href: "/stock", icon: "📦", label: "Stock" });
   if (hasPermission(user, "cashbook.view"))
     items.push({ key: "cashbook", href: "/cashbook", icon: "📒", label: "Cashbook" });
-  if (hasPermission(user, "assets.view"))
-    items.push({ key: "assets", href: "/assets", icon: "🖨️", label: "Assets" });
-  if (hasPermission(user, "consumables.view"))
-    items.push({ key: "consumables", href: "/consumables", icon: "🧴", label: "Consumables" });
   if (hasPermission(user, "suppliers.view"))
     items.push({ key: "suppliers", href: "/suppliers", icon: "🚚", label: "Suppliers" });
   if (hasAnyPermission(user, ["purchases.create", "purchases.pay", "purchases.return"]))
@@ -362,6 +358,10 @@ export function navItems(user: User | null): NavItem[] {
     items.push({ key: "bill", href: "/bill", icon: "🧾", label: "Bill" });
   if (hasPermission(user, "customers.view"))
     items.push({ key: "customers", href: "/customers", icon: "👥", label: "Customers" });
+  if (hasPermission(user, "assets.view"))
+    items.push({ key: "assets", href: "/assets", icon: "🖨️", label: "Assets" });
+  if (hasPermission(user, "consumables.view"))
+    items.push({ key: "consumables", href: "/consumables", icon: "🧴", label: "Consumables" });
   if (hasPermission(user, "attendance.view"))
     items.push({ key: "attendance", href: "/attendance", icon: "🗓️", label: "Attendance" });
   if (hasAnyPermission(user, ["salary.view", "advance.view"]))

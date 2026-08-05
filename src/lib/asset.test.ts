@@ -6,7 +6,7 @@ import {
   assetStatusLabel,
   canTransitionAsset,
   isTerminalAssetStatus,
-  qrPayload,
+  barcodePayload,
   serviceStatus,
   warrantyStatus,
   type AssetActionSubject,
@@ -135,8 +135,8 @@ describe("assetActions (§2.4)", () => {
     expect(out).toContain("markDamaged");
   });
 
-  it("offers nothing but the QR label to a read-only user", () => {
-    expect(assetActions(subject(), viewer)).toEqual(["printQr"]);
+  it("offers nothing but printing a label to a read-only user", () => {
+    expect(assetActions(subject(), viewer)).toEqual(["printLabel"]);
   });
 
   it("offers no state change at all on a terminal asset", () => {
@@ -184,8 +184,8 @@ describe("warranty & service windows", () => {
   });
 });
 
-describe("qrPayload", () => {
+describe("barcodePayload", () => {
   it("encodes the immutable asset code and nothing else", () => {
-    expect(qrPayload(" ast-0007 ")).toBe("AST-0007");
+    expect(barcodePayload(" bt-ast-007 ")).toBe("BT-AST-007");
   });
 });

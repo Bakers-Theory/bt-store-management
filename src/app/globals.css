@@ -365,7 +365,7 @@
     height: 20mm;
   }
 
-  /* ─── The asset label ─────────────────────────────────────────────────── */
+  /* ─── The asset label ───────────────────────────────────────────────────── */
   .label-area {
     display: block !important;
     position: static !important;
@@ -376,24 +376,47 @@
     font-family: var(--font-sans), system-ui, sans-serif;
   }
   /* One asset per page: a sheet of labels for one asset is a stack of copies,
-     and a scanner reads one at a time either way. */
+     and a scanner reads one at a time either way. The QR sits beside the bars
+     rather than under them — 29mm of height only fits one stacked code. */
   .asset-label {
     break-after: page;
-    padding: 2mm;
+    display: flex;
+    align-items: center;
+    gap: 2mm;
+    padding: 1mm;
+    height: 26mm;
   }
   .asset-label:last-child {
     break-after: auto;
   }
+  .asset-label .l-main {
+    min-width: 0;
+    flex: 1;
+  }
+  /* Square and quiet-zone-free: the print margin around the label already gives
+     the scanner its light border. */
+  .asset-label .l-qr {
+    display: block;
+    width: 24mm;
+    height: 24mm;
+    flex: none;
+  }
   .asset-label .l-bars {
     display: block;
     width: 100%;
-    height: 12mm;
+    height: 10mm;
+  }
+  /* With no barcode there is no bar block to balance, so the QR takes the height
+     it can get and the text sits next to it. */
+  .asset-label.l-kind-qr .l-qr {
+    width: 26mm;
+    height: 26mm;
   }
   .asset-label .l-code {
     font-family: "Courier New", monospace;
-    font-size: 11pt;
+    font-size: 10.5pt;
     font-weight: 700;
-    letter-spacing: 0.12em;
+    letter-spacing: 0.1em;
     text-align: center;
     margin-top: 0.8mm;
   }
@@ -401,7 +424,7 @@
     font-size: 8.5pt;
     font-weight: 700;
     text-align: center;
-    margin-top: 1mm;
+    margin-top: 0.6mm;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;

@@ -905,7 +905,7 @@ export interface AssetDocument {
 
 export interface Asset {
   id: string;
-  /** `AST-0001`. Immutable, unique, and what the QR label encodes. */
+  /** `BT-AST-001`. Immutable, unique, and what the printed label carries. */
   code: string;
   name: string;
   /** A value from the admin-managed `asset_category` list, not an enum. */

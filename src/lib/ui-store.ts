@@ -4,6 +4,7 @@ import { create } from "zustand";
 import type { Bill } from "./types";
 import type { PrintReport } from "./report";
 import type { Payslip } from "./payslip";
+import type { LabelKind } from "./asset-label";
 
 /** Either printable A4 document. */
 export type PrintDoc = PrintReport | Payslip;
@@ -11,13 +12,20 @@ export type PrintDoc = PrintReport | Payslip;
 /**
  * One asset's printable label (#91 §2.4). `copies` is how many pages to emit —
  * one label per page, since a scanner reads one at a time either way.
+ *
+ * `qrModules` arrives pre-encoded rather than as text: the QR encoder is a
+ * dynamic import, and LabelPrintHost is mounted in the root layout on every page,
+ * so it must stay a plain renderer with no encoder in its bundle.
  */
 export interface AssetLabelTarget {
+  kind: LabelKind;
   code: string;
   name: string;
   category: string;
   location: string;
   copies: number;
+  /** The QR module matrix; null when the label carries no QR. */
+  qrModules: boolean[][] | null;
 }
 
 interface OwnerAuthRequest {

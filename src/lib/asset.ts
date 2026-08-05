@@ -168,7 +168,7 @@ export type AssetAction =
   | "markLost"
   | "markDamaged"
   | "retire"
-  | "printQr";
+  | "printLabel";
 
 export interface AssetPerms {
   canView: boolean;
@@ -199,7 +199,7 @@ export function assetActions(
   const terminal = isTerminalAssetStatus(a.status);
   const inWorkshop = a.openMaintenanceId !== null;
 
-  if (perms.canView) out.push("printQr");
+  if (perms.canView) out.push("printLabel");
   if (perms.canEdit && !terminal) out.push("edit");
 
   if (perms.canEdit) {
@@ -237,7 +237,9 @@ export function assetActions(
 }
 
 /**
- * The QR label encodes the asset code, which is immutable and unique — there is
- * no second barcode column that could disagree with it (0060 note 7).
+ * What the BARCODE on a label encodes: the asset code, upper-cased, and nothing
+ * else. The code is immutable and unique, and there is no second barcode column
+ * that could disagree with it (0060 note 7). The QR carries more — see
+ * `asset-label.ts`.
  */
-export const qrPayload = (code: string): string => code.trim().toUpperCase();
+export const barcodePayload = (code: string): string => code.trim().toUpperCase();
