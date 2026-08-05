@@ -20,8 +20,11 @@ export const DEFAULT_CONSUMABLE_FILTERS: ConsumableFilterState = {
   expiry: "",
 };
 
-const selectCls =
-  "rounded-[11px] border border-line bg-warm-white px-2.5 py-2 text-xs font-semibold text-ink";
+// A labelled grid, not a flex row: globals.css gives every `select`
+// `width: 100%`, so in a flex row each one takes a line of its own.
+const fieldCls = "min-w-0";
+const labelCls = "mb-1 block text-[11px] font-bold text-[#8a6a3c]";
+const controlCls = "!py-2 !text-[13px] font-semibold";
 
 const isDefault = (f: ConsumableFilterState) =>
   f.q === "" && f.category === "" && f.stockStatus === "" && f.expiry === "";
@@ -56,57 +59,68 @@ export function ConsumableFilters({
         />
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <select
-          value={value.category}
-          onChange={(e) => set("category", e.target.value)}
-          aria-label="Category"
-          className={selectCls}
-        >
-          <option value="">All categories</option>
-          {categories.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
+      <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-3">
+        <div className={`${fieldCls} col-span-2 lg:col-span-1`}>
+          <label className={labelCls} htmlFor="cnf-cat">Category</label>
+          <select
+            id="cnf-cat"
+            value={value.category}
+            onChange={(e) => set("category", e.target.value)}
+            className={controlCls}
+          >
+            <option value="">All categories</option>
+            {categories.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
 
-        <select
-          value={value.stockStatus}
-          onChange={(e) => set("stockStatus", e.target.value as StockStatus | "")}
-          aria-label="Stock level"
-          className={selectCls}
-        >
-          <option value="">Any level</option>
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {stockStatusLabel(s)}
-            </option>
-          ))}
-        </select>
+        <div className={fieldCls}>
+          <label className={labelCls} htmlFor="cnf-level">Stock level</label>
+          <select
+            id="cnf-level"
+            value={value.stockStatus}
+            onChange={(e) => set("stockStatus", e.target.value as StockStatus | "")}
+            className={controlCls}
+          >
+            <option value="">Any level</option>
+            {STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {stockStatusLabel(s)}
+              </option>
+            ))}
+          </select>
+        </div>
 
-        <select
-          value={value.expiry}
-          onChange={(e) =>
-            set("expiry", e.target.value as ConsumableFilterState["expiry"])
-          }
-          aria-label="Expiry"
-          className={selectCls}
-        >
-          <option value="">Any expiry</option>
-          <option value="expiring">Expiring soon</option>
-          <option value="expired">Already expired</option>
-        </select>
+        <div className={fieldCls}>
+          <label className={labelCls} htmlFor="cnf-exp">Expiry</label>
+          <select
+            id="cnf-exp"
+            value={value.expiry}
+            onChange={(e) =>
+              set("expiry", e.target.value as ConsumableFilterState["expiry"])
+            }
+            className={controlCls}
+          >
+            <option value="">Any expiry</option>
+            <option value="expiring">Expiring soon</option>
+            <option value="expired">Already expired</option>
+          </select>
+        </div>
+      </div>
 
-        {!isDefault(value) && (
+      {!isDefault(value) && (
+        <div className="flex">
           <button
             onClick={() => onChange(DEFAULT_CONSUMABLE_FILTERS)}
-            className="inline-flex items-center gap-1 rounded-[11px] border border-line bg-cream px-2.5 py-2 text-xs font-bold text-[#8a6a3c]"
+            className="ml-auto inline-flex items-center gap-1 whitespace-nowrap rounded-[11px] border border-line bg-cream px-2.5 py-2 text-[12.5px] font-bold text-[#8a6a3c]"
           >
             <X size={13} /> Clear
           </button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

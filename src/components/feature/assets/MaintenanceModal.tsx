@@ -226,7 +226,8 @@ export function MaintenanceModal({
                 type="checkbox"
                 checked={takeOut}
                 onChange={(e) => setTakeOut(e.target.checked)}
-                className="mt-0.5"
+                // Explicit size: the base layer gives every input width:100%.
+                className="mt-0.5 h-4 w-4 shrink-0 accent-brown"
               />
               <span>
                 Take it out of service

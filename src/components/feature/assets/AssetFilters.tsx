@@ -29,8 +29,16 @@ export const DEFAULT_ASSET_FILTERS: AssetFilterState = {
   includeArchived: false,
 };
 
-const selectCls =
-  "rounded-[11px] border border-line bg-warm-white px-2.5 py-2 text-xs font-semibold text-ink";
+// The app's filter idiom (see ExpenseFilters): a labelled grid, because
+// globals.css gives every `select` `width: 100%` — in a flex row each one takes
+// a line of its own. `min-w-0` is what lets a control shrink inside its cell.
+const fieldCls = "min-w-0";
+const labelCls = "mb-1 block text-[11px] font-bold text-[#8a6a3c]";
+const controlCls = "!py-2 !text-[13px] font-semibold";
+// A bare checkbox inherits that same `width: 100%` plus the 10px control
+// padding, which squeezes its label onto two lines. Sizing it explicitly is how
+// the rest of the app opts out.
+const checkCls = "h-4 w-4 shrink-0 accent-brown";
 
 const isDefault = (f: AssetFilterState) =>
   f.q === "" &&
@@ -71,72 +79,88 @@ export function AssetFilters({
         />
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <select
-          value={value.category}
-          onChange={(e) => set("category", e.target.value)}
-          aria-label="Category"
-          className={selectCls}
-        >
-          <option value="">All categories</option>
-          {categories.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
+      <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+        <div className={fieldCls}>
+          <label className={labelCls} htmlFor="asf-cat">Category</label>
+          <select
+            id="asf-cat"
+            value={value.category}
+            onChange={(e) => set("category", e.target.value)}
+            className={controlCls}
+          >
+            <option value="">All categories</option>
+            {categories.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
 
-        <select
-          value={value.status}
-          onChange={(e) => set("status", e.target.value as AssetStatus | "")}
-          aria-label="Status"
-          className={selectCls}
-        >
-          <option value="">Any status</option>
-          {ASSET_STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {assetStatusLabel(s)}
-            </option>
-          ))}
-        </select>
+        <div className={fieldCls}>
+          <label className={labelCls} htmlFor="asf-status">Status</label>
+          <select
+            id="asf-status"
+            value={value.status}
+            onChange={(e) => set("status", e.target.value as AssetStatus | "")}
+            className={controlCls}
+          >
+            <option value="">Any status</option>
+            {ASSET_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {assetStatusLabel(s)}
+              </option>
+            ))}
+          </select>
+        </div>
 
-        <select
-          value={value.employeeId}
-          onChange={(e) => set("employeeId", e.target.value)}
-          aria-label="Held by"
-          className={selectCls}
-        >
-          <option value="">Anyone</option>
-          {holders.map((h) => (
-            <option key={h.id} value={h.id}>
-              {h.name}
-            </option>
-          ))}
-        </select>
+        <div className={fieldCls}>
+          <label className={labelCls} htmlFor="asf-holder">Held by</label>
+          <select
+            id="asf-holder"
+            value={value.employeeId}
+            onChange={(e) => set("employeeId", e.target.value)}
+            className={controlCls}
+          >
+            <option value="">Anyone</option>
+            {holders.map((h) => (
+              <option key={h.id} value={h.id}>
+                {h.name}
+              </option>
+            ))}
+          </select>
+        </div>
 
-        <select
-          value={value.warranty}
-          onChange={(e) => set("warranty", e.target.value as AssetFilterState["warranty"])}
-          aria-label="Warranty"
-          className={selectCls}
-        >
-          <option value="">Any warranty</option>
-          <option value="expiring">Ending soon</option>
-          <option value="expired">Already expired</option>
-        </select>
+        <div className={fieldCls}>
+          <label className={labelCls} htmlFor="asf-warranty">Warranty</label>
+          <select
+            id="asf-warranty"
+            value={value.warranty}
+            onChange={(e) => set("warranty", e.target.value as AssetFilterState["warranty"])}
+            className={controlCls}
+          >
+            <option value="">Any warranty</option>
+            <option value="expiring">Ending soon</option>
+            <option value="expired">Already expired</option>
+          </select>
+        </div>
+      </div>
 
-        <label className="inline-flex items-center gap-1.5 rounded-[11px] border border-line bg-warm-white px-2.5 py-2 text-xs font-semibold text-ink">
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="inline-flex cursor-pointer items-center gap-2 whitespace-nowrap rounded-[11px] border border-line bg-warm-white px-2.5 py-2 text-[12.5px] font-semibold text-ink">
           <input
             type="checkbox"
+            className={checkCls}
             checked={value.serviceDue}
             onChange={(e) => set("serviceDue", e.target.checked)}
           />
           Service due
         </label>
 
-        <label className="inline-flex items-center gap-1.5 rounded-[11px] border border-line bg-warm-white px-2.5 py-2 text-xs font-semibold text-ink">
+        <label className="inline-flex cursor-pointer items-center gap-2 whitespace-nowrap rounded-[11px] border border-line bg-warm-white px-2.5 py-2 text-[12.5px] font-semibold text-ink">
           <input
             type="checkbox"
+            className={checkCls}
             checked={value.includeArchived}
             onChange={(e) => set("includeArchived", e.target.checked)}
           />
@@ -146,7 +170,7 @@ export function AssetFilters({
         {!isDefault(value) && (
           <button
             onClick={() => onChange(DEFAULT_ASSET_FILTERS)}
-            className="inline-flex items-center gap-1 rounded-[11px] border border-line bg-cream px-2.5 py-2 text-xs font-bold text-[#8a6a3c]"
+            className="ml-auto inline-flex items-center gap-1 whitespace-nowrap rounded-[11px] border border-line bg-cream px-2.5 py-2 text-[12.5px] font-bold text-[#8a6a3c]"
           >
             <X size={13} /> Clear
           </button>
