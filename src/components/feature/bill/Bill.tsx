@@ -15,16 +15,10 @@ import { fetchBillableConsumables, fetchCustomerByPhone } from "@/lib/supabase-d
 import type { BillableConsumable } from "@/lib/supabase-data";
 import { Modal } from "@/components/ui/Modal";
 import { ItemThumb } from "@/components/ui/ItemThumb";
+import { tabCls } from "@/components/ui/tabClass";
 import { Receipt } from "./Receipt";
 import { ConsumableCartGroup, ConsumablePicker } from "./BillConsumables";
 import type { Bill as BillType, BillConsumableLine, BillLine, Customer, Item, PaymentMethod } from "@/lib/types";
-
-/**
- * The pseudo-category that swaps the product grid for the consumable picker.
- * Cannot collide with a real category: add_list_value trims its input and
- * rejects an empty string, and no operator names one with two underscores.
- */
-const CONSUMABLES_TAB = "__consumables";
 
 // Sellable stock for an item: expired batches are never sold (bill generation
 // consumes fresh batches only), so the bill page ignores them. Returns the
@@ -70,6 +64,7 @@ export function Bill() {
 
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
+  const [tab, setTab] = useState<"products" | "consumables">("products");
   const [view, setView] = useState<"grid" | "list">("grid");
   const [cartOpen, setCartOpen] = useState(false); // mobile bottom-sheet expansion
   const [customer, setCustomer] = useState({ name: "", phone: "" });
@@ -417,14 +412,45 @@ export function Bill() {
 
   return (
     <>
-      <div className={`grid gap-4 lg:grid-cols-[1fr_372px] lg:pb-0 ${lines.length > 0 ? "pb-24" : ""}`}>
+      <div className={`grid gap-4 lg:grid-cols-[1fr_372px] lg:pb-0 ${!cartEmpty ? "pb-24" : ""}`}>
         {/* Products */}
         <div className="min-w-0">
+          {/* Consumables get their own tab rather than a pseudo-category, so the
+              category chips keep meaning "product category". Hidden when none
+              are set up for the counter — one tab alone is not a choice. */}
+          {available.length > 0 && (
+            <div className="mb-4 flex w-fit max-w-full gap-1.5 overflow-x-auto rounded-xl bg-[#f4e7d2] p-1">
+              {/* The search box is shared, so it is cleared on a switch — a
+                  product name left behind would silently hide every consumable. */}
+              <button
+                className={tabCls(tab === "products")}
+                onClick={() => {
+                  setTab("products");
+                  setSearch("");
+                }}
+              >
+                Products
+              </button>
+              <button
+                className={tabCls(tab === "consumables")}
+                onClick={() => {
+                  setTab("consumables");
+                  setSearch("");
+                }}
+              >
+                Consumables
+              </button>
+            </div>
+          )}
           <div className="mb-3 flex items-center gap-2">
             <div className="relative min-w-0 flex-1">
               <input
                 type="text"
-                placeholder="Search products to add…"
+                placeholder={
+                  tab === "consumables"
+                    ? "Search consumables to add…"
+                    : "Search products to add…"
+                }
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full rounded-xl border border-line bg-warm-white py-3 pl-3.5 pr-10 text-sm outline-none"
@@ -440,7 +466,13 @@ export function Bill() {
                 </button>
               )}
             </div>
-            <div className="flex shrink-0 gap-1.5 rounded-[10px] bg-cream-dark p-[3px]">
+            {/* Grid/list and the category chips describe the product catalogue;
+                the consumable picker has neither, so both are hidden there. */}
+            <div
+              className={`shrink-0 gap-1.5 rounded-[10px] bg-cream-dark p-[3px] ${
+                tab === "consumables" ? "hidden" : "flex"
+              }`}
+            >
               <button
                 type="button"
                 onClick={() => setView("grid")}
@@ -465,7 +497,11 @@ export function Bill() {
               </button>
             </div>
           </div>
-          <div className="mb-3.5 flex gap-2 overflow-x-auto pb-0.5">
+          <div
+            className={`mb-3.5 gap-2 overflow-x-auto pb-0.5 ${
+              tab === "consumables" ? "hidden" : "flex"
+            }`}
+          >
             {["All", ...categories].map((c) => (
               <button
                 key={c}
@@ -479,26 +515,22 @@ export function Bill() {
                 {c}
               </button>
             ))}
-            <button
-              onClick={() => setCategory(CONSUMABLES_TAB)}
-              aria-pressed={category === CONSUMABLES_TAB}
-              className={`shrink-0 whitespace-nowrap rounded-full px-[15px] py-[7px] text-[13px] font-bold cursor-pointer ${
-                category === CONSUMABLES_TAB
-                  ? "border border-brown bg-brown text-warm-white"
-                  : "border border-line bg-warm-white text-ink-muted"
-              }`}
-            >
-              Consumables
-            </button>
           </div>
-          {category === CONSUMABLES_TAB ? (
-            <ConsumablePicker
-              available={available}
-              search={search}
-              inCart={consumableQtyById}
-              onAdd={addConsumable}
-              currency={currency}
-            />
+          {tab === "consumables" ? (
+            <>
+              <p className="mb-3 text-[11.5px] text-ink-light">
+                Charged consumables print on the bill and add to the total. Absorbed
+                ones leave stock without appearing on the customer&rsquo;s bill — their
+                cost goes to the cash book instead.
+              </p>
+              <ConsumablePicker
+                available={available}
+                search={search}
+                inCart={consumableQtyById}
+                onAdd={addConsumable}
+                currency={currency}
+              />
+            </>
           ) : view === "grid" ? (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(200px,1fr))]">
               {filteredItems.map(({ item, qty: freshQty, earliestExpiry: freshExpiry }) => {
@@ -681,6 +713,7 @@ export function Bill() {
               </div>
             </>
           )}
+
         </div>
 
         {/* Mobile floating summary bar — tap to open the order sheet */}
@@ -728,7 +761,7 @@ export function Bill() {
           <div className="flex items-center justify-between border-b border-line-soft px-[18px] py-4">
             <h3 className="text-base font-extrabold">Current order</h3>
             <div className="flex items-center gap-3">
-              {lines.length > 0 && (
+              {!cartEmpty && (
                 <button
                   onClick={clearCart}
                   className={`flex cursor-pointer items-center rounded-lg border-none px-3 py-1.5 text-xs font-bold transition-transform active:scale-95 ${

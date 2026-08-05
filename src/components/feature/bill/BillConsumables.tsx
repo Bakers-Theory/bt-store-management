@@ -36,22 +36,24 @@ export function ConsumablePicker({
       (c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q)),
   );
 
+  // The caller only renders this section when consumables exist, so an empty
+  // `shown` means the search excluded them or the shelf is bare.
   if (shown.length === 0) {
     return (
-      <div className="rounded-2xl border border-line bg-warm-white p-11 text-center text-ink-light">
+      <div className="rounded-2xl border border-line bg-warm-white p-8 text-center text-ink-light">
         <div className="mb-2 flex justify-center">
-          <Package size={30} />
+          <Package size={26} />
         </div>
-        <div className="text-[13.5px] font-semibold">
-          {available.length === 0
-            ? "No consumables are set up for the counter"
-            : "Nothing matches, or nothing is in stock"}
+        <div className="text-[13px] font-semibold">
+          {search.trim() === ""
+            ? "None are in stock"
+            : "Nothing here matches your search"}
         </div>
-        <div className="mt-0.5 text-[11.5px]">
-          {available.length === 0
-            ? "Mark one “Charge customer” or “Absorb as cost” on its form."
-            : "Record a purchase to put stock on the shelf."}
-        </div>
+        {search.trim() === "" && (
+          <div className="mt-0.5 text-[11.5px]">
+            Record a purchase to put stock on the shelf.
+          </div>
+        )}
       </div>
     );
   }
