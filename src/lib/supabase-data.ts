@@ -3469,3 +3469,87 @@ export async function rpcRecordStockMovements(
     currentStock: Number(r.currentStock),
   }));
 }
+
+// ─── Report data (assets & consumables) ─────────────────────────────────────
+
+/**
+ * Everything the asset reports need, in one go. Unbounded within the range, the
+ * same trade `fetchReportData` makes: this is only ever called by an explicit
+ * export click, never on hydration.
+ *
+ * The register deliberately includes ARCHIVED assets — a register that hides an
+ * asset is not a register — so nothing filters on `is_archived` here.
+ */
+export async function fetchAssetReportData(range: {
+  from: string | null;
+  to: string | null;
+}): Promise<{
+  assets: Asset[];
+  assignments: AssetAssignment[];
+  maintenance: AssetMaintenance[];
+}> {
+  const supabase = createClient();
+
+  let assignQuery = supabase
+    .from("asset_assignment_v")
+    .select("*")
+    .order("assigned_on", { ascending: false });
+  // The report filters by `assigned_on` itself, but narrowing here keeps the
+  // payload proportional to the period — except for open rows, which the "out
+  // now" section needs however old they are.
+  if (range.from) assignQuery = assignQuery.or(`assigned_on.gte.${range.from},returned_on.is.null`);
+
+  let maintQuery = supabase
+    .from("asset_maintenance_v")
+    .select("*")
+    .order("started_on", { ascending: false });
+  if (range.from) maintQuery = maintQuery.gte("started_on", range.from);
+  if (range.to) maintQuery = maintQuery.lte("started_on", range.to);
+
+  const [assetRes, assignRes, maintRes] = await Promise.all([
+    supabase.from("asset_v").select("*").order("category").order("name"),
+    assignQuery,
+    maintQuery,
+  ]);
+  for (const r of [assetRes, assignRes, maintRes]) {
+    if (r.error) throw new Error(r.error.message);
+  }
+
+  return {
+    assets: ((assetRes.data ?? []) as AssetRow[]).map(mapAsset),
+    assignments: ((assignRes.data ?? []) as AssetAssignmentRow[]).map(mapAssetAssignment),
+    maintenance: ((maintRes.data ?? []) as AssetMaintenanceRow[]).map(mapAssetMaintenance),
+  };
+}
+
+/**
+ * Everything the consumable reports need. The item list is a snapshot (stock on
+ * hand is a position, not a window) and the ledger is filtered to the period.
+ */
+export async function fetchConsumableReportData(range: {
+  from: string | null;
+  to: string | null;
+}): Promise<{ items: Consumable[]; movements: StockMovement[] }> {
+  const supabase = createClient();
+
+  let moveQuery = supabase
+    .from("stock_movement_v")
+    .select("*")
+    .order("on_date", { ascending: false })
+    .order("created_at", { ascending: false });
+  if (range.from) moveQuery = moveQuery.gte("on_date", range.from);
+  if (range.to) moveQuery = moveQuery.lte("on_date", range.to);
+
+  const [itemRes, moveRes] = await Promise.all([
+    supabase.from("consumable_v").select("*").order("category").order("name"),
+    moveQuery,
+  ]);
+  for (const r of [itemRes, moveRes]) {
+    if (r.error) throw new Error(r.error.message);
+  }
+
+  return {
+    items: ((itemRes.data ?? []) as ConsumableRow[]).map(mapConsumable),
+    movements: ((moveRes.data ?? []) as StockMovementRow[]).map(mapStockMovement),
+  };
+}

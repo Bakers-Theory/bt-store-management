@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Plus } from "lucide-react";
+import { CheckSquare, Plus, Upload, X } from "lucide-react";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
@@ -21,6 +21,8 @@ import {
 import { AssetList } from "./AssetList";
 import { AssetForm } from "./AssetForm";
 import { AssetDetail } from "./AssetDetail";
+import { BulkImportModal } from "@/components/feature/BulkImportModal";
+import { BulkAssignModal } from "./BulkAssignModal";
 import type { Asset, AssetStats, Employee } from "@/lib/types";
 // The filter COMPONENT above and the filter TYPE below share a name.
 import type { AssetFilters as AssetQuery } from "@/lib/types";
@@ -43,6 +45,7 @@ export function Assets() {
   const lists = useBakeryStore((s) => s.lists);
   const toast = useUIStore((s) => s.toast);
   const canCreate = hasPermission(user, "assets.create");
+  const canAssign = hasPermission(user, "assets.assign");
 
   const [filters, setFilters] = useState<AssetFilterState>(DEFAULT_ASSET_FILTERS);
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -53,6 +56,11 @@ export function Assets() {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Asset | null>(null);
   const [viewingId, setViewingId] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  // Selection mode for bulk assignment. Null = off, so the plain list is the
+  // default and nothing about the normal flow changes.
+  const [picked, setPicked] = useState<Set<string> | null>(null);
+  const [bulkAssigning, setBulkAssigning] = useState(false);
 
   const loadPage = useCallback(
     (offset: number) =>
@@ -119,12 +127,20 @@ export function Assets() {
           </p>
         </div>
         {canCreate && (
-          <button
-            onClick={() => setAdding(true)}
-            className="inline-flex items-center gap-1.5 rounded-[13px] bg-brown px-3.5 py-2.5 text-xs font-bold text-white"
-          >
-            <Plus size={14} /> Add asset
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setImporting(true)}
+              className="inline-flex items-center gap-1.5 rounded-[13px] border border-line bg-warm-white px-3 py-2.5 text-xs font-bold text-ink"
+            >
+              <Upload size={14} /> Import
+            </button>
+            <button
+              onClick={() => setAdding(true)}
+              className="inline-flex items-center gap-1.5 rounded-[13px] bg-brown px-3.5 py-2.5 text-xs font-bold text-white"
+            >
+              <Plus size={14} /> Add asset
+            </button>
+          </div>
         )}
       </div>
 
@@ -137,6 +153,41 @@ export function Assets() {
         onChange={setFilters}
       />
 
+      {canAssign && (
+        <div className="flex flex-wrap items-center gap-2">
+          {picked === null ? (
+            <button
+              onClick={() => setPicked(new Set())}
+              className="inline-flex items-center gap-1.5 rounded-[11px] border border-line bg-warm-white px-2.5 py-2 text-[12.5px] font-bold text-ink"
+            >
+              <CheckSquare size={13} /> Issue several
+            </button>
+          ) : (
+            <>
+              <span className="text-[12.5px] font-bold text-ink">
+                {picked.size} selected
+              </span>
+              <button
+                disabled={picked.size === 0}
+                onClick={() => setBulkAssigning(true)}
+                className="inline-flex items-center gap-1.5 rounded-[11px] bg-brown px-3 py-2 text-[12.5px] font-bold text-white disabled:opacity-50"
+              >
+                Issue to…
+              </button>
+              <button
+                onClick={() => setPicked(null)}
+                className="inline-flex items-center gap-1.5 rounded-[11px] border border-line bg-cream px-2.5 py-2 text-[12.5px] font-bold text-[#8a6a3c]"
+              >
+                <X size={13} /> Cancel
+              </button>
+              <span className="text-[11px] text-ink-muted">
+                Only available assets can be picked.
+              </span>
+            </>
+          )}
+        </div>
+      )}
+
       {!loaded ? (
         <div className="space-y-2">
           {[0, 1, 2, 3, 4].map((i) => (
@@ -145,7 +196,22 @@ export function Assets() {
         </div>
       ) : (
         <>
-          <AssetList assets={assets} onOpen={(a) => setViewingId(a.id)} />
+          <AssetList
+            assets={assets}
+            onOpen={(a) => setViewingId(a.id)}
+            selected={picked ?? undefined}
+            onToggleSelect={
+              picked
+                ? (id) =>
+                    setPicked((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(id)) next.delete(id);
+                      else next.add(id);
+                      return next;
+                    })
+                : undefined
+            }
+          />
           {hasMore && (
             <button
               onClick={() => void loadPage(assets.length)}
@@ -169,6 +235,30 @@ export function Assets() {
             setEditing(null);
             refresh();
           }}
+        />
+      )}
+
+      {importing && (
+        <BulkImportModal
+          mode="assets"
+          context={{ categories: lists.assetCategories }}
+          onClose={() => setImporting(false)}
+          onDone={refresh}
+        />
+      )}
+
+      {bulkAssigning && picked && (
+        <BulkAssignModal
+          assets={assets.filter((a) => picked.has(a.id))}
+          holders={holders}
+          // The modal closes itself only when every asset was issued; on a
+          // partial failure it stays open to show which ones, so `onDone` must
+          // refresh WITHOUT unmounting it.
+          onClose={() => {
+            setBulkAssigning(false);
+            setPicked(null);
+          }}
+          onDone={refresh}
         />
       )}
 

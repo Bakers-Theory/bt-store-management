@@ -149,6 +149,9 @@ src/
     payslip.ts                  # payslip document + amount-in-words
     asset.ts                    # asset lifecycle + the §2.4 action table
     consumable.ts               # stock arithmetic, movement validation, reorder math
+    asset-report.ts             # the 4 asset reports (print / Excel / CSV)
+    consumable-report.ts        # the 6 consumable reports (print / Excel / CSV)
+    csv-import.ts               # CSV parse + row validation for bulk import
     barcode.ts                  # Code 39 encoder for the asset label
     expiry.ts  date-range.ts  format.ts  image.ts   # small pure helpers
     *.test.ts                   # Vitest suites (logic layer only)
@@ -503,6 +506,20 @@ Four rules carry the design:
 permission gates and the stock arithmetic for the UI, under the same rule as
 `permissions.ts`: **the SQL copy is the enforcement.**
 
+Two smaller decisions in this module worth not re-litigating:
+
+- **The asset label is Code 39, drawn as inline SVG** (`lib/barcode.ts`), not a QR
+  image from a library. Its charset covers an asset code exactly, it is
+  self-checking so no check digit has to stay in sync with the server, and it
+  encodes as two bar widths — which means no dependency and no canvas.
+  `LabelPrintHost` prints it through the same `data-print` mechanism the report
+  host uses.
+- **Asset documents live in a private bucket and are stored as object PATHS**, not
+  URLs; `signedDocUrl` mints a five-minute link when someone opens one. A stored
+  public URL to a purchase invoice would be a permanent unguarded link to a
+  document carrying prices, which is the same thing the column-level revoke on
+  `cost_price` exists to prevent. Asset *photos* are public, like product images.
+
 ### The staff API
 
 Creating/editing/deleting staff needs the Supabase **admin** API (create auth
@@ -605,7 +622,9 @@ layout, bill shortfall and cashbook fixes · `0060` the asset register
 · `0061` asset operations (assign / return / transfer / repair / mark, and
 `asset_stats`) · `0062` consumables and the stock ledger (`consumable`,
 `stock_movement`, `consumable_v`, `consumable_alert_v`) · `0063` the consumable
-RPCs (`record_stock_movement` and `consumable_stats`).
+RPCs (`record_stock_movement` and `consumable_stats`) · `0064` storage for asset
+photos and documents — two buckets, because a photo of a machine is public and a
+purchase invoice is not.
 
 > The full consolidated schema — every table's columns, the views, the complete
 > RPC catalog, the privacy/grants model, and deep-dives on the batch/FIFO and
@@ -664,6 +683,23 @@ unit-tested in plain functions. These are the files with `*.test.ts` siblings:
   nine elements per character, exactly three wide, every pattern distinct — which
   is what catches a typo that would otherwise print a label scanning as the wrong
   asset.
+- **`asset-report.ts` / `consumable-report.ts`** — the ten reports of §4.2, in the
+  same three-renderer shape as `supplier-report.ts`: raw rows once, then print,
+  Excel and CSV over them. **Which date each report uses is the contract**, stated
+  at the top of each file — the register, warranty, inventory and expiry reports
+  are snapshots; assignment uses `assigned_on`, maintenance `started_on`, and the
+  consumable event reports `stock_movement.on_date`. Outward value (consumption,
+  wastage) is estimated at the latest purchase price, because a movement only
+  carries a `unit_cost` when it is a purchase — every report that shows the figure
+  says so, since naming it "value" silently would imply an accuracy this data does
+  not have. Depreciation is deliberately absent: the ticket marks it future, and it
+  needs a method and rate per category that nothing here records.
+- **`csv-import.ts`** — bulk import (§7). A small RFC 4180 reader plus one
+  validation pass per shape (assets, consumables, stock movements), mirroring the
+  same rules as the forms. Two rules matter: **nothing is guessed** — an
+  unreadable row is reported with its line number, never coerced or skipped — and
+  **movements validate against a RUNNING stock figure**, so three issues of 4
+  against a stock of 10 fail on the third, exactly as the server will.
 - **`expiry.ts`** — day-granularity expiry status (fresh / expiring-soon /
   expired) shared by UI and matching server-side batch logic.
 - **`cashbook.ts`** — the mode→account mirror of `mode_to_account()`, account

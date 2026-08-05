@@ -17,6 +17,18 @@ import {
   type CashbookReportData,
   type CashbookReportType,
 } from "./cashbook-report";
+import {
+  ASSET_REPORT_META,
+  assetReportSheets,
+  type AssetReportData,
+  type AssetReportType,
+} from "./asset-report";
+import {
+  CONSUMABLE_REPORT_META,
+  consumableReportSheets,
+  type ConsumableReportData,
+  type ConsumableReportType,
+} from "./consumable-report";
 
 export interface ReportData {
   bakery: Bakery;
@@ -627,6 +639,103 @@ export async function exportCashbookReports(
     types.length === 1
       ? `${safe}_${CASHBOOK_REPORT_META[types[0]].slug}_${suffix}.xlsx`
       : `${safe}_Cashbook_Reports_${suffix}.xlsx`;
+  XLSX.writeFile(wb, fileName);
+  return { ok: true };
+}
+
+// ─── Asset & consumable reports ─────────────────────────────────────────────
+
+/**
+ * One workbook, sheets from every selected asset report. Same idiom as
+ * `exportSupplierReports` — `xlsx` is imported on demand, each sheet carries the
+ * shared header block, and a snapshot report says so in its period line.
+ */
+export async function exportAssetReports(
+  types: AssetReportType[],
+  data: AssetReportData,
+  range: DateRange,
+): Promise<ReportResult> {
+  if (types.length === 0) return { ok: false, error: "Select at least one report" };
+
+  const now = new Date();
+  const XLSX = await import("xlsx");
+  const wb = XLSX.utils.book_new();
+  const used = new Set<string>();
+  let anyRows = false;
+
+  const bakeryLike = {
+    name: data.shop.name,
+    address: data.shop.address,
+    phone: data.shop.phone,
+    currency: data.shop.currency,
+  } as Bakery;
+
+  for (const type of types) {
+    const meta = ASSET_REPORT_META[type];
+    for (const sheet of assetReportSheets(type, data, range)) {
+      const header = headerRows(bakeryLike, meta.name, range, now, meta.snapshot);
+      const ws = XLSX.utils.aoa_to_sheet([...header, []]);
+      if (sheet.rows.length) {
+        XLSX.utils.sheet_add_json(ws, sheet.rows, { origin: -1 });
+        anyRows = true;
+      }
+      XLSX.utils.book_append_sheet(wb, ws, uniqueSheetName(sheet.name, used));
+    }
+  }
+
+  if (!anyRows) return { ok: false, error: "Nothing to export for this period" };
+
+  const safe = (data.shop.name || "Bakery").replace(/[^a-z0-9]/gi, "_");
+  const suffix = rangeSuffix(range, false);
+  const fileName =
+    types.length === 1
+      ? `${safe}_${ASSET_REPORT_META[types[0]].slug}_${suffix}.xlsx`
+      : `${safe}_Asset_Reports_${suffix}.xlsx`;
+  XLSX.writeFile(wb, fileName);
+  return { ok: true };
+}
+
+export async function exportConsumableReports(
+  types: ConsumableReportType[],
+  data: ConsumableReportData,
+  range: DateRange,
+): Promise<ReportResult> {
+  if (types.length === 0) return { ok: false, error: "Select at least one report" };
+
+  const now = new Date();
+  const XLSX = await import("xlsx");
+  const wb = XLSX.utils.book_new();
+  const used = new Set<string>();
+  let anyRows = false;
+
+  const bakeryLike = {
+    name: data.shop.name,
+    address: data.shop.address,
+    phone: data.shop.phone,
+    currency: data.shop.currency,
+  } as Bakery;
+
+  for (const type of types) {
+    const meta = CONSUMABLE_REPORT_META[type];
+    for (const sheet of consumableReportSheets(type, data, range)) {
+      const header = headerRows(bakeryLike, meta.name, range, now, meta.snapshot);
+      const ws = XLSX.utils.aoa_to_sheet([...header, []]);
+      if (sheet.rows.length) {
+        XLSX.utils.sheet_add_json(ws, sheet.rows, { origin: -1 });
+        anyRows = true;
+      }
+      XLSX.utils.book_append_sheet(wb, ws, uniqueSheetName(sheet.name, used));
+    }
+  }
+
+  if (!anyRows) return { ok: false, error: "Nothing to export for this period" };
+
+  const safe = (data.shop.name || "Bakery").replace(/[^a-z0-9]/gi, "_");
+  const suffix = rangeSuffix(range, false);
+  const fileName =
+    types.length === 1
+      ? `${safe}_${CONSUMABLE_REPORT_META[types[0]].slug}_${suffix}.xlsx`
+      : `${safe}_Consumable_Reports_${suffix}.xlsx`;
   XLSX.writeFile(wb, fileName);
   return { ok: true };
 }

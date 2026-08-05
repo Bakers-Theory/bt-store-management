@@ -8,7 +8,8 @@ import { useUIStore } from "@/lib/ui-store";
 import { ASSET_CONDITIONS, conditionLabel } from "@/lib/asset";
 import { fetchSuppliers, rpcSaveAsset } from "@/lib/supabase-data";
 import { isoDateLocal } from "@/lib/excel";
-import type { Asset, AssetCondition, Supplier } from "@/lib/types";
+import { AssetFiles } from "./AssetFiles";
+import type { Asset, AssetCondition, AssetDocument, Supplier } from "@/lib/types";
 
 const labelCls = "mb-1.5 block text-xs font-bold text-[#8a6a3c]";
 const inputCls =
@@ -49,6 +50,8 @@ export function AssetForm({
   const [department, setDepartment] = useState(asset?.department ?? "");
   const [condition, setCondition] = useState<AssetCondition>(asset?.condition ?? "");
   const [notes, setNotes] = useState(asset?.notes ?? "");
+  const [imageUrl, setImageUrl] = useState<string | null>(asset?.imageUrl ?? null);
+  const [documents, setDocuments] = useState<AssetDocument[]>(asset?.documents ?? []);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [saving, setSaving] = useState(false);
 
@@ -102,10 +105,8 @@ export function AssetForm({
         department: department.trim(),
         condition,
         notes: notes.trim(),
-        // The form does not collect files yet; preserve whatever is stored so an
-        // edit never wipes attachments added elsewhere.
-        imageUrl: asset?.imageUrl ?? null,
-        documents: asset?.documents ?? [],
+        imageUrl,
+        documents,
       });
       toast(asset ? "Asset updated" : "Asset added", "success");
       onSaved();
@@ -303,6 +304,13 @@ export function AssetForm({
             className={inputCls}
           />
         </div>
+
+        <AssetFiles
+          imageUrl={imageUrl}
+          documents={documents}
+          onImageChange={setImageUrl}
+          onDocumentsChange={setDocuments}
+        />
 
         {error && name !== "" && (
           <p className="text-[11px] font-semibold text-red-700">{error}</p>

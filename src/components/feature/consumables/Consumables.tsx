@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Plus } from "lucide-react";
+import { Layers, Plus, Upload } from "lucide-react";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
@@ -25,6 +25,7 @@ import { ConsumableList, qtyLabel } from "./ConsumableList";
 import { ConsumableForm } from "./ConsumableForm";
 import { ConsumableDetail } from "./ConsumableDetail";
 import { StockAlerts } from "./StockAlerts";
+import { BulkImportModal, type ImportMode } from "@/components/feature/BulkImportModal";
 import type {
   Consumable,
   ConsumableAlert,
@@ -57,6 +58,7 @@ export function Consumables() {
   const lists = useBakeryStore((s) => s.lists);
   const toast = useUIStore((s) => s.toast);
   const canCreate = hasPermission(user, "consumables.create");
+  const canIssue = hasPermission(user, "consumables.issue");
 
   const [tab, setTab] = useState<Tab>("inventory");
   const [filters, setFilters] = useState<ConsumableFilterState>(
@@ -73,6 +75,7 @@ export function Consumables() {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Consumable | null>(null);
   const [viewingId, setViewingId] = useState<string | null>(null);
+  const [importMode, setImportMode] = useState<ImportMode | null>(null);
 
   const loadPage = useCallback(
     (offset: number) =>
@@ -155,14 +158,32 @@ export function Consumables() {
             What gets used up, what is left, and what to buy
           </p>
         </div>
-        {canCreate && (
-          <button
-            onClick={() => setAdding(true)}
-            className="inline-flex items-center gap-1.5 rounded-[13px] bg-brown px-3.5 py-2.5 text-xs font-bold text-white"
-          >
-            <Plus size={14} /> Add item
-          </button>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {canIssue && (
+            <button
+              onClick={() => setImportMode("movements")}
+              className="inline-flex items-center gap-1.5 rounded-[13px] border border-line bg-warm-white px-3 py-2.5 text-xs font-bold text-ink"
+            >
+              <Layers size={14} /> Bulk stock
+            </button>
+          )}
+          {canCreate && (
+            <>
+              <button
+                onClick={() => setImportMode("consumables")}
+                className="inline-flex items-center gap-1.5 rounded-[13px] border border-line bg-warm-white px-3 py-2.5 text-xs font-bold text-ink"
+              >
+                <Upload size={14} /> Import
+              </button>
+              <button
+                onClick={() => setAdding(true)}
+                className="inline-flex items-center gap-1.5 rounded-[13px] bg-brown px-3.5 py-2.5 text-xs font-bold text-white"
+              >
+                <Plus size={14} /> Add item
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       <ConsumableTiles stats={stats} onPick={pickTile} />
@@ -287,6 +308,27 @@ export function Consumables() {
             setEditing(null);
             refresh();
           }}
+        />
+      )}
+
+      {importMode && (
+        <BulkImportModal
+          mode={importMode}
+          context={{
+            categories: lists.consumableCategories,
+            units: lists.units,
+            // The bulk-stock plan validates against a running figure, so it needs
+            // the current stock of every item it might touch.
+            items: items.map((c) => ({
+              id: c.id,
+              code: c.code,
+              name: c.name,
+              unit: c.unit,
+              currentStock: c.currentStock,
+            })),
+          }}
+          onClose={() => setImportMode(null)}
+          onDone={refresh}
         />
       )}
 

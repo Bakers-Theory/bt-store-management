@@ -112,3 +112,90 @@ export async function deleteProductImage(url: string): Promise<void> {
   const supabase = createClient();
   await supabase.storage.from(BUCKET).remove([path]);
 }
+
+// ─── Asset files (#91 §2.2) ─────────────────────────────────────────────────
+
+const ASSET_IMAGE_BUCKET = "asset-images";
+const ASSET_DOC_BUCKET = "asset-docs";
+
+/** Cap for a document upload. Manuals are the big ones; 15 MB covers a scan. */
+export const MAX_DOC_BYTES = 15 * 1024 * 1024;
+
+/**
+ * An asset photo. Public bucket, so the returned URL can be stored on the asset
+ * and rendered directly — a picture of a machine is not confidential (see
+ * migration 0064 note 1).
+ */
+export async function uploadAssetImage(blob: Blob): Promise<string> {
+  const supabase = createClient();
+  const path = `${crypto.randomUUID()}.webp`;
+  const { error } = await supabase.storage
+    .from(ASSET_IMAGE_BUCKET)
+    .upload(path, blob, { contentType: "image/webp", upsert: false });
+  if (error) throw new Error(error.message);
+  return supabase.storage.from(ASSET_IMAGE_BUCKET).getPublicUrl(path).data.publicUrl;
+}
+
+export async function deleteAssetImage(url: string): Promise<void> {
+  const marker = `/${ASSET_IMAGE_BUCKET}/`;
+  const idx = url.indexOf(marker);
+  if (idx === -1) return;
+  const supabase = createClient();
+  await supabase.storage.from(ASSET_IMAGE_BUCKET).remove([url.slice(idx + marker.length)]);
+}
+
+/** Strip anything that would make a storage key awkward, keep it recognisable. */
+export const safeFileName = (name: string): string =>
+  name
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 80) || "file";
+
+/**
+ * A purchase document: invoice, manual, warranty card. The bucket is PRIVATE, so
+ * this returns the object **path**, not a URL — `asset.documents` stores that and
+ * `signedDocUrl` mints a short-lived link when someone opens the file. A stored
+ * public URL would be a permanent unguarded link to a document carrying prices.
+ */
+export async function uploadAssetDoc(
+  file: File,
+): Promise<{ name: string; url: string }> {
+  if (file.size > MAX_DOC_BYTES) {
+    throw new Error("That file is too large — 15 MB is the limit");
+  }
+  const supabase = createClient();
+  const path = `${crypto.randomUUID()}-${safeFileName(file.name)}`;
+  const { error } = await supabase.storage
+    .from(ASSET_DOC_BUCKET)
+    .upload(path, file, {
+      contentType: file.type || "application/octet-stream",
+      upsert: false,
+    });
+  if (error) throw new Error(error.message);
+  // `url` carries the path for a private object. The reader is `signedDocUrl`.
+  return { name: file.name, url: path };
+}
+
+/**
+ * A link valid for five minutes — long enough to open or download, short enough
+ * that a copied URL is not a lasting leak.
+ *
+ * Tolerates a stored *public* URL as well as a path, so a document attached
+ * before this split (or pasted in by hand) still opens.
+ */
+export async function signedDocUrl(pathOrUrl: string): Promise<string> {
+  if (/^https?:\/\//.test(pathOrUrl)) return pathOrUrl;
+  const supabase = createClient();
+  const { data, error } = await supabase.storage
+    .from(ASSET_DOC_BUCKET)
+    .createSignedUrl(pathOrUrl, 300);
+  if (error || !data) throw new Error(error?.message ?? "Could not open that file");
+  return data.signedUrl;
+}
+
+export async function deleteAssetDoc(pathOrUrl: string): Promise<void> {
+  if (/^https?:\/\//.test(pathOrUrl)) return; // not ours to remove
+  const supabase = createClient();
+  await supabase.storage.from(ASSET_DOC_BUCKET).remove([pathOrUrl]);
+}

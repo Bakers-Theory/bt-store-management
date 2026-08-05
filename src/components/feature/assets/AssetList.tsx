@@ -15,10 +15,16 @@ const toneCls = {
 export function AssetList({
   assets,
   onOpen,
+  /** Selection mode, for bulk assignment (§7). Absent = plain list. */
+  selected,
+  onToggleSelect,
 }: {
   assets: Asset[];
   onOpen: (a: Asset) => void;
+  selected?: Set<string>;
+  onToggleSelect?: (id: string) => void;
 }) {
+  const selecting = !!selected && !!onToggleSelect;
   if (assets.length === 0) {
     return (
       <div className="rounded-[18px] border border-line bg-warm-white px-5 py-10 text-center">
@@ -34,13 +40,29 @@ export function AssetList({
         const service = serviceStatus(a.serviceDaysLeft);
         const warranty = warrantyStatus(a.warrantyDaysLeft);
         return (
-          <button
+          <div
             key={a.id}
-            onClick={() => onOpen(a)}
-            className={`flex w-full items-center gap-3 border-t border-line-soft px-5 py-3.5 text-left first:border-t-0 hover:bg-[#faf4ea] ${
+            className={`flex w-full items-center gap-3 border-t border-line-soft px-5 py-3.5 first:border-t-0 hover:bg-[#faf4ea] ${
               a.isArchived || a.status === "retired" ? "opacity-60" : ""
             }`}
           >
+            {selecting && (
+              <input
+                type="checkbox"
+                aria-label={`Select ${a.code}`}
+                // Only an available, unarchived asset can be issued, so nothing
+                // else is selectable — the alternative is a bulk action that
+                // half-fails by design.
+                disabled={a.status !== "available" || a.isArchived}
+                checked={selected!.has(a.id)}
+                onChange={() => onToggleSelect!(a.id)}
+                className="h-4 w-4 shrink-0 accent-brown"
+              />
+            )}
+            <button
+              onClick={() => onOpen(a)}
+              className="flex min-w-0 flex-1 items-center gap-3 text-left"
+            >
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-bold text-ink">
                 {a.name}
@@ -82,7 +104,8 @@ export function AssetList({
               {assetStatusLabel(a.status)}
             </span>
             <ChevronRight size={15} className="shrink-0 text-[#c0a880]" />
-          </button>
+            </button>
+          </div>
         );
       })}
     </div>

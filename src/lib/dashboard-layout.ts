@@ -47,6 +47,11 @@ export const DASHBOARD_WIDGETS: WidgetDef[] = [
   { id: "cashbook-summary", title: "Cashbook", defaultSpan: 2, minSpan: 1, defaultVisible: true, mobileSpan: 2, permission: "cashbook.view" },
   { id: "supplier-balance", title: "Suppliers & Purchases", defaultSpan: 2, minSpan: 1, defaultVisible: true, mobileSpan: 2, permission: "suppliers.financial" },
   { id: "attendance-today", title: "Attendance", defaultSpan: 2, minSpan: 1, defaultVisible: false, mobileSpan: 2, permission: "attendance.view" },
+  // #91 §4.1. Opt-in like Attendance rather than default-visible: both are
+  // supervisory views, and adding two tiles to every existing dashboard without
+  // being asked is a change nobody requested.
+  { id: "assets-summary", title: "Assets", defaultSpan: 2, minSpan: 1, defaultVisible: false, mobileSpan: 2, permission: "assets.view" },
+  { id: "consumables-stock", title: "Consumables", defaultSpan: 2, minSpan: 1, defaultVisible: false, mobileSpan: 2, permission: "consumables.view" },
 ];
 
 export const DEFAULT_LAYOUT: StoredLayout = {
