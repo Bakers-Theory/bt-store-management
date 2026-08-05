@@ -1,4 +1,5 @@
-import type { BillLine } from "./types";
+import type { BillConsumableLine, BillLine } from "./types";
+import { chargedConsumableRaw } from "./bill-consumable";
 
 export interface BillTotals {
   subtotal: number;
@@ -18,14 +19,26 @@ function round2(n: number): number {
  * flat ₹ amount (clamped to the subtotal) when "flat". Rounds at each step
  * (mirroring generate_bill's server-side rounding) so this preview always
  * matches the receipt's total to the cent.
+ *
+ * `consumableLines` are the cart's consumables. CHARGED ones join the subtotal
+ * and are therefore discounted and taxed exactly like an item line — one totals
+ * path, no special cases. Absorbed ones are not money the customer pays and do
+ * not appear here at all; their cost posts separately to the cash book.
  */
 export function computeTotals(
   lines: BillLine[],
   taxRate: number,
   discountValue = 0,
   discountMode: "percent" | "flat" = "percent",
+  consumableLines: BillConsumableLine[] = [],
 ): BillTotals {
-  const subtotal = round2(lines.reduce((s, bi) => s + bi.qty * bi.price, 0));
+  // Rounded ONCE over the combined sum, matching generate_bill's
+  // `round(v_sub + v_csub, 2)`. Rounding the consumable part separately first
+  // would be a double rounding the server never does.
+  const subtotal = round2(
+    lines.reduce((s, bi) => s + bi.qty * bi.price, 0) +
+      chargedConsumableRaw(consumableLines),
+  );
   const rawDiscount =
     discountMode === "flat"
       ? Math.min(subtotal, Math.max(0, discountValue))
@@ -36,6 +49,8 @@ export function computeTotals(
   const total = round2(taxable + tax);
   return { subtotal, discount, tax, total };
 }
+
+
 
 /**
  * The unrecoverable gap when a customer pays less than the bill total — ₹2 on a

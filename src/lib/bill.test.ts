@@ -26,6 +26,36 @@ describe("computeTotals", () => {
       subtotal: 100, discount: 10, tax: 4.5, total: 94.5,
     });
   });
+  it("adds charged consumables to the subtotal", () => {
+    const bag = {
+      consumableId: "c1", name: "Carry bag", unit: "pcs",
+      qty: 2, unitCost: 5, charged: true,
+    };
+    expect(computeTotals([line(1, 100)], 0, 0, "percent", [bag])).toEqual({
+      subtotal: 110, discount: 0, tax: 0, total: 110,
+    });
+  });
+
+  it("ignores absorbed consumables entirely", () => {
+    const wrap = {
+      consumableId: "c2", name: "Foil wrap", unit: "pcs",
+      qty: 2, unitCost: 5, charged: false,
+    };
+    expect(computeTotals([line(1, 100)], 0, 0, "percent", [wrap])).toEqual({
+      subtotal: 100, discount: 0, tax: 0, total: 100,
+    });
+  });
+
+  it("taxes and discounts a charged consumable like an item line", () => {
+    const bag = {
+      consumableId: "c1", name: "Carry bag", unit: "pcs",
+      qty: 1, unitCost: 10, charged: true,
+    };
+    // subtotal 110, 10% off -> 99 taxable, 5% tax -> 4.95, total 103.95.
+    expect(computeTotals([line(1, 100)], 5, 10, "percent", [bag])).toEqual({
+      subtotal: 110, discount: 11, tax: 4.95, total: 103.95,
+    });
+  });
 });
 
 describe("shortfallFor", () => {

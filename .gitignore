@@ -9,3 +9,4 @@ docs/superpowers
 *.tsbuildinfo
 .vercel
 .env*
+/supabase/.temp

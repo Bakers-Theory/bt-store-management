@@ -158,6 +158,38 @@ export type BillStatus = "active" | "cancelled";
 
 export type PaymentMethod = "Cash" | "UPI";
 
+export type BillMode = "none" | "charge" | "absorb";
+
+/**
+ * A consumable in the cart, before checkout.
+ *
+ * `charged` is the whole feature: true means the line is printed on the receipt
+ * AND added to the subtotal; false means it is invisible to the customer and its
+ * cost leaves the cash book instead. The two can never disagree, which is why
+ * this is one boolean and not two.
+ */
+export interface BillConsumableLine {
+  consumableId: string;
+  name: string;
+  unit: string;
+  qty: number;
+  /** `consumable.cost_per_unit`; 0 when the operator has not set one. */
+  unitCost: number;
+  charged: boolean;
+}
+
+/** A stored consumable line, as it comes back on a generated bill. */
+export interface BillConsumable {
+  id: string;
+  /** Null once the consumable itself has been removed from the master. */
+  consumableId: string | null;
+  name: string;
+  unit: string;
+  qty: number;
+  unitCost: number;
+  charged: boolean;
+}
+
 export interface Customer {
   id: string;
   phone: string;
