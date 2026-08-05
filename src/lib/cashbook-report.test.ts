@@ -80,6 +80,11 @@ const expense = (over: Partial<Expense> = {}): Expense => ({
   createdAt: "2026-07-10T04:00:00.000Z",
   updatedByName: "Owner",
   updatedAt: "2026-07-10T05:00:00.000Z",
+  stockMovementId: null,
+  assetId: null,
+  assetMaintenanceId: null,
+  originType: "",
+  originRef: "",
   ...over,
 });
 

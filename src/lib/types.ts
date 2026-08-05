@@ -824,6 +824,15 @@ export interface Expense {
   createdAt: string;
   updatedByName: string;
   updatedAt: string;
+  /** 0066: the stock movement this expense was recorded from, if any. */
+  stockMovementId: string | null;
+  /** The asset it was recorded from — its purchase, or one of its repair bills. */
+  assetId: string | null;
+  assetMaintenanceId: string | null;
+  /** Blank for a hand-typed expense. */
+  originType: "" | "consumable" | "asset" | "asset_maintenance";
+  /** "CON-0004 — Cake Boxes" / "AST-0002 — Deck Oven". Blank when unlinked. */
+  originRef: string;
 }
 
 export type ExpenseEventKind =
@@ -862,6 +871,38 @@ export interface ExpenseInput {
   description: string;
   /** Empty means "me". */
   paidById: string;
+}
+
+/**
+ * One payment mode, never `Mixed` (migration 0066 note 5): a purchase form is
+ * not the place to describe a split payment.
+ */
+export type LinkedExpenseMode = Exclude<ExpenseMode, "Mixed">;
+
+/**
+ * The cash book block a purchase form attaches to a stock movement, an asset or
+ * a repair job (migration 0066). Its ABSENCE is meaningful: the record is saved
+ * with no spend against it, which is how someone who cannot record spending
+ * still receives stock.
+ *
+ * `amount` is deliberately absent — the server computes it from the record
+ * itself (qty × unit cost, the purchase price, the repair cost) so the two can
+ * never disagree.
+ */
+export interface LinkedExpenseInput {
+  categoryId: string;
+  paymentMode: LinkedExpenseMode;
+  /** When cash moved. Only used when `pay` is true; defaults to the cost date. */
+  paidOn: string;
+  /** True records it paid — the cash book row appears now. False waits for approval. */
+  pay: boolean;
+  vendorName: string;
+  vendorSupplierId: string | null;
+  invoiceNo: string;
+  gstIncluded: boolean;
+  gstAmount: number;
+  /** Blank lets the server write a description from the record it came from. */
+  description: string;
 }
 
 export interface ExpenseFilters {
@@ -1070,6 +1111,12 @@ export interface AssetInput {
   notes: string;
   imageUrl: string | null;
   documents: AssetDocument[];
+  /**
+   * The purchase as a cash book entry (0066). Honoured on CREATE only — a price
+   * corrected later is a cancel-and-re-record in the Expenses register, because
+   * the original may already have moved cash.
+   */
+  expense?: LinkedExpenseInput | null;
 }
 
 export interface AssetFilters {
@@ -1238,6 +1285,11 @@ export interface StockMovementInput {
   issuedTo?: string | null;
   reason?: string;
   remarks?: string;
+  /**
+   * What was paid for the stock, as a cash book entry (0066). Purchases only —
+   * issuing or writing off stock moves no money, and the server refuses it.
+   */
+  expense?: LinkedExpenseInput | null;
 }
 
 export interface ConsumableFilters {

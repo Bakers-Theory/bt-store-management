@@ -5,7 +5,15 @@ import { Loader2 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
+import { useCurrentUser } from "@/components/system/AuthProvider";
+import { hasPermission } from "@/lib/permissions";
 import { ASSET_CONDITIONS, conditionLabel } from "@/lib/asset";
+import {
+  draftToInput,
+  emptyLinkedExpense,
+  linkedExpenseError,
+} from "@/lib/linked-expense";
+import { LinkedExpenseFields } from "@/components/feature/cashbook/LinkedExpenseFields";
 import { fetchSuppliers, rpcSaveAsset } from "@/lib/supabase-data";
 import { isoDateLocal } from "@/lib/excel";
 import { AssetFiles } from "./AssetFiles";
@@ -29,6 +37,7 @@ export function AssetForm({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const user = useCurrentUser();
   const lists = useBakeryStore((s) => s.lists);
   const currency = useBakeryStore((s) => s.bakery.currency);
   const toast = useUIStore((s) => s.toast);
@@ -54,6 +63,14 @@ export function AssetForm({
   const [documents, setDocuments] = useState<AssetDocument[]>(asset?.documents ?? []);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [saving, setSaving] = useState(false);
+  // The purchase as a cash book entry (0066). Only on a NEW asset: editing the
+  // price later cannot rewrite a posting that may already have moved cash.
+  const [spend, setSpend] = useState(() =>
+    emptyLinkedExpense(today, {
+      canRecord: hasPermission(user, "expense.create"),
+      canPay: hasPermission(user, "expense.pay"),
+    }),
+  );
 
   useEffect(() => {
     // Optional enrichment: a failed vendor list must not block the form.
@@ -85,8 +102,12 @@ export function AssetForm({
                     ? "The warranty cannot end before the asset was bought"
                     : null;
 
+  const isNew = !asset;
+  const offerSpend = isNew && Number.isFinite(price) && price > 0;
+  const spendError = offerSpend ? linkedExpenseError(spend, price, today) : null;
+
   const submit = async () => {
-    if (error) return;
+    if (error || spendError) return;
     setSaving(true);
     try {
       await rpcSaveAsset({
@@ -107,8 +128,16 @@ export function AssetForm({
         notes: notes.trim(),
         imageUrl,
         documents,
+        expense: offerSpend ? draftToInput(spend) : null,
       });
-      toast(asset ? "Asset updated" : "Asset added", "success");
+      toast(
+        asset
+          ? "Asset updated"
+          : offerSpend && spend.record
+            ? "Asset added and the purchase filed in the cash book"
+            : "Asset added",
+        "success",
+      );
       onSaved();
     } catch (e) {
       toast(e instanceof Error ? e.message : "Could not save the asset", "error");
@@ -312,12 +341,23 @@ export function AssetForm({
           onDocumentsChange={setDocuments}
         />
 
+        {offerSpend && (
+          <LinkedExpenseFields
+            draft={spend}
+            onChange={setSpend}
+            amount={price}
+            today={today}
+            error={spendError}
+            vendorSuffix={name.trim() || "this asset"}
+          />
+        )}
+
         {error && name !== "" && (
           <p className="text-[11px] font-semibold text-red-700">{error}</p>
         )}
 
         <button
-          disabled={!!error || saving}
+          disabled={!!error || !!spendError || saving}
           onClick={() => void submit()}
           className="inline-flex w-full items-center justify-center gap-2 rounded-[13px] bg-brown py-3 text-sm font-bold text-white disabled:opacity-50"
         >

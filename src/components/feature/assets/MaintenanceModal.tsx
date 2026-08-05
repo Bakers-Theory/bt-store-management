@@ -9,12 +9,25 @@ import { useCurrentUser } from "@/components/system/AuthProvider";
 import { hasPermission } from "@/lib/permissions";
 import { MAINTENANCE_KINDS, maintenanceKindLabel } from "@/lib/asset";
 import {
+  draftToInput,
+  emptyLinkedExpense,
+  linkedExpenseError,
+} from "@/lib/linked-expense";
+import { LinkedExpenseFields } from "@/components/feature/cashbook/LinkedExpenseFields";
+import {
+  fetchJobExpense,
   fetchSuppliers,
   rpcCloseAssetMaintenance,
   rpcSaveAssetMaintenance,
 } from "@/lib/supabase-data";
 import { isoDateLocal } from "@/lib/excel";
-import type { Asset, AssetMaintenance, MaintenanceKind, Supplier } from "@/lib/types";
+import type {
+  Asset,
+  AssetMaintenance,
+  Expense,
+  MaintenanceKind,
+  Supplier,
+} from "@/lib/types";
 
 const labelCls = "mb-1.5 block text-xs font-bold text-[#8a6a3c]";
 const inputCls =
@@ -25,8 +38,9 @@ const inputCls =
  *
  *  - Taking the asset out of service is part of OPENING the job, not a separate
  *    action, and it closes any open custody record on the way (0061 note 5).
- *  - The repair cost recorded here is for the Maintenance Report. The money
- *    itself is an expense — nothing on this screen touches the cash book.
+ *  - The cost can be filed as an expense from here (0066), which is what puts it
+ *    in the cash book. A job has ONE cost, so if it was already recorded when the
+ *    job was opened, closing it says so instead of offering to record it twice.
  */
 export function MaintenanceModal({
   asset,
@@ -62,6 +76,16 @@ export function MaintenanceModal({
   );
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [saving, setSaving] = useState(false);
+  const [spend, setSpend] = useState(() =>
+    emptyLinkedExpense(today, {
+      canRecord: hasPermission(user, "expense.create"),
+      canPay: hasPermission(user, "expense.pay"),
+    }),
+  );
+  /** undefined while unknown, null when unbilled, the expense when already filed. */
+  const [billed, setBilled] = useState<Expense | null | undefined>(
+    job ? undefined : null,
+  );
 
   useEffect(() => {
     fetchSuppliers()
@@ -69,7 +93,21 @@ export function MaintenanceModal({
       .catch(() => setSuppliers([]));
   }, []);
 
+  useEffect(() => {
+    if (!job) return;
+    // A failure here must not block closing the job: the server refuses a second
+    // expense by name, so the worst case is a readable error rather than a
+    // double posting.
+    fetchJobExpense(job.id)
+      .then(setBilled)
+      .catch(() => setBilled(null));
+  }, [job]);
+
   const costValue = cost === "" ? 0 : Number(cost);
+  // Only once there is a cost. Sending a machine for repair before the bill
+  // arrives is normal, and there is nothing to post until it does.
+  const offerSpend = billed === null && Number.isFinite(costValue) && costValue > 0;
+  const spendError = offerSpend ? linkedExpenseError(spend, costValue, today) : null;
 
   const error = job
     ? completedOn > today
@@ -90,7 +128,7 @@ export function MaintenanceModal({
           : null;
 
   const submit = async () => {
-    if (error) return;
+    if (error || spendError) return;
     setSaving(true);
     try {
       if (job) {
@@ -101,8 +139,14 @@ export function MaintenanceModal({
           nextServiceOn: nextServiceOn || null,
           notes,
           toStatus,
+          expense: offerSpend ? draftToInput(spend) : null,
         });
-        toast("Job closed", "success");
+        toast(
+          offerSpend && spend.record
+            ? "Job closed and the cost filed in the cash book"
+            : "Job closed",
+          "success",
+        );
       } else {
         await rpcSaveAssetMaintenance({
           assetId: asset.id,
@@ -116,8 +160,16 @@ export function MaintenanceModal({
           amcRef: kind === "amc" ? amcRef : "",
           notes,
           takeOutOfService: takeOut,
+          expense: offerSpend ? draftToInput(spend) : null,
         });
-        toast(takeOut ? "Sent for service" : "Service recorded", "success");
+        toast(
+          offerSpend && spend.record
+            ? "Recorded, and the cost filed in the cash book"
+            : takeOut
+              ? "Sent for service"
+              : "Service recorded",
+          "success",
+        );
       }
       onDone();
     } catch (e) {
@@ -308,15 +360,26 @@ export function MaintenanceModal({
           />
         </div>
 
-        <p className="rounded-[10px] bg-[#faf4ea] px-2.5 py-2 text-[11px] text-ink-muted">
-          The cost is recorded against the asset for the maintenance report. Record
-          the payment itself as an expense — this screen does not move any money.
-        </p>
+        {offerSpend ? (
+          <LinkedExpenseFields
+            draft={spend}
+            onChange={setSpend}
+            amount={Number.isFinite(costValue) ? costValue : 0}
+            today={today}
+            error={cost === "" ? null : spendError}
+            vendorSuffix={`this ${maintenanceKindLabel(job ? job.kind : kind).toLowerCase()}`}
+          />
+        ) : billed ? (
+          <p className="rounded-[10px] bg-[#faf4ea] px-2.5 py-2 text-[11px] text-ink-muted">
+            This job&apos;s cost is already in the cash book as expense #
+            {billed.expenseNo}. Change it there, not here.
+          </p>
+        ) : null}
 
         {error && <p className="text-[11px] font-semibold text-red-700">{error}</p>}
 
         <button
-          disabled={!!error || saving}
+          disabled={!!error || !!spendError || saving}
           onClick={() => void submit()}
           className="inline-flex w-full items-center justify-center gap-2 rounded-[13px] bg-brown py-3 text-sm font-bold text-white disabled:opacity-50"
         >

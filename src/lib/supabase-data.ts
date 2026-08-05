@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@/utils/supabase/client";
-import type { Asset, AssetAssignment, AssetCondition, AssetDocument, AssetEvent, AssetEventKind, AssetFilters, AssetInput, AssetMaintenance, AssetStats, AssetStatus, Attendance, AttendanceStatus, AttendanceSummary, AdvanceBalance, Bakery, Batch, Bill, BillLine, BillStatus, CashAccount, CashCategory, CashDay, CashDayStatus, CashDaySummary, CashDirection, CashEntry, CashEntryFilters, CashEntryStatus, CashPaymentMode, CashSourceType, CashbookSummary, Consumable, ConsumableAlert, ConsumableAlertKind, ConsumableFilters, ConsumableInput, ConsumableStats, Customer, Employee, EmployeeSalary, Expense, ExpenseBankMode, ExpenseEvent, ExpenseEventKind, ExpenseFilters, ExpenseInput, ExpenseMode, ExpenseStatus, Item, Log, MaintenanceKind, MaintenanceStatus, MovementType, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, StaffAdvance, StockMovement, StockMovementFilters, StockMovementInput, StockStatus, StoreLists, StoredLayout, Supplier, SupplierProduct, SupplierStatus, InvoiceStatus, PurchaseInvoice, PurchaseInvoiceLine, PurchaseMode, PurchaseReturn, PurchaseReturnLine, SupplierPayment, SupplierSummary, User } from "./types";
+import type { Asset, AssetAssignment, AssetCondition, AssetDocument, AssetEvent, AssetEventKind, AssetFilters, AssetInput, AssetMaintenance, AssetStats, AssetStatus, Attendance, AttendanceStatus, AttendanceSummary, AdvanceBalance, Bakery, Batch, Bill, BillLine, BillStatus, CashAccount, CashCategory, CashDay, CashDayStatus, CashDaySummary, CashDirection, CashEntry, CashEntryFilters, CashEntryStatus, CashPaymentMode, CashSourceType, CashbookSummary, Consumable, ConsumableAlert, ConsumableAlertKind, ConsumableFilters, ConsumableInput, ConsumableStats, Customer, Employee, EmployeeSalary, Expense, ExpenseBankMode, ExpenseEvent, ExpenseEventKind, ExpenseFilters, ExpenseInput, ExpenseMode, ExpenseStatus, Item, LinkedExpenseInput, Log, MaintenanceKind, MaintenanceStatus, MovementType, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, StaffAdvance, StockMovement, StockMovementFilters, StockMovementInput, StockStatus, StoreLists, StoredLayout, Supplier, SupplierProduct, SupplierStatus, InvoiceStatus, PurchaseInvoice, PurchaseInvoiceLine, PurchaseMode, PurchaseReturn, PurchaseReturnLine, SupplierPayment, SupplierSummary, User } from "./types";
 import type { SupplierInput } from "./supplier";
 import { isPurchaseMode, type DraftLine } from "./purchase";
 import { isAttendanceStatus } from "./attendance";
@@ -2266,6 +2266,11 @@ export interface ExpenseRow {
   created_at: string;
   updated_by_name: string | null;
   updated_at: string;
+  stock_movement_id: string | null;
+  asset_id: string | null;
+  asset_maintenance_id: string | null;
+  origin_type: string | null;
+  origin_ref: string | null;
 }
 
 export interface ExpenseEventRow {
@@ -2310,6 +2315,11 @@ export function mapExpense(r: ExpenseRow): Expense {
     createdAt: r.created_at,
     updatedByName: r.updated_by_name ?? "",
     updatedAt: r.updated_at,
+    stockMovementId: r.stock_movement_id ?? null,
+    assetId: r.asset_id ?? null,
+    assetMaintenanceId: r.asset_maintenance_id ?? null,
+    originType: (r.origin_type ?? "") as Expense["originType"],
+    originRef: r.origin_ref ?? "",
   };
 }
 
@@ -2432,6 +2442,22 @@ export async function fetchCashEntriesForSource(
     .order("created_at");
   if (error) throw new Error(error.message);
   return ((data ?? []) as CashEntryRow[]).map(mapCashEntry);
+}
+
+/**
+ * The expense a maintenance job's cost was recorded as (0066), or null when it
+ * has not been recorded yet. A job has one cost, so this is what tells the
+ * closing form whether to offer the cash book block at all.
+ */
+export async function fetchJobExpense(jobId: string): Promise<Expense | null> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("expense_v")
+    .select("*")
+    .eq("asset_maintenance_id", jobId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? mapExpense(data as ExpenseRow) : null;
 }
 
 /** `payNow` is honoured only for a caller who holds expense.pay; the RPC re-checks. */
@@ -2952,6 +2978,32 @@ export async function fetchAssetStats(windowDays = 30): Promise<AssetStats> {
 }
 
 /** Returns the asset id. Cannot set status or the service dates — by design. */
+/**
+ * The cash book block, or nothing at all (migration 0066 note 2). The RPCs test
+ * `jsonb_typeof(p->'expense') = 'object'`, so the key must be ABSENT rather than
+ * null when there is no spend to record — an empty object would read as "post
+ * this" and fail validation.
+ */
+function linkedExpenseArgs(
+  e?: LinkedExpenseInput | null,
+): { expense?: Record<string, unknown> } {
+  if (!e) return {};
+  return {
+    expense: {
+      categoryId: e.categoryId,
+      paymentMode: e.paymentMode,
+      paidOn: e.paidOn,
+      pay: e.pay,
+      vendorName: e.vendorName,
+      vendorSupplierId: e.vendorSupplierId ?? "",
+      invoiceNo: e.invoiceNo,
+      gstIncluded: e.gstIncluded,
+      gstAmount: e.gstAmount,
+      description: e.description,
+    },
+  };
+}
+
 export async function rpcSaveAsset(p: AssetInput): Promise<string> {
   return rpc<string>("save_asset", {
     p: {
@@ -2972,6 +3024,8 @@ export async function rpcSaveAsset(p: AssetInput): Promise<string> {
       notes: p.notes,
       imageUrl: p.imageUrl ?? "",
       documents: p.documents,
+      // Honoured on create only — the RPC refuses it on an edit.
+      ...linkedExpenseArgs(p.id ? null : p.expense),
     },
   });
 }
@@ -3081,6 +3135,12 @@ export async function rpcSaveAssetMaintenance(p: {
   notes?: string;
   /** Sends the asset to `under_repair` (repair) or `maintenance` (service/AMC). */
   takeOutOfService?: boolean;
+  /**
+   * The bill, as a cash book entry (0066). A job has ONE cost, so either this or
+   * `rpcCloseAssetMaintenance` may carry it, never both — the RPC says so by
+   * name if it is already recorded.
+   */
+  expense?: LinkedExpenseInput | null;
 }): Promise<string> {
   return rpc<string>("save_asset_maintenance", {
     p: {
@@ -3097,6 +3157,7 @@ export async function rpcSaveAssetMaintenance(p: {
       nextServiceOn: p.nextServiceOn ?? "",
       notes: p.notes ?? "",
       takeOutOfService: p.takeOutOfService ?? false,
+      ...linkedExpenseArgs(p.expense),
     },
   });
 }
@@ -3109,6 +3170,8 @@ export async function rpcCloseAssetMaintenance(p: {
   nextServiceOn?: string | null;
   notes?: string;
   toStatus?: "available" | "damaged" | "retired";
+  /** The closing bill, as a cash book entry (0066). */
+  expense?: LinkedExpenseInput | null;
 }): Promise<void> {
   await rpc<void>("close_asset_maintenance", {
     p: {
@@ -3118,6 +3181,7 @@ export async function rpcCloseAssetMaintenance(p: {
       nextServiceOn: p.nextServiceOn ?? "",
       notes: p.notes ?? "",
       toStatus: p.toStatus ?? "available",
+      ...linkedExpenseArgs(p.expense),
     },
   });
 }
@@ -3428,6 +3492,8 @@ export interface MovementResult {
   movementId: string;
   /** The stock after the movement, straight from the ledger. */
   currentStock: number;
+  /** The expense the purchase was recorded as (0066), or null for stock only. */
+  expenseId: string | null;
 }
 
 const movementArgs = (m: StockMovementInput) => ({
@@ -3440,6 +3506,19 @@ const movementArgs = (m: StockMovementInput) => ({
   issuedTo: m.issuedTo ?? "",
   reason: m.reason ?? "",
   remarks: m.remarks ?? "",
+  ...linkedExpenseArgs(m.expense),
+});
+
+interface MovementResultRow {
+  movementId: string;
+  currentStock: string | number;
+  expenseId?: string | null;
+}
+
+const mapMovementResult = (r: MovementResultRow): MovementResult => ({
+  movementId: r.movementId,
+  currentStock: Number(r.currentStock),
+  expenseId: r.expenseId ?? null,
 });
 
 /**
@@ -3449,25 +3528,20 @@ const movementArgs = (m: StockMovementInput) => ({
 export async function rpcRecordStockMovement(
   m: StockMovementInput,
 ): Promise<MovementResult> {
-  const r = await rpc<{ movementId: string; currentStock: string | number }>(
-    "record_stock_movement",
-    { p: movementArgs(m) },
-  );
-  return { movementId: r.movementId, currentStock: Number(r.currentStock) };
+  const r = await rpc<MovementResultRow>("record_stock_movement", {
+    p: movementArgs(m),
+  });
+  return mapMovementResult(r);
 }
 
 /** Bulk stock update (§7). All-or-nothing: one bad row fails the batch. */
 export async function rpcRecordStockMovements(
   movements: StockMovementInput[],
 ): Promise<MovementResult[]> {
-  const rows = await rpc<{ movementId: string; currentStock: string | number }[]>(
-    "record_stock_movements",
-    { p: movements.map(movementArgs) },
-  );
-  return (rows ?? []).map((r) => ({
-    movementId: r.movementId,
-    currentStock: Number(r.currentStock),
-  }));
+  const rows = await rpc<MovementResultRow[]>("record_stock_movements", {
+    p: movements.map(movementArgs),
+  });
+  return (rows ?? []).map(mapMovementResult);
 }
 
 // ─── Report data (assets & consumables) ─────────────────────────────────────
