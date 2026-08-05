@@ -28,6 +28,7 @@ const bill = (over: Partial<Bill> = {}): Bill => ({
   customerName: "Ravi",
   customerPhone: "9123456780",
   items: [line("Croissant", 2, 80), line("Brownie", 1, 120)],
+  consumables: [],
   subtotal: 280,
   tax: 0,
   total: 280,

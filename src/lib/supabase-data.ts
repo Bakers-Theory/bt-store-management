@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@/utils/supabase/client";
-import type { Asset, AssetAssignment, AssetCondition, AssetDocument, AssetEvent, AssetEventKind, AssetFilters, AssetInput, AssetMaintenance, AssetStats, AssetStatus, Attendance, AttendanceStatus, AttendanceSummary, AdvanceBalance, Bakery, Batch, Bill, BillLine, BillStatus, CashAccount, CashCategory, CashDay, CashDayStatus, CashDaySummary, CashDirection, CashEntry, CashEntryFilters, CashEntryStatus, CashPaymentMode, CashSourceType, CashbookSummary, Consumable, ConsumableAlert, ConsumableAlertKind, ConsumableFilters, ConsumableInput, ConsumableStats, Customer, Employee, EmployeeSalary, Expense, ExpenseBankMode, ExpenseEvent, ExpenseEventKind, ExpenseFilters, ExpenseInput, ExpenseMode, ExpenseStatus, Item, LinkedExpenseInput, Log, MaintenanceKind, MaintenanceStatus, MovementType, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, StaffAdvance, StockMovement, StockMovementFilters, StockMovementInput, StockStatus, StoreLists, StoredLayout, Supplier, SupplierProduct, SupplierStatus, InvoiceStatus, PurchaseInvoice, PurchaseInvoiceLine, PurchaseMode, PurchaseReturn, PurchaseReturnLine, SupplierPayment, SupplierSummary, User } from "./types";
+import type { Asset, AssetAssignment, AssetCondition, AssetDocument, AssetEvent, AssetEventKind, AssetFilters, AssetInput, AssetMaintenance, AssetStats, AssetStatus, Attendance, AttendanceStatus, AttendanceSummary, AdvanceBalance, Bakery, Batch, Bill, BillConsumable, BillLine, BillMode, BillStatus, CashAccount, CashCategory, CashDay, CashDayStatus, CashDaySummary, CashDirection, CashEntry, CashEntryFilters, CashEntryStatus, CashPaymentMode, CashSourceType, CashbookSummary, Consumable, ConsumableAlert, ConsumableAlertKind, ConsumableFilters, ConsumableInput, ConsumableStats, Customer, Employee, EmployeeSalary, Expense, ExpenseBankMode, ExpenseEvent, ExpenseEventKind, ExpenseFilters, ExpenseInput, ExpenseMode, ExpenseStatus, Item, LinkedExpenseInput, Log, MaintenanceKind, MaintenanceStatus, MovementType, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, StaffAdvance, StockMovement, StockMovementFilters, StockMovementInput, StockStatus, StoreLists, StoredLayout, Supplier, SupplierProduct, SupplierStatus, InvoiceStatus, PurchaseInvoice, PurchaseInvoiceLine, PurchaseMode, PurchaseReturn, PurchaseReturnLine, SupplierPayment, SupplierSummary, User } from "./types";
 import type { SupplierInput } from "./supplier";
 import { isPurchaseMode, type DraftLine } from "./purchase";
 import { isAttendanceStatus } from "./attendance";
@@ -140,13 +140,43 @@ const mapLine = (r: BillItemRow): BillLine => ({
   costPrice: 0, // cost is never fetched into the client; analytics uses item cost
 });
 
-export const mapBill = (r: BillRow, lines: BillLine[]): Bill => ({
+export interface BillConsumableRow {
+  id: string;
+  consumable_id: string | null;
+  name: string;
+  unit: string;
+  qty: string | number;
+  unit_cost: string | number;
+  charged: boolean;
+}
+
+export const mapBillConsumable = (r: BillConsumableRow): BillConsumable => ({
+  id: r.id,
+  consumableId: r.consumable_id,
+  name: r.name,
+  unit: r.unit,
+  qty: Number(r.qty),
+  unitCost: Number(r.unit_cost),
+  charged: r.charged,
+});
+
+/**
+ * `consumables` defaults to `[]` so the history and single-bill reads, which do
+ * not join bill_consumable, keep compiling — a pre-feature bill genuinely has
+ * none. Only generate_bill's payload carries them today.
+ */
+export const mapBill = (
+  r: BillRow,
+  lines: BillLine[],
+  consumables: BillConsumable[] = [],
+): Bill => ({
   id: r.id,
   billNo: r.bill_no,
   customerId: r.customer_id ?? undefined,
   customerName: r.customer_name,
   customerPhone: r.customer_phone,
   items: lines,
+  consumables,
   subtotal: r.subtotal,
   tax: r.tax,
   total: r.total,
@@ -715,6 +745,7 @@ export async function rpcUpdateBatchExpiry(batchId: string, expiry: string): Pro
 interface GeneratedBillPayload {
   bill: BillRow;
   items: BillItemRow[];
+  consumables: BillConsumableRow[];
 }
 /**
  * `clientRef` is the idempotency key for one checkout attempt. Reusing it on a
@@ -733,14 +764,21 @@ export const rpcGenerateBill = async (
   },
   lines: { itemId: string; qty: number }[],
   clientRef: string,
+  /** Charged ones are already inside the server's subtotal; absorbed ones post out. */
+  consumables: { consumableId: string; qty: number; charged: boolean }[] = [],
 ): Promise<Bill> => {
   // Timezone drives which batches count as expired server-side — must match the
   // client's day-granularity expiryStatus (same convention as dashboard_stats).
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const res = await rpc<GeneratedBillPayload>("generate_bill", {
     customer, lines, p_tz: tz, p_client_ref: clientRef,
+    p_consumables: consumables,
   });
-  return mapBill(res.bill, res.items.map(mapLine));
+  return mapBill(
+    res.bill,
+    res.items.map(mapLine),
+    (res.consumables ?? []).map(mapBillConsumable),
+  );
 };
 
 export const rpcCancelBill = (id: string, by: string) =>
@@ -3201,6 +3239,7 @@ export interface ConsumableRow {
   reorder_level: string | number | null;
   reorder_qty: string | number | null;
   cost_per_unit: string | number | null;
+  bill_mode: string | null;
   expiry_date: string | null;
   storage_location: string | null;
   notes: string | null;
@@ -3235,6 +3274,7 @@ export function mapConsumable(r: ConsumableRow): Consumable {
     reorderLevel: num(r.reorder_level),
     reorderQty: num(r.reorder_qty),
     costPerUnit: num(r.cost_per_unit),
+    billMode: (r.bill_mode ?? "none") as BillMode,
     expiryDate: r.expiry_date,
     storageLocation: r.storage_location ?? "",
     notes: r.notes ?? "",
@@ -3476,11 +3516,53 @@ export async function rpcSaveConsumable(p: ConsumableInput): Promise<string> {
       reorderLevel: p.reorderLevel ?? "",
       reorderQty: p.reorderQty ?? "",
       costPerUnit: p.costPerUnit ?? "",
+      billMode: p.billMode,
       expiryDate: p.expiryDate ?? "",
       storageLocation: p.storageLocation,
       notes: p.notes,
     },
   });
+}
+
+/**
+ * What the biller may add to a bill.
+ *
+ * Comes from `billable_consumables()` rather than `consumable_v` because that
+ * view needs `consumables.view`, which a biller does not hold — the picker would
+ * come back empty for exactly the role this feature is for.
+ */
+export interface BillableConsumable {
+  id: string;
+  code: string;
+  name: string;
+  unit: string;
+  billMode: BillMode;
+  /** 0 when the operator has not set one; a charged line then cannot be added. */
+  costPerUnit: number;
+  currentStock: number;
+}
+
+interface BillableConsumableRow {
+  id: string;
+  code: string;
+  name: string;
+  unit: string;
+  bill_mode: string;
+  cost_per_unit: string | number;
+  current_stock: string | number;
+}
+
+export async function fetchBillableConsumables(): Promise<BillableConsumable[]> {
+  const rows = await rpc<BillableConsumableRow[]>("billable_consumables", {});
+  return (rows ?? []).map((r) => ({
+    id: r.id,
+    code: r.code,
+    name: r.name,
+    unit: r.unit,
+    billMode: r.bill_mode as BillMode,
+    costPerUnit: Number(r.cost_per_unit),
+    currentStock: Number(r.current_stock),
+  }));
 }
 
 /** Soft delete, and only once the shelf is empty — the RPC enforces both. */

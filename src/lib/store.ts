@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import { persist, createJSONStorage, type StateStorage } from "zustand/middleware";
-import type { Bakery, Bill, BillLine, Item, PaymentMethod, StoreLists } from "./types";
+import type { Bakery, Bill, BillConsumableLine, BillLine, Item, PaymentMethod, StoreLists } from "./types";
 import {
   fetchBaseData,
   fetchItems,
@@ -109,6 +109,11 @@ interface StoreState {
     clientRef: string,
     /** Set only when the biller entered an amount; the server derives the gap. */
     shortfall?: { received: number; note: string },
+    /**
+     * Consumables issued at the counter. Charged ones are priced server-side
+     * from cost_per_unit and join the subtotal; absorbed ones post out instead.
+     */
+    consumableLines?: BillConsumableLine[],
   ) => Promise<Bill>;
   cancelBill: (id: string, byName: string) => Promise<Result>;
   deleteBill: (id: string, byName: string) => Promise<Result>;
@@ -302,7 +307,7 @@ export const useBakeryStore = create<StoreState>()(
     // A bill can consume stock across many items at once (FIFO, per line), so
     // it refreshes the item list rather than patching a single row — still far
     // cheaper than the old full reload, since settings/lists never change here.
-    generateBill: async (customer, lines, paymentMethod, discount, clientRef, shortfall) => {
+    generateBill: async (customer, lines, paymentMethod, discount, clientRef, shortfall, consumableLines) => {
       // The bill comes back built from the stored rows — prices, lines and
       // biller included — so nothing here is reconstructed from the cart.
       const bill = await rpcGenerateBill(
@@ -313,6 +318,9 @@ export const useBakeryStore = create<StoreState>()(
         },
         lines.map((l) => ({ itemId: l.itemId, qty: l.qty })),
         clientRef,
+        (consumableLines ?? []).map((c) => ({
+          consumableId: c.consumableId, qty: c.qty, charged: c.charged,
+        })),
       );
       await refreshItems();
       return bill;

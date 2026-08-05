@@ -386,6 +386,8 @@ export function planConsumableImport(
         category,
         unit,
         vendorId: null,
+        // An imported consumable is never billable until someone marks it.
+        billMode: "none",
         minStock: min,
         maxStock: max,
         reorderLevel: reorder,

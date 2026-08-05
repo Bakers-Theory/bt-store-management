@@ -97,6 +97,9 @@ export function ConsumableForm({
         category,
         unit,
         vendorId: vendorId || null,
+        // The picker control for this is Task 6; until then an edit preserves
+        // whatever mode the item already has rather than resetting it to "none".
+        billMode: item?.billMode ?? "none",
         minStock: min,
         maxStock: max,
         reorderLevel: reorder,

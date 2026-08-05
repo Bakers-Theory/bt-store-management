@@ -207,6 +207,12 @@ export interface Bill {
   customerName: string;
   customerPhone: string;
   items: BillLine[];
+  /**
+   * Consumables issued on this bill. Charged ones are inside `subtotal` and
+   * print; absorbed ones are neither — their cost left the cash book instead.
+   * Empty on a pre-feature bill, and on reads that do not join bill_consumable.
+   */
+  consumables: BillConsumable[];
   subtotal: number;
   tax: number;
   total: number;
@@ -1203,6 +1209,8 @@ export interface Consumable {
   reorderLevel: number | null;
   reorderQty: number | null;
   costPerUnit: number | null;
+  /** Whether this is offered at the counter, and how. Defaults to `"none"`. */
+  billMode: BillMode;
   expiryDate: string | null;
   storageLocation: string;
   notes: string;
@@ -1301,6 +1309,7 @@ export interface ConsumableInput {
   reorderLevel: number | null;
   reorderQty: number | null;
   costPerUnit: number | null;
+  billMode: BillMode;
   expiryDate: string | null;
   storageLocation: string;
   notes: string;

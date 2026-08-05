@@ -31,6 +31,7 @@ const item: Item = {
 const bill = (over: Partial<Bill>): Bill => ({
   id: "b", billNo: 1001, customerName: "", customerPhone: "",
   items: [{ itemId: "i1", name: "Bread", emoji: "🍞", imageUrl: null, unit: "pcs", qty: 2, price: 40, costPrice: 20 }],
+  consumables: [],
   subtotal: 80, tax: 0, total: 80, taxRate: 0, paymentMethod: "Cash", discountPercent: 0,
   discountType: "percent", discountAmount: 0, shortfall: 0, shortfallNote: "", billerName: "",
   date: "2026-06-01T10:00:00.000Z", status: "active", ...over,
