@@ -7,14 +7,18 @@ import { shareBillOnWhatsApp } from "@/lib/whatsapp";
 import { useUIStore } from "@/lib/ui-store";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { computeTotals, shortfallFor } from "@/lib/bill";
+import { consumableLineError, defaultChargedFor } from "@/lib/bill-consumable";
 import { hasPermission } from "@/lib/permissions";
 import { expiryStatus } from "@/lib/expiry";
 import { formatDate } from "@/lib/format";
-import { fetchCustomerByPhone } from "@/lib/supabase-data";
+import { fetchBillableConsumables, fetchCustomerByPhone } from "@/lib/supabase-data";
+import type { BillableConsumable } from "@/lib/supabase-data";
 import { Modal } from "@/components/ui/Modal";
 import { ItemThumb } from "@/components/ui/ItemThumb";
+import { tabCls } from "@/components/ui/tabClass";
 import { Receipt } from "./Receipt";
-import type { Bill as BillType, BillLine, Customer, Item, PaymentMethod } from "@/lib/types";
+import { ConsumableCartGroup, ConsumablePicker } from "./BillConsumables";
+import type { Bill as BillType, BillConsumableLine, BillLine, Customer, Item, PaymentMethod } from "@/lib/types";
 
 // Sellable stock for an item: expired batches are never sold (bill generation
 // consumes fresh batches only), so the bill page ignores them. Returns the
@@ -60,6 +64,7 @@ export function Bill() {
 
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
+  const [tab, setTab] = useState<"products" | "consumables">("products");
   const [view, setView] = useState<"grid" | "list">("grid");
   const [cartOpen, setCartOpen] = useState(false); // mobile bottom-sheet expansion
   const [customer, setCustomer] = useState({ name: "", phone: "" });
@@ -81,6 +86,11 @@ export function Bill() {
   const [returning, setReturning] = useState<Customer | null>(null);
   const [generating, setGenerating] = useState(false);
   const [lines, setLines] = useState<BillLine[]>([]);
+  // Consumables are not in the zustand store — the Consumables page fetches its
+  // own too — and this read is a dedicated RPC because consumable_v needs
+  // `consumables.view`, which a biller does not hold.
+  const [available, setAvailable] = useState<BillableConsumable[]>([]);
+  const [consumableLines, setConsumableLines] = useState<BillConsumableLine[]>([]);
   const [receipt, setReceipt] = useState<BillType | null>(null);
 
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -93,8 +103,17 @@ export function Bill() {
     taxRate,
     discountValue,
     discountMode,
+    consumableLines,
   );
-  const cartCount = lines.reduce((n, l) => n + l.qty, 0);
+  const cartCount =
+    lines.reduce((n, l) => n + l.qty, 0) +
+    consumableLines.reduce((n, l) => n + l.qty, 0);
+  const cartEmpty = lines.length === 0 && consumableLines.length === 0;
+  const consumableQtyById = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const l of consumableLines) map.set(l.consumableId, l.qty);
+    return map;
+  }, [consumableLines]);
   // "" means the biller has not entered an amount at all — that is paid in
   // full, not a ₹0 payment. A half-typed "-" parses to NaN and is treated the
   // same way, so nothing downstream ever sees a non-number.
@@ -102,6 +121,15 @@ export function Bill() {
   const received = Number.isFinite(parsedReceived) ? parsedReceived : null;
   const changeDue = (received ?? total) - total;
   const shortfall = shortfallFor(total, received);
+
+  const stockOfConsumable = (id: string) =>
+    available.find((a) => a.id === id)?.currentStock ?? 0;
+  // generate_bill rejects these too, and rolls the whole checkout back when it
+  // does — so the button is blocked rather than letting a bad line fail at the
+  // counter with a customer waiting.
+  const badConsumableLine = consumableLines.some(
+    (l) => consumableLineError(l, stockOfConsumable(l.consumableId)) !== null,
+  );
 
   // Why the Generate button is disabled — shown inline so it's never a silent
   // dead-end (a disabled button can't fire its own click handler).
@@ -111,7 +139,9 @@ export function Bill() {
       ? "Enter a customer name to generate the bill"
       : customer.phone.length > 0 && customer.phone.length !== 10
         ? "Phone number must be exactly 10 digits"
-        : "";
+        : badConsumableLine
+          ? "Fix the highlighted consumable line"
+          : "";
 
   // Each row carries its fresh (non-expired) qty + earliest fresh expiry.
   // Products with no fresh stock (out of stock, or only expired batches) are
@@ -149,6 +179,18 @@ export function Bill() {
   useEffect(() => {
     refreshSettings();
   }, [refreshSettings]);
+
+  const loadConsumables = () => {
+    // Best-effort, like refreshSettings: an empty picker is a degraded billing
+    // screen, never a broken one.
+    fetchBillableConsumables()
+      .then(setAvailable)
+      .catch(() => setAvailable([]));
+  };
+
+  useEffect(() => {
+    loadConsumables();
+  }, []);
 
   // Autofill on repeat billing: once a full 10-digit phone is entered, look the
   // customer up (debounced, best-effort). On a hit, prefill an empty name field
@@ -202,6 +244,45 @@ export function Bill() {
     });
   };
 
+  const addConsumable = (c: BillableConsumable) => {
+    const inCart = consumableLines.find((l) => l.consumableId === c.id)?.qty ?? 0;
+    if (inCart >= c.currentStock) {
+      toast(`Only ${c.currentStock} ${c.unit} of ${c.name} on hand`, "error");
+      return;
+    }
+    setConsumableLines((prev) => {
+      const idx = prev.findIndex((l) => l.consumableId === c.id);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = { ...copy[idx], qty: copy[idx].qty + 1 };
+        return copy;
+      }
+      return [
+        ...prev,
+        {
+          consumableId: c.id,
+          name: c.name,
+          unit: c.unit,
+          qty: 1,
+          unitCost: c.costPerUnit,
+          charged: defaultChargedFor(c.billMode),
+        },
+      ];
+    });
+  };
+
+  const setConsumableQty = (id: string, qty: number) =>
+    setConsumableLines((prev) =>
+      qty <= 0
+        ? prev.filter((l) => l.consumableId !== id)
+        : prev.map((l) => (l.consumableId === id ? { ...l, qty } : l)),
+    );
+
+  const toggleConsumableCharged = (id: string) =>
+    setConsumableLines((prev) =>
+      prev.map((l) => (l.consumableId === id ? { ...l, charged: !l.charged } : l)),
+    );
+
   const removeFromCart = (item: Item) =>
     setLines((prev) => {
       const idx = prev.findIndex((bi) => bi.itemId === item.id);
@@ -239,6 +320,7 @@ export function Bill() {
     }
     setClearArmed(false);
     setLines([]);
+    setConsumableLines([]);
     setCashReceived("");
     setShortNote("");
   };
@@ -258,9 +340,13 @@ export function Bill() {
         { mode: discountMode, value: discountValue },
         clientRef.current,
         received === null ? undefined : { received, note: shortNote.trim() },
+        consumableLines,
       );
       clientRef.current = null;
       setLines([]);
+      setConsumableLines([]);
+      // Stock just moved, so the picker's on-hand figures are stale.
+      loadConsumables();
       setCustomer({ name: "", phone: "" });
       setPayment("Cash");
       setCashReceived("");
@@ -283,7 +369,9 @@ export function Bill() {
       toast("Store is closed — new bills cannot be created", "error");
       return;
     }
-    if (lines.length === 0) {
+    // A bill of nothing but a charged carry bag is a real sale, so consumables
+    // count towards "the order is not empty".
+    if (lines.length === 0 && consumableLines.length === 0) {
       toast("Add items to the order first", "error");
       return;
     }
@@ -324,14 +412,45 @@ export function Bill() {
 
   return (
     <>
-      <div className={`grid gap-4 lg:grid-cols-[1fr_372px] lg:pb-0 ${lines.length > 0 ? "pb-24" : ""}`}>
+      <div className={`grid gap-4 lg:grid-cols-[1fr_372px] lg:pb-0 ${!cartEmpty ? "pb-24" : ""}`}>
         {/* Products */}
         <div className="min-w-0">
+          {/* Consumables get their own tab rather than a pseudo-category, so the
+              category chips keep meaning "product category". Hidden when none
+              are set up for the counter — one tab alone is not a choice. */}
+          {available.length > 0 && (
+            <div className="mb-4 flex w-fit max-w-full gap-1.5 overflow-x-auto rounded-xl bg-[#f4e7d2] p-1">
+              {/* The search box is shared, so it is cleared on a switch — a
+                  product name left behind would silently hide every consumable. */}
+              <button
+                className={tabCls(tab === "products")}
+                onClick={() => {
+                  setTab("products");
+                  setSearch("");
+                }}
+              >
+                Products
+              </button>
+              <button
+                className={tabCls(tab === "consumables")}
+                onClick={() => {
+                  setTab("consumables");
+                  setSearch("");
+                }}
+              >
+                Consumables
+              </button>
+            </div>
+          )}
           <div className="mb-3 flex items-center gap-2">
             <div className="relative min-w-0 flex-1">
               <input
                 type="text"
-                placeholder="Search products to add…"
+                placeholder={
+                  tab === "consumables"
+                    ? "Search consumables to add…"
+                    : "Search products to add…"
+                }
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full rounded-xl border border-line bg-warm-white py-3 pl-3.5 pr-10 text-sm outline-none"
@@ -347,7 +466,13 @@ export function Bill() {
                 </button>
               )}
             </div>
-            <div className="flex shrink-0 gap-1.5 rounded-[10px] bg-cream-dark p-[3px]">
+            {/* Grid/list and the category chips describe the product catalogue;
+                the consumable picker has neither, so both are hidden there. */}
+            <div
+              className={`shrink-0 gap-1.5 rounded-[10px] bg-cream-dark p-[3px] ${
+                tab === "consumables" ? "hidden" : "flex"
+              }`}
+            >
               <button
                 type="button"
                 onClick={() => setView("grid")}
@@ -372,7 +497,11 @@ export function Bill() {
               </button>
             </div>
           </div>
-          <div className="mb-3.5 flex gap-2 overflow-x-auto pb-0.5">
+          <div
+            className={`mb-3.5 gap-2 overflow-x-auto pb-0.5 ${
+              tab === "consumables" ? "hidden" : "flex"
+            }`}
+          >
             {["All", ...categories].map((c) => (
               <button
                 key={c}
@@ -387,7 +516,22 @@ export function Bill() {
               </button>
             ))}
           </div>
-          {view === "grid" ? (
+          {tab === "consumables" ? (
+            <>
+              <p className="mb-3 text-[11.5px] text-ink-light">
+                Charged consumables print on the bill and add to the total. Absorbed
+                ones leave stock without appearing on the customer&rsquo;s bill — their
+                cost goes to the cash book instead.
+              </p>
+              <ConsumablePicker
+                available={available}
+                search={search}
+                inCart={consumableQtyById}
+                onAdd={addConsumable}
+                currency={currency}
+              />
+            </>
+          ) : view === "grid" ? (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(200px,1fr))]">
               {filteredItems.map(({ item, qty: freshQty, earliestExpiry: freshExpiry }) => {
                 const inCart = cartQtyById.get(item.id) || 0;
@@ -569,10 +713,11 @@ export function Bill() {
               </div>
             </>
           )}
+
         </div>
 
         {/* Mobile floating summary bar — tap to open the order sheet */}
-        {lines.length > 0 && !cartOpen && (
+        {!cartEmpty && !cartOpen && (
           <button
             type="button"
             onClick={() => setCartOpen(true)}
@@ -616,7 +761,7 @@ export function Bill() {
           <div className="flex items-center justify-between border-b border-line-soft px-[18px] py-4">
             <h3 className="text-base font-extrabold">Current order</h3>
             <div className="flex items-center gap-3">
-              {lines.length > 0 && (
+              {!cartEmpty && (
                 <button
                   onClick={clearCart}
                   className={`flex cursor-pointer items-center rounded-lg border-none px-3 py-1.5 text-xs font-bold transition-transform active:scale-95 ${
@@ -698,7 +843,7 @@ export function Bill() {
             </div>
           )}
 
-          {lines.length === 0 ? (
+          {cartEmpty ? (
             <div className="p-11 text-center text-ink-light">
               <div className="mb-2 flex justify-center">
                 <ShoppingBasket size={34} />
@@ -745,6 +890,14 @@ export function Bill() {
                   </div>
                 ))}
               </div>
+
+              <ConsumableCartGroup
+                lines={consumableLines}
+                available={available}
+                onSetQty={setConsumableQty}
+                onToggleCharged={toggleConsumableCharged}
+                currency={currency}
+              />
 
               <div className="border-t border-line-soft bg-cream px-[18px] py-3.5">
                 <div className="flex justify-between py-0.5 text-[13px] font-semibold text-ink-muted">

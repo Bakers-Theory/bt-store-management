@@ -67,6 +67,21 @@ export function Receipt({ bill }: { bill: Bill }) {
           </div>
         </div>
       ))}
+      {bill.consumables
+      .filter((bc) => bc.charged)
+      .map((bc) => (
+        <div key={bc.id} className="mb-1 text-[11px]">
+          <div>{bc.name}</div>
+          <div className="receipt-row">
+            <span />
+            <span>
+              {bc.qty} x {b.currency}
+              {bc.unitCost.toFixed(2)} = {b.currency}
+              {(bc.qty * bc.unitCost).toFixed(2)}
+            </span>
+          </div>
+        </div>
+      ))}
       <div className="receipt-divider" />
       <div className="receipt-row"><span>Subtotal</span><span>{b.currency}{bill.subtotal.toFixed(2)}</span></div>
       {bill.discountAmount > 0 && (
