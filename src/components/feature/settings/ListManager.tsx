@@ -18,6 +18,12 @@ const SECTIONS: { kind: string; label: string; placeholder: string }[] = [
   { kind: "emoji", label: "Icons", placeholder: "Paste an emoji" },
   { kind: "unit", label: "Units", placeholder: "e.g. tray" },
   { kind: "reason", label: "Stock-out reasons", placeholder: "e.g. Sample" },
+  { kind: "asset_category", label: "Asset categories", placeholder: "e.g. Oven" },
+  {
+    kind: "consumable_category",
+    label: "Consumable categories",
+    placeholder: "e.g. Packaging",
+  },
 ];
 
 export function ListManager() {
@@ -108,7 +114,8 @@ export function ListManager() {
       <h3 className="mb-1.5 text-[15.5px] font-extrabold">Item options</h3>
       <p className="mb-3 text-xs text-ink-muted">
         Manage the categories, icons, units and stock-out reasons available when
-        adding items. A category or unit still used by an item can&apos;t be removed.
+        adding items, assets and consumables. A value still in use can&apos;t be
+        removed.
       </p>
 
       {!loaded ? (

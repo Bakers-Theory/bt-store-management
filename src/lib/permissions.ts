@@ -136,6 +136,30 @@ export const PERMISSION_CATALOG: PermissionGroup[] = [
     ],
   },
   {
+    title: "Assets",
+    perms: [
+      { key: "assets.view", label: "View assets", hint: "The asset register, custody and service history" },
+      { key: "assets.create", label: "Add assets", hint: "Register a new machine, device or vehicle" },
+      { key: "assets.edit", label: "Edit & archive assets", hint: "Change details, archive, and report one lost or damaged" },
+      { key: "assets.delete", label: "Retire & remove assets", hint: "Take an asset out of service for good — it stays in reports" },
+      { key: "assets.assign", label: "Issue, return & transfer", hint: "Hand an asset to someone, take it back, or move it on" },
+      { key: "assets.maintain", label: "Repairs & servicing", hint: "Send for repair, record service, AMC and repair cost" },
+      { key: "assets.reports", label: "Asset reports", hint: "Register, assignment, maintenance and warranty reports" },
+    ],
+  },
+  {
+    title: "Consumables",
+    perms: [
+      { key: "consumables.view", label: "View consumables", hint: "Stock levels, the movement ledger and stock alerts" },
+      { key: "consumables.create", label: "Add consumables", hint: "Add a stock-tracked item with its minimum level" },
+      { key: "consumables.edit", label: "Edit consumables", hint: "Change category, levels, vendor or storage" },
+      { key: "consumables.delete", label: "Remove consumables", hint: "Retire an item once its stock is written off" },
+      { key: "consumables.issue", label: "Receive, issue & return stock", hint: "Log stock in from a vendor, out for use, and unused returns" },
+      { key: "consumables.adjust", label: "Adjust, wastage & expiry", hint: "Correct a count or write off spoiled, expired or damaged stock" },
+      { key: "consumables.reports", label: "Consumable reports", hint: "Inventory, movement, consumption, purchase and wastage reports" },
+    ],
+  },
+  {
     title: "Store admin",
     perms: [
       { key: "store.settings", label: "Store profile & tax", hint: "Name, address, GST, tax rate, thresholds, logo" },
@@ -243,6 +267,20 @@ export const ROLE_PRESETS: Record<PresetRole, PermissionKey[]> = {
     "expense.view",
     "expense.create",
     "expense.pay",
+    // #91 §4.5's Manager row: the register and the stockroom, but neither
+    // retiring an asset nor removing an item — those are `*.delete`.
+    "assets.view",
+    "assets.create",
+    "assets.edit",
+    "assets.assign",
+    "assets.maintain",
+    "assets.reports",
+    "consumables.view",
+    "consumables.create",
+    "consumables.edit",
+    "consumables.issue",
+    "consumables.adjust",
+    "consumables.reports",
   ],
   Cashier: [
     "bill.create",
@@ -265,6 +303,12 @@ export const ROLE_PRESETS: Record<PresetRole, PermissionKey[]> = {
     "items.create",
     "items.edit",
     "items.cost",
+    // #91 §4.5's Supervisor row, which this app's stockroom role stands in for:
+    // sees the register, moves consumable stock, never issues an asset.
+    "assets.view",
+    "consumables.view",
+    "consumables.issue",
+    "consumables.adjust",
   ],
 };
 
@@ -306,6 +350,10 @@ export function navItems(user: User | null): NavItem[] {
     items.push({ key: "stock", href: "/stock", icon: "📦", label: "Stock" });
   if (hasPermission(user, "cashbook.view"))
     items.push({ key: "cashbook", href: "/cashbook", icon: "📒", label: "Cashbook" });
+  if (hasPermission(user, "assets.view"))
+    items.push({ key: "assets", href: "/assets", icon: "🖨️", label: "Assets" });
+  if (hasPermission(user, "consumables.view"))
+    items.push({ key: "consumables", href: "/consumables", icon: "🧴", label: "Consumables" });
   if (hasPermission(user, "suppliers.view"))
     items.push({ key: "suppliers", href: "/suppliers", icon: "🚚", label: "Suppliers" });
   if (hasAnyPermission(user, ["purchases.create", "purchases.pay", "purchases.return"]))
@@ -346,6 +394,10 @@ export function canAccessSection(user: User | null, section: string): boolean {
       return hasAnyPermission(user, ["purchases.create", "purchases.pay", "purchases.return"]);
     case "cashbook":
       return hasPermission(user, "cashbook.view");
+    case "assets":
+      return hasPermission(user, "assets.view");
+    case "consumables":
+      return hasPermission(user, "consumables.view");
     case "reports":
       // Someone may hold suppliers.reports or cashbook.reports without
       // reports.view — the page renders only the tabs they can actually open.
@@ -353,6 +405,8 @@ export function canAccessSection(user: User | null, section: string): boolean {
         "reports.view",
         "suppliers.reports",
         "cashbook.reports",
+        "assets.reports",
+        "consumables.reports",
       ]);
     case "settings":
       return true; // My Account is always reachable
@@ -372,9 +426,19 @@ export function defaultRoute(user: User | null): string {
   if (hasPermission(user, "customers.view")) return "/customers";
   if (hasAnyPermission(user, ["bill.history", "activity.view"])) return "/history";
   if (hasPermission(user, "cashbook.view")) return "/cashbook";
+  if (hasPermission(user, "assets.view")) return "/assets";
+  if (hasPermission(user, "consumables.view")) return "/consumables";
   if (hasPermission(user, "attendance.view")) return "/attendance";
   if (hasAnyPermission(user, ["salary.view", "advance.view"])) return "/salary";
-  if (hasAnyPermission(user, ["reports.view", "suppliers.reports", "cashbook.reports"]))
+  if (
+    hasAnyPermission(user, [
+      "reports.view",
+      "suppliers.reports",
+      "cashbook.reports",
+      "assets.reports",
+      "consumables.reports",
+    ])
+  )
     return "/reports";
   return "/dashboard"; // no access — page renders the "No Access" state
 }

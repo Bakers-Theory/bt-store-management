@@ -153,24 +153,30 @@ describe("groupLists", () => {
         { kind: "unit", value: "pcs" },
         { kind: "emoji", value: "🥐" },
         { kind: "reason", value: "Sold" },
+        { kind: "asset_category", value: "Vehicles" },
+        { kind: "consumable_category", value: "Packaging" },
       ]),
     ).toEqual({
       categories: ["Breads", "Cakes"],
       units: ["pcs"],
       emojis: ["🥐"],
       reasons: ["Sold"],
+      assetCategories: ["Vehicles"],
+      consumableCategories: ["Packaging"],
     });
   });
 
   it("yields empty arrays for absent kinds", () => {
     expect(groupLists([])).toEqual({
       categories: [], emojis: [], units: [], reasons: [],
+      assetCategories: [], consumableCategories: [],
     });
   });
 
   it("ignores unknown kinds", () => {
     expect(groupLists([{ kind: "bogus", value: "x" }])).toEqual({
       categories: [], emojis: [], units: [], reasons: [],
+      assetCategories: [], consumableCategories: [],
     });
   });
 });

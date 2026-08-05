@@ -64,6 +64,22 @@ export type PermissionKey =
   | "expense.create"
   | "expense.pay"
   | "expense.cancel"
+  // Assets
+  | "assets.view"
+  | "assets.create"
+  | "assets.edit"
+  | "assets.delete"
+  | "assets.assign"
+  | "assets.maintain"
+  | "assets.reports"
+  // Consumables
+  | "consumables.view"
+  | "consumables.create"
+  | "consumables.edit"
+  | "consumables.delete"
+  | "consumables.issue"
+  | "consumables.adjust"
+  | "consumables.reports"
   // Store admin
   | "store.settings"
   | "store.status"
@@ -385,6 +401,10 @@ export interface StoreLists {
   emojis: string[];
   units: string[];
   reasons: string[];
+  /** Asset categories (#91 §2.1) — admin-managed, not an enum. */
+  assetCategories: string[];
+  /** Consumable categories (#91 §3.2). Units come from `units`. */
+  consumableCategories: string[];
 }
 
 // ─── Advances ───────────────────────────────────────────────────────────────
@@ -854,5 +874,386 @@ export interface ExpenseFilters {
   paymentMode?: ExpenseMode;
   status?: ExpenseStatus;
   paidById?: string;
+  q?: string;
+}
+
+// ─── Assets ─────────────────────────────────────────────────────────────────
+
+/**
+ * The lifecycle in #91 §2.3, mirroring `asset.status` in SQL. `lost` and
+ * `retired` are terminal; `under_repair` and `maintenance` are temporary states
+ * that must resolve. Nothing in a form ever writes this — only the assign /
+ * return / transfer / maintenance / mark RPCs do.
+ */
+export type AssetStatus =
+  | "available"
+  | "assigned"
+  | "under_repair"
+  | "maintenance"
+  | "lost"
+  | "damaged"
+  | "retired";
+
+/** Empty means "not recorded" — condition is optional (§2.2). */
+export type AssetCondition = "" | "new" | "good" | "fair" | "poor";
+
+/** One attachment: an invoice, a manual, a warranty card (§2.2). */
+export interface AssetDocument {
+  name: string;
+  url: string;
+}
+
+export interface Asset {
+  id: string;
+  /** `AST-0001`. Immutable, unique, and what the QR label encodes. */
+  code: string;
+  name: string;
+  /** A value from the admin-managed `asset_category` list, not an enum. */
+  category: string;
+  brand: string;
+  model: string;
+  /** Unique when present; blank on assets that have no serial. */
+  serialNumber: string;
+  purchaseDate: string; // "YYYY-MM-DD"
+  purchasePrice: number;
+  vendorId: string | null;
+  vendorName: string;
+  warrantyStart: string | null;
+  warrantyExpiry: string | null;
+  location: string;
+  /** Text, not a reference — this app has no department master. */
+  department: string;
+  /** Set exactly when `status` is `assigned`. */
+  assignedTo: string | null;
+  assignedToName: string;
+  status: AssetStatus;
+  condition: AssetCondition;
+  notes: string;
+  imageUrl: string | null;
+  documents: AssetDocument[];
+  /** Written only by `close_asset_maintenance`. */
+  lastServiceDate: string | null;
+  /** Written only by the maintenance RPCs; drives the service reminder. */
+  nextServiceDate: string | null;
+  /** The open custody row, when the asset is out. */
+  openAssignmentId: string | null;
+  assignedOn: string | null;
+  /** The open workshop job, when there is one. */
+  openMaintenanceId: string | null;
+  openMaintenanceKind: MaintenanceKind | null;
+  /**
+   * Days until warranty / next service, against the STORE's calendar (the view
+   * computes them, so every client agrees). Negative means overdue.
+   */
+  warrantyDaysLeft: number | null;
+  serviceDaysLeft: number | null;
+  isArchived: boolean;
+  archivedAt: string | null;
+  createdAt: string;
+  createdByName: string;
+  updatedAt: string;
+  updatedByName: string;
+}
+
+/**
+ * One leg of an asset's custody trail (§2.5). Append-only: a return closes a
+ * row, a transfer closes one and opens the next, and nothing is ever deleted.
+ */
+export interface AssetAssignment {
+  id: string;
+  assetId: string;
+  assetCode: string;
+  assetName: string;
+  assetCategory: string;
+  employeeId: string;
+  employeeName: string;
+  /** Snapshot at the time of issue, not a live join. */
+  department: string;
+  assignedOn: string;
+  returnedOn: string | null;
+  isOpen: boolean;
+  assignedByName: string;
+  receivedByName: string;
+  remarks: string;
+  returnRemarks: string;
+  signatureUrl: string | null;
+  createdAt: string;
+}
+
+/** `repair` is unplanned, `service` is scheduled, `amc` is a contract (§2.6). */
+export type MaintenanceKind = "repair" | "service" | "amc";
+
+export type MaintenanceStatus = "open" | "closed";
+
+export interface AssetMaintenance {
+  id: string;
+  assetId: string;
+  assetCode: string;
+  assetName: string;
+  assetCategory: string;
+  kind: MaintenanceKind;
+  status: MaintenanceStatus;
+  vendorId: string | null;
+  vendorName: string;
+  scheduledOn: string | null;
+  startedOn: string;
+  completedOn: string | null;
+  /** Recorded for the Maintenance Report; the cash side is an expense. */
+  cost: number;
+  amcStart: string | null;
+  amcEnd: string | null;
+  amcRef: string;
+  nextServiceOn: string | null;
+  notes: string;
+  createdByName: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type AssetEventKind =
+  | "created"
+  | "edited"
+  | "assigned"
+  | "returned"
+  | "transferred"
+  | "status_changed"
+  | "maintenance_opened"
+  | "maintenance_closed"
+  | "archived"
+  | "restored"
+  | "deleted";
+
+/** One entry on the asset history timeline (§2.4). */
+export interface AssetEvent {
+  id: string;
+  assetId: string;
+  event: AssetEventKind;
+  actorName: string;
+  at: string;
+  detail: Record<string, unknown>;
+}
+
+/** The §4.1 asset widget row, computed server-side in one round trip. */
+export interface AssetStats {
+  total: number;
+  available: number;
+  assigned: number;
+  underRepair: number;
+  maintenance: number;
+  lost: number;
+  damaged: number;
+  retired: number;
+  archived: number;
+  maintenanceDue: number;
+  warrantyExpiring: number;
+  warrantyExpired: number;
+  totalValue: number;
+  repairCostMonth: number;
+}
+
+/** What a form submits. Status and the service dates are absent on purpose. */
+export interface AssetInput {
+  id?: string;
+  name: string;
+  category: string;
+  brand: string;
+  model: string;
+  serialNumber: string;
+  purchaseDate: string;
+  purchasePrice: number;
+  vendorId: string | null;
+  warrantyStart: string | null;
+  warrantyExpiry: string | null;
+  location: string;
+  department: string;
+  condition: AssetCondition;
+  notes: string;
+  imageUrl: string | null;
+  documents: AssetDocument[];
+}
+
+export interface AssetFilters {
+  category?: string;
+  status?: AssetStatus;
+  employeeId?: string;
+  vendorId?: string;
+  location?: string;
+  department?: string;
+  /** Warranty expiring within N days (or already expired, when `expired`). */
+  warranty?: "expiring" | "expired";
+  /** Service due within N days, or overdue. */
+  serviceDue?: boolean;
+  /** Archived rows are hidden unless this is set. */
+  includeArchived?: boolean;
+  /** Code, name, serial number or holder (§4.4). */
+  q?: string;
+}
+
+// ─── Consumables ────────────────────────────────────────────────────────────
+
+/**
+ * The seven ledger entry types (§3.3). Direction belongs to the type, not to the
+ * sign a user typed: `purchase` and `return` add, `adjustment` may do either,
+ * and the rest take stock out.
+ */
+export type MovementType =
+  | "purchase"
+  | "issue"
+  | "return"
+  | "adjustment"
+  | "wastage"
+  | "expired"
+  | "damaged";
+
+/** The tier the list badge and the alert panel both read. */
+export type StockStatus = "out" | "low" | "reorder" | "ok";
+
+export interface Consumable {
+  id: string;
+  /** `CON-0001`. */
+  code: string;
+  name: string;
+  /** A value from the admin-managed `consumable_category` list. */
+  category: string;
+  /** From the shared `unit` list. Frozen once the item has movements. */
+  unit: string;
+  vendorId: string | null;
+  vendorName: string;
+  minStock: number;
+  maxStock: number | null;
+  reorderLevel: number | null;
+  reorderQty: number | null;
+  costPerUnit: number | null;
+  expiryDate: string | null;
+  storageLocation: string;
+  notes: string;
+  /** The ledger sum. There is no stored column — it cannot drift (AC-2). */
+  currentStock: number;
+  lastPurchaseDate: string | null;
+  lastPurchaseCost: number | null;
+  lastMovementDate: string | null;
+  stockStatus: StockStatus;
+  /** §3.5's read-only suggestion. Zero when nothing needs ordering. */
+  recommendedQty: number;
+  /** Against the store's calendar. Negative means already expired. */
+  expiryDaysLeft: number | null;
+  stockValue: number;
+  createdAt: string;
+  createdByName: string;
+  updatedAt: string;
+  updatedByName: string;
+}
+
+export interface StockMovement {
+  id: string;
+  consumableId: string;
+  itemCode: string;
+  itemName: string;
+  itemCategory: string;
+  unit: string;
+  movementType: MovementType;
+  /** Always as entered: positive, except on an adjustment. */
+  qty: number;
+  /** The direction-applied quantity the running total sums. */
+  qtySigned: number;
+  onDate: string;
+  /** Purchases only. */
+  unitCost: number | null;
+  movementValue: number;
+  vendorId: string | null;
+  vendorName: string;
+  issuedTo: string | null;
+  issuedToName: string;
+  /** Required on adjustment / wastage / expired / damaged. */
+  reason: string;
+  remarks: string;
+  createdById: string | null;
+  createdByName: string;
+  createdAt: string;
+}
+
+/** System-generated (§3.4) — derived on read, so none can go stale. */
+export type ConsumableAlertKind =
+  | "out_of_stock"
+  | "low_stock"
+  | "reorder"
+  | "expired"
+  | "expiring"
+  | "high_consumption";
+
+export interface ConsumableAlert {
+  consumableId: string;
+  code: string;
+  name: string;
+  unit: string;
+  currentStock: number;
+  alert: ConsumableAlertKind;
+  /** 2 is act-now, 1 is act-soon. Orders the panel. */
+  severity: number;
+  message: string;
+}
+
+/** The §4.1 consumables widget row. */
+export interface ConsumableStats {
+  totalItems: number;
+  lowStock: number;
+  outOfStock: number;
+  atReorder: number;
+  expiringSoon: number;
+  expired: number;
+  stockValue: number;
+  monthConsumptionQty: number;
+  monthWastageQty: number;
+  monthPurchaseQty: number;
+  monthPurchaseCost: number;
+  recommendations: number;
+  alerts: number;
+  mostUsed: { name: string; unit: string; qty: number }[];
+}
+
+export interface ConsumableInput {
+  id?: string;
+  name: string;
+  category: string;
+  unit: string;
+  vendorId: string | null;
+  minStock: number;
+  maxStock: number | null;
+  reorderLevel: number | null;
+  reorderQty: number | null;
+  costPerUnit: number | null;
+  expiryDate: string | null;
+  storageLocation: string;
+  notes: string;
+}
+
+export interface StockMovementInput {
+  consumableId: string;
+  movementType: MovementType;
+  qty: number;
+  onDate: string;
+  /** Purchases only. */
+  unitCost?: number | null;
+  vendorId?: string | null;
+  issuedTo?: string | null;
+  reason?: string;
+  remarks?: string;
+}
+
+export interface ConsumableFilters {
+  category?: string;
+  vendorId?: string;
+  stockStatus?: StockStatus;
+  /** Below the minimum, or out — the two states that need action. */
+  lowOnly?: boolean;
+  expiry?: "expiring" | "expired";
+  q?: string;
+}
+
+export interface StockMovementFilters {
+  consumableId?: string;
+  movementType?: MovementType;
+  from?: string;
+  to?: string;
   q?: string;
 }
