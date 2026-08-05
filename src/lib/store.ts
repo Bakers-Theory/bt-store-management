@@ -146,7 +146,14 @@ const PLACEHOLDER_BAKERY: Bakery = {
   statusChangedBy: "",
 };
 
-const EMPTY_LISTS: StoreLists = { categories: [], emojis: [], units: [], reasons: [] };
+const EMPTY_LISTS: StoreLists = {
+  categories: [],
+  emojis: [],
+  units: [],
+  reasons: [],
+  assetCategories: [],
+  consumableCategories: [],
+};
 
 // SSR-safe storage: this module is a client component but Next still executes it
 // on the server, where `localStorage` doesn't exist. Fall back to a no-op there.

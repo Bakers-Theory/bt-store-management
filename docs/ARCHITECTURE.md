@@ -32,6 +32,7 @@ and its tests could stay stable while the storage layer changed underneath.
 | Backend | Supabase — Postgres, Auth, Row-Level Security, RPCs, Storage |
 | Charts | Recharts (dashboard) |
 | Excel export | `xlsx` (dynamically imported) |
+| QR codes | `qrcode-generator` (dynamically imported) |
 | Icons | `lucide-react` + inline SVG |
 | Hosting | Vercel (prebuilt CLI deploy, gated on GitHub Releases) |
 | Tests | Vitest (jsdom) over the logic layer |
@@ -123,6 +124,8 @@ src/
       attendance/                 # staff attendance: mark a day + history
       salary/                     # payroll, salaries, payment history
       cashbook/                   # the cash ledger: balances, transactions, manual entries
+      assets/                     # the asset register: custody, service, labels
+      consumables/                # stock-tracked items, the movement ledger, alerts
     api/staff/route.ts          # staff CRUD, staff.manage-gated (service-role, server-only)
 
   utils/supabase/               # the four @supabase/ssr clients
@@ -145,6 +148,14 @@ src/
     salary.ts                   # payroll arithmetic, period helpers, report rows
     report.ts                   # printable report documents (pure builders)
     payslip.ts                  # payslip document + amount-in-words
+    asset.ts                    # asset lifecycle + the §2.4 action table
+    consumable.ts               # stock arithmetic, movement validation, reorder math
+    asset-report.ts             # the 4 asset reports (print / Excel / CSV)
+    consumable-report.ts        # the 6 consumable reports (print / Excel / CSV)
+    csv-import.ts               # CSV parse + row validation for bulk import
+    asset-label.ts              # what a label carries: kinds + the QR payload
+    barcode.ts                  # Code 39 encoder for the asset label
+    qr.ts                       # QR matrix (qrcode-generator, dynamic import)
     expiry.ts  date-range.ts  format.ts  image.ts   # small pure helpers
     *.test.ts                   # Vitest suites (logic layer only)
 
@@ -154,10 +165,11 @@ src/
       StoreHydrator.tsx         # kicks off store.load() once authed
       ToastHost / OwnerAuthHost / PrintHost / ServiceWorkerRegistrar / ...
       ReportPrintHost.tsx       # prints A4 reports & payslips (vs PrintHost's 80mm receipt)
+      LabelPrintHost.tsx        # prints the asset barcode label on 62×29mm stock
     layout/                     # Sidebar, Topbar, BottomNav
     feature/                    # one folder per section — the "use client" boundary
       dashboard/ stock/ bill/ history/ customers/ settings/
-      attendance/ salary/
+      attendance/ salary/ assets/ consumables/
       Guard.tsx  NoAccess.tsx
     ui/                         # shared primitives (Modal, Skeleton, DateRangePicker, ...)
 
@@ -367,6 +379,8 @@ Current shape (see `ROLE_PRESETS` for the authoritative lists):
 | Store profile | ✓ | – | – | – |
 | Open/close + lists | ✓ | ✓ | – | – |
 | Activity log | ✓ | ✓ | – | – |
+| Assets | ✓ | ✓ (not retire/remove) | – | view only |
+| Consumables | ✓ | ✓ (not remove) | – | view, issue, adjust |
 | Attendance | ✓ | ✓ | – | – |
 | Salary & payroll | – | – | – | – |
 | Manage staff | – | – | – | – |
@@ -460,6 +474,68 @@ consequences worth knowing:
 the cash. A paid expense is never edited or deleted — editing would desynchronise
 the ledger.
 
+### Assets & consumables
+
+Two sub-modules (#91), one migration pair each, and they share nothing but the
+masters they reuse: **vendors are `suppliers`**, **categories are `store_lists`
+rows**, and an employee is a `profiles` row. There is no organization table
+because there is one store — the isolation the ticket asks for is what
+`store_settings` being a singleton already gives.
+
+Four rules carry the design:
+
+- **Asset status is system-owned.** `save_asset` cannot write `status`,
+  `assigned_to`, `last_service_date` or `next_service_date`. Every state change
+  goes through `assert_asset_transition()`, and every change *out of* `assigned`
+  closes the open custody row via `close_open_custody()` — which is why the table
+  can insist that a holder exists exactly when the status says one does.
+- **Current stock is not a column.** `consumable_v.current_stock` is the sum of
+  `stock_movement.qty_signed`, and `record_stock_movement` recomputes that sum
+  under `select … for update` before allowing a movement, so two people issuing
+  the last of something cannot both succeed. A negative result is a hard error,
+  not a warning.
+- **Neither module moves money.** A repair cost sits on the maintenance record and
+  a purchase movement carries a `unit_cost`, both for their reports. The cash side
+  of each is an expense (`0051`) or a purchase invoice (`0037`), and posting here
+  as well would double-count the spend — the same firewall the expense module
+  draws around its supplier link.
+- **Retiring is gated like deleting.** `assets.delete` covers both, because both
+  take an asset out of service for good; `lost` and `damaged` are operational
+  facts a Manager reports and need only `assets.edit`. Consumables split the same
+  way: `consumables.issue` for receive/issue/return, `consumables.adjust` for the
+  four movement types that write value off.
+
+`src/lib/asset.ts` and `src/lib/consumable.ts` mirror the transition table, the
+permission gates and the stock arithmetic for the UI, under the same rule as
+`permissions.ts`: **the SQL copy is the enforcement.**
+
+Two smaller decisions in this module worth not re-litigating:
+
+- **A label carries two codes, and by default both** (`lib/asset-label.ts`). The
+  **barcode** is Code 39 drawn from a 44-row table (`lib/barcode.ts`) — no
+  dependency, no canvas, and its correctness is pinned by structural tests. The
+  **QR** comes from `qrcode-generator` (`lib/qr.ts`), because Reed–Solomon,
+  version selection and mask evaluation are several hundred lines whose output no
+  test here could prove a scanner would read. The two readers are different
+  hardware and a stockroom has both, so `both` is the default kind.
+  `LabelPrintHost` prints through the same `data-print` mechanism the report host
+  uses, and draws only rectangles: the QR matrix is encoded by the *caller*, so
+  the dynamic-import encoder never enters the root layout's bundle and the
+  on-screen preview is literally the matrix that prints.
+- **The QR payload carries durable facts plus a link, and deliberately omits the
+  volatile ones.** Code, name, category, make, serial, purchase date and warranty
+  are safe to print; status, holder and location are not — an asset is reassigned
+  every few months and a sticker claiming it lives with Asha starts lying
+  immediately. The first line is an absolute `/assets?code=…` URL, which is what a
+  phone camera offers to open and what the Assets page resolves on mount (it
+  filters to that code and opens the record). The purchase price is never printed:
+  a label is a public surface.
+- **Asset documents live in a private bucket and are stored as object PATHS**, not
+  URLs; `signedDocUrl` mints a five-minute link when someone opens one. A stored
+  public URL to a purchase invoice would be a permanent unguarded link to a
+  document carrying prices, which is the same thing the column-level revoke on
+  `cost_price` exists to prevent. Asset *photos* are public, like product images.
+
 ### The staff API
 
 Creating/editing/deleting staff needs the Supabase **admin** API (create auth
@@ -505,6 +581,12 @@ Supabase SQL editor or `supabase db push`.
 | `cash_entry` | **The posting ledger** (`0045`). One row per movement of money in or out of `cash` or `bank`. `post_cash` is the only insert path; `reverse_cash` is the only correction path; triggers reject every hard delete and every edit of an auto-posted row. `source_id` is deliberately **not** a FK — `delete_bill` hard-deletes its bill and the ledger row must survive as history. |
 | `expense` | The expense **document** (`0051`). Carries the workflow (`pending → paid \| rejected`, `paid → cancelled`), GST, vendor, invoice number and the Mixed-payment split. Cash moves only at `paid`, through `pay_expense` → `post_cash`. `expense_date` is when the cost was incurred; **`paid_on` is what the ledger uses**, because an invoice dated the 28th paid on the 31st must hit the 31st's cash book. `vendor_supplier_id` is informational — it never enters `supplier_summary_v`. |
 | `expense_event` | The approval and edit history (`0051`). One row per state change, plus a field-level `jsonb` diff on every edit — the same shape `/api/staff/route.ts` writes. Mirrored into `activity_log` so the Activity page needs no second audit surface. |
+| `asset` | The asset register (`0060`). Long-lifecycle items tracked purchase → retirement. `status` is **system-owned** — no form writes it; only the assign/return/transfer/maintenance/mark RPCs do, all through `assert_asset_transition()`. Soft delete (`deleted_at`), archive (`archived_at`) and the terminal `retired` status are three different weakenings, none of them a hard delete. `assigned_to` is set exactly when the status is `assigned`, which two check constraints enforce. |
+| `asset_assignment` | The custody ledger (`0060`). Append-only: a return closes a row, a transfer closes one and opens the next. A partial unique index makes "at most one open assignment per asset" a database guarantee. `department` is a snapshot, not a join — this app has no department master. |
+| `asset_maintenance` | Repairs, services and AMCs (`0060`). One open job per asset (partial unique index), so "put it back in service" is never ambiguous. `cost` is recorded here for the Maintenance Report; the **cash** side of a repair is an expense, and nothing in `0061` posts to the ledger. |
+| `asset_event` | The asset timeline (`0060`), the same shape as `expense_event`: one row per thing that happened, written only by `log_asset_event()`. |
+| `consumable` | Stock-tracked items (`0062`). There is deliberately **no `current_stock` column** — see `stock_movement`. Categories come from `store_lists.asset_category`/`consumable_category`; units reuse the existing `unit` list. |
+| `stock_movement` | **The stock ledger** (`0062`). Append-only, like `cash_entry`: triggers refuse every DELETE and every UPDATE, and a correction is an offsetting Adjustment. `qty` is positive except on an adjustment; direction lives in the *type*, applied by the generated `qty_signed` column. Current stock is the sum of that column and nothing else, which is what makes "stock always matches the ledger" true by construction rather than by discipline. |
 | `store_settings.timezone` | The store's calendar (`0044`), read by `store_today()`. `current_date` is the server's UTC date, which is the wrong day for part of every morning; the paths that correct a posting (`cancel_bill`, `mark_salary_unpaid`) take no `p_tz` and cannot be given one. |
 
 ### Views (read surface)
@@ -518,7 +600,14 @@ Supabase SQL editor or `supabase db push`.
 window-function running balance, gated on `cashbook.view`), `cash_category_v`,
 `expense_v` (category path, vendor display — a linked supplier's name wins over
 the typed one — and actor names, gated on `expense.view`), `expense_event_v`
-(the history with `actor_name`, same gate).
+(the history with `actor_name`, same gate), `asset_v` (holder, vendor, the open
+assignment and open job, plus `warranty_days_left` / `service_days_left`
+computed against `store_today()`), `asset_assignment_v`, `asset_maintenance_v`,
+`asset_event_v` (gated on `assets.view`, except that a Staff member always sees
+their own assigned assets and their own custody rows), `consumable_v` (the ledger
+sum as `current_stock`, plus the derived `stock_status`, `recommended_qty` and
+`stock_value`), `stock_movement_v` and `consumable_alert_v` (all gated on
+`consumables.view`).
 
 ### Migration history (chronological highlights)
 
@@ -543,7 +632,17 @@ transfers · `0049` the day close (`cash_day`, the real `assert_cash_day_open`
 body, reopen) · `0050` bank closing on the day close (`opening_bank` /
 `expected_bank` / `closing_bank`, `adjust_bank_balance`) · `0051` the expense
 document (`expense`, `expense_event`, `expense_v`) · `0052` the expense workflow
-RPCs · `0053` COGS for the income-vs-expense report.
+RPCs · `0053` COGS for the income-vs-expense report · `0054`–`0059` dashboard
+layout, bill shortfall and cashbook fixes · `0060` the asset register
+(`asset`, `asset_assignment`, `asset_maintenance`, `asset_event`, the four views)
+· `0061` asset operations (assign / return / transfer / repair / mark, and
+`asset_stats`) · `0062` consumables and the stock ledger (`consumable`,
+`stock_movement`, `consumable_v`, `consumable_alert_v`) · `0063` the consumable
+RPCs (`record_stock_movement` and `consumable_stats`) · `0064` storage for asset
+photos and documents — two buckets, because a photo of a machine is public and a
+purchase invoice is not · `0065` asset codes move to `BT-AST-001` (a label leaves
+the building on the asset, so the code says whose it is), rewriting existing codes
+and keeping their number.
 
 > The full consolidated schema — every table's columns, the views, the complete
 > RPC catalog, the privacy/grants model, and deep-dives on the batch/FIFO and
@@ -585,6 +684,43 @@ unit-tested in plain functions. These are the files with `*.test.ts` siblings:
   expense reports use `expense.expense_date` (when the cost was incurred). Mixing
   them would make two reports over one period disagree, so every builder states
   its date field.
+- **`asset.ts`** — the asset lifecycle: `ASSET_TRANSITIONS` mirrors
+  `assert_asset_transition()`, and `assetActions()` is #91 §2.4's operation table
+  gated by both the lifecycle and the caller's permissions, so a screen never
+  offers a button the server will refuse. `lost`/`retired` are terminal;
+  `damaged` deliberately is not.
+- **`consumable.ts`** — the stock arithmetic: `signedQty` mirrors the generated
+  `qty_signed` column (direction comes from the movement *type*, never from the
+  sign typed), `movementError` mirrors `record_stock_movement`'s validation
+  including the negative-stock block, and `stockStatusOf` / `recommendedQty`
+  mirror the derived columns in `consumable_v`.
+- **`asset-label.ts`** — the label contract: which codes each kind draws, and
+  `assetQrPayload`, whose tests pin what must NOT be on a sticker (holder, status,
+  location, price) as firmly as what must.
+- **`barcode.ts`** — a Code 39 encoder, so the barcode needs no dependency
+  and no canvas. The symbology is chosen for its charset (an asset code fits
+  exactly) and because it is self-checking, so no check digit has to stay in sync
+  with the server. Its hand-entered pattern table is guarded by structural tests —
+  nine elements per character, exactly three wide, every pattern distinct — which
+  is what catches a typo that would otherwise print a label scanning as the wrong
+  asset.
+- **`asset-report.ts` / `consumable-report.ts`** — the ten reports of §4.2, in the
+  same three-renderer shape as `supplier-report.ts`: raw rows once, then print,
+  Excel and CSV over them. **Which date each report uses is the contract**, stated
+  at the top of each file — the register, warranty, inventory and expiry reports
+  are snapshots; assignment uses `assigned_on`, maintenance `started_on`, and the
+  consumable event reports `stock_movement.on_date`. Outward value (consumption,
+  wastage) is estimated at the latest purchase price, because a movement only
+  carries a `unit_cost` when it is a purchase — every report that shows the figure
+  says so, since naming it "value" silently would imply an accuracy this data does
+  not have. Depreciation is deliberately absent: the ticket marks it future, and it
+  needs a method and rate per category that nothing here records.
+- **`csv-import.ts`** — bulk import (§7). A small RFC 4180 reader plus one
+  validation pass per shape (assets, consumables, stock movements), mirroring the
+  same rules as the forms. Two rules matter: **nothing is guessed** — an
+  unreadable row is reported with its line number, never coerced or skipped — and
+  **movements validate against a RUNNING stock figure**, so three issues of 4
+  against a stock of 10 fail on the third, exactly as the server will.
 - **`expiry.ts`** — day-granularity expiry status (fresh / expiring-soon /
   expired) shared by UI and matching server-side batch logic.
 - **`cashbook.ts`** — the mode→account mirror of `mode_to_account()`, account
@@ -607,7 +743,11 @@ without a browser or a database.
 
 - **System hosts** (`components/system/`) are render-null or portal-style
   components mounted once in the root layout: `AuthProvider`, `StoreHydrator`,
-  `ToastHost`, `OwnerAuthHost`, `PrintHost`, `ServiceWorkerRegistrar`. They wire
+  `ToastHost`, `OwnerAuthHost`, `PrintHost`, `ReportPrintHost`, `LabelPrintHost`,
+  `ServiceWorkerRegistrar`. The three print hosts share one mechanism: each sets
+  `data-print` on `<html>` and injects its own `@page`, because `@page` cannot be
+  scoped by selector, and each undoes both on `afterprint` **and** on a timer,
+  since Safari never fires `afterprint` on a cancelled dialog. They wire
   cross-cutting concerns without cluttering feature code.
 - **Route pages** in `app/(app)/*` are thin — they compose the interactive
   client components from `components/feature/*`. That feature layer is the

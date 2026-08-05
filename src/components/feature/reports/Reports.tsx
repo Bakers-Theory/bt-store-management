@@ -12,6 +12,8 @@ import { hasPermission } from "@/lib/permissions";
 import { tabCls } from "@/components/ui/tabClass";
 import { SupplierReports } from "./SupplierReports";
 import { CashbookReports } from "./CashbookReports";
+import { AssetReports } from "./AssetReports";
+import { ConsumableReports } from "./ConsumableReports";
 
 const labelCls = "mb-[5px] block text-xs font-bold text-[#8a6a3c]";
 
@@ -27,9 +29,20 @@ export function Reports() {
   const canStore = hasPermission(user, "reports.view");
   const canSuppliers = hasPermission(user, "suppliers.reports");
   const canCashbook = hasPermission(user, "cashbook.reports");
+  const canAssets = hasPermission(user, "assets.reports");
+  const canConsumables = hasPermission(user, "consumables.reports");
 
-  const [pane, setPane] = useState<"store" | "suppliers" | "cashbook">(
-    canStore ? "store" : canSuppliers ? "suppliers" : "cashbook",
+  type Pane = "store" | "suppliers" | "cashbook" | "assets" | "consumables";
+  const [pane, setPane] = useState<Pane>(
+    canStore
+      ? "store"
+      : canSuppliers
+        ? "suppliers"
+        : canCashbook
+          ? "cashbook"
+          : canAssets
+            ? "assets"
+            : "consumables",
   );
   const [selected, setSelected] = useState<ReportType[]>(["sales"]);
   const [from, setFrom] = useState("");
@@ -52,7 +65,8 @@ export function Reports() {
     };
   }, [from, to]);
 
-  if (user && !canStore && !canSuppliers && !canCashbook) return <NoAccess />;
+  if (user && !canStore && !canSuppliers && !canCashbook && !canAssets && !canConsumables)
+    return <NoAccess />;
   const canExport = hasPermission(user, "reports.export");
 
   const toggle = (t: ReportType) =>
@@ -92,7 +106,8 @@ export function Reports() {
         Choose the reports you want and an optional date range, then download them as one Excel file.
       </p>
 
-      {[canStore, canSuppliers, canCashbook].filter(Boolean).length > 1 && (
+      {[canStore, canSuppliers, canCashbook, canAssets, canConsumables].filter(Boolean)
+        .length > 1 && (
         <div className="mb-4 flex w-fit max-w-full gap-1.5 overflow-x-auto rounded-xl bg-[#f4e7d2] p-1">
           {canStore && (
             <button className={tabCls(pane === "store")} onClick={() => setPane("store")}>
@@ -109,13 +124,40 @@ export function Reports() {
               Cashbook
             </button>
           )}
+          {canAssets && (
+            <button className={tabCls(pane === "assets")} onClick={() => setPane("assets")}>
+              Assets
+            </button>
+          )}
+          {canConsumables && (
+            <button
+              className={tabCls(pane === "consumables")}
+              onClick={() => setPane("consumables")}
+            >
+              Consumables
+            </button>
+          )}
         </div>
       )}
 
       {pane === "cashbook" && canCashbook ? (
         <CashbookReports />
-      ) : pane === "suppliers" || !canStore ? (
+      ) : pane === "assets" && canAssets ? (
+        <AssetReports />
+      ) : pane === "consumables" && canConsumables ? (
+        <ConsumableReports />
+      ) : pane === "suppliers" && canSuppliers ? (
         <SupplierReports />
+      ) : !canStore ? (
+        // Someone holding only a module's report key lands on the first pane
+        // they can actually open, rather than on the store reports they cannot.
+        canSuppliers ? (
+          <SupplierReports />
+        ) : canAssets ? (
+          <AssetReports />
+        ) : (
+          <ConsumableReports />
+        )
       ) : (
       <div className="rounded-[18px] border border-line bg-warm-white p-[22px] shadow-[0_2px_12px_rgba(100,60,20,0.05)]">
         <span className={labelCls}>Reports</span>

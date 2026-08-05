@@ -17,8 +17,10 @@ import {
   Truck,
   Users,
   Wallet,
+  Laptop,
+  Boxes,
 } from "lucide-react";
-import { hasPermission, navItems, type NavItem } from "@/lib/permissions";
+import { hasAnyPermission, navItems, type NavItem } from "@/lib/permissions";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 
 // Destinations that stay as always-visible bottom tabs (in this order). Anything
@@ -46,6 +48,8 @@ const ICONS: Record<string, React.ReactNode> = {
   suppliers: <Truck {...ICON} />,
   purchases: <Calculator {...ICON} />,
   cashbook: <Wallet {...ICON} />,
+  assets: <Laptop {...ICON} />,
+  consumables: <Boxes {...ICON} />,
 };
 
 const BILL_ICON = <Plus size={22} strokeWidth={2} />;
@@ -66,7 +70,17 @@ export function BottomNav() {
   // Settings (which has no route in navItems but is always reachable here).
   const sheetItems = [
     ...items.filter((it) => it.key !== "bill" && !PRIMARY_KEYS.includes(it.key)),
-    ...(hasPermission(user, "reports.view") ? [REPORTS_ITEM] : []),
+    // Any of the report permissions reaches the Reports page, which renders only
+    // the tabs the holder can open — the same set canAccessSection("reports") uses.
+    ...(hasAnyPermission(user, [
+      "reports.view",
+      "suppliers.reports",
+      "cashbook.reports",
+      "assets.reports",
+      "consumables.reports",
+    ])
+      ? [REPORTS_ITEM]
+      : []),
     SETTINGS_ITEM,
   ];
   const moreActive = sheetItems.some((it) => it.href === pathname);

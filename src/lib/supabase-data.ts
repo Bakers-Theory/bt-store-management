@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@/utils/supabase/client";
-import type { Attendance, AttendanceStatus, AttendanceSummary, AdvanceBalance, Bakery, Batch, Bill, BillLine, BillStatus, CashAccount, CashCategory, CashDay, CashDayStatus, CashDaySummary, CashDirection, CashEntry, CashEntryFilters, CashEntryStatus, CashPaymentMode, CashSourceType, CashbookSummary, Customer, Employee, EmployeeSalary, Expense, ExpenseBankMode, ExpenseEvent, ExpenseEventKind, ExpenseFilters, ExpenseInput, ExpenseMode, ExpenseStatus, Item, Log, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, StaffAdvance, StoreLists, StoredLayout, Supplier, SupplierProduct, SupplierStatus, InvoiceStatus, PurchaseInvoice, PurchaseInvoiceLine, PurchaseMode, PurchaseReturn, PurchaseReturnLine, SupplierPayment, SupplierSummary, User } from "./types";
+import type { Asset, AssetAssignment, AssetCondition, AssetDocument, AssetEvent, AssetEventKind, AssetFilters, AssetInput, AssetMaintenance, AssetStats, AssetStatus, Attendance, AttendanceStatus, AttendanceSummary, AdvanceBalance, Bakery, Batch, Bill, BillLine, BillStatus, CashAccount, CashCategory, CashDay, CashDayStatus, CashDaySummary, CashDirection, CashEntry, CashEntryFilters, CashEntryStatus, CashPaymentMode, CashSourceType, CashbookSummary, Consumable, ConsumableAlert, ConsumableAlertKind, ConsumableFilters, ConsumableInput, ConsumableStats, Customer, Employee, EmployeeSalary, Expense, ExpenseBankMode, ExpenseEvent, ExpenseEventKind, ExpenseFilters, ExpenseInput, ExpenseMode, ExpenseStatus, Item, Log, MaintenanceKind, MaintenanceStatus, MovementType, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, StaffAdvance, StockMovement, StockMovementFilters, StockMovementInput, StockStatus, StoreLists, StoredLayout, Supplier, SupplierProduct, SupplierStatus, InvoiceStatus, PurchaseInvoice, PurchaseInvoiceLine, PurchaseMode, PurchaseReturn, PurchaseReturnLine, SupplierPayment, SupplierSummary, User } from "./types";
 import type { SupplierInput } from "./supplier";
 import { isPurchaseMode, type DraftLine } from "./purchase";
 import { isAttendanceStatus } from "./attendance";
@@ -229,11 +229,21 @@ const LIST_KEYS: Record<string, keyof StoreLists> = {
   emoji: "emojis",
   unit: "units",
   reason: "reasons",
+  // #91 §2.1/§3.2 want these admin-configurable, and this table already is.
+  asset_category: "assetCategories",
+  consumable_category: "consumableCategories",
 };
 
 /** Group pre-ordered store_lists rows into the app-facing StoreLists shape. */
 export const groupLists = (rows: StoreListRow[]): StoreLists => {
-  const lists: StoreLists = { categories: [], emojis: [], units: [], reasons: [] };
+  const lists: StoreLists = {
+    categories: [],
+    emojis: [],
+    units: [],
+    reasons: [],
+    assetCategories: [],
+    consumableCategories: [],
+  };
   for (const r of rows) {
     const key = LIST_KEYS[r.kind];
     if (key) lists[key].push(r.value);
@@ -2594,4 +2604,952 @@ export async function fetchCashbookCogs(range: {
     p_to: range.to,
   });
   return v === null ? null : Number(v);
+}
+
+// ─── Assets ─────────────────────────────────────────────────────────────────
+
+export interface AssetRow {
+  id: string;
+  code: string;
+  name: string;
+  category: string;
+  brand: string | null;
+  model: string | null;
+  serial_number: string | null;
+  purchase_date: string;
+  purchase_price: string | number;
+  vendor_id: string | null;
+  vendor_name: string | null;
+  warranty_start: string | null;
+  warranty_expiry: string | null;
+  location: string;
+  department: string | null;
+  assigned_to: string | null;
+  assigned_to_name: string | null;
+  status: string;
+  condition: string | null;
+  notes: string | null;
+  image_url: string | null;
+  documents: AssetDocument[] | null;
+  last_service_date: string | null;
+  next_service_date: string | null;
+  open_assignment_id: string | null;
+  assigned_on: string | null;
+  open_maintenance_id: string | null;
+  open_maintenance_kind: string | null;
+  warranty_days_left: number | null;
+  service_days_left: number | null;
+  is_archived: boolean;
+  archived_at: string | null;
+  created_at: string;
+  created_by_name: string | null;
+  updated_at: string;
+  updated_by_name: string | null;
+}
+
+export function mapAsset(r: AssetRow): Asset {
+  return {
+    id: r.id,
+    code: r.code,
+    name: r.name,
+    category: r.category,
+    brand: r.brand ?? "",
+    model: r.model ?? "",
+    serialNumber: r.serial_number ?? "",
+    purchaseDate: r.purchase_date,
+    // Postgres numeric arrives as a string over the wire.
+    purchasePrice: Number(r.purchase_price),
+    vendorId: r.vendor_id,
+    vendorName: r.vendor_name ?? "",
+    warrantyStart: r.warranty_start,
+    warrantyExpiry: r.warranty_expiry,
+    location: r.location,
+    department: r.department ?? "",
+    assignedTo: r.assigned_to,
+    assignedToName: r.assigned_to_name ?? "",
+    status: r.status as AssetStatus,
+    condition: (r.condition ?? "") as AssetCondition,
+    notes: r.notes ?? "",
+    imageUrl: r.image_url,
+    documents: r.documents ?? [],
+    lastServiceDate: r.last_service_date,
+    nextServiceDate: r.next_service_date,
+    openAssignmentId: r.open_assignment_id,
+    assignedOn: r.assigned_on,
+    openMaintenanceId: r.open_maintenance_id,
+    openMaintenanceKind: (r.open_maintenance_kind as MaintenanceKind | null) ?? null,
+    // `date - date` is an integer in Postgres, but go through Number() anyway:
+    // null must stay null rather than becoming 0, which would read as "due today".
+    warrantyDaysLeft: r.warranty_days_left === null ? null : Number(r.warranty_days_left),
+    serviceDaysLeft: r.service_days_left === null ? null : Number(r.service_days_left),
+    isArchived: r.is_archived,
+    archivedAt: r.archived_at,
+    createdAt: r.created_at,
+    createdByName: r.created_by_name ?? "",
+    updatedAt: r.updated_at,
+    updatedByName: r.updated_by_name ?? "",
+  };
+}
+
+export interface AssetAssignmentRow {
+  id: string;
+  asset_id: string;
+  asset_code: string;
+  asset_name: string;
+  asset_category: string;
+  employee_id: string;
+  employee_name: string | null;
+  department: string | null;
+  assigned_on: string;
+  returned_on: string | null;
+  is_open: boolean;
+  assigned_by_name: string | null;
+  received_by_name: string | null;
+  remarks: string | null;
+  return_remarks: string | null;
+  signature_url: string | null;
+  created_at: string;
+}
+
+export function mapAssetAssignment(r: AssetAssignmentRow): AssetAssignment {
+  return {
+    id: r.id,
+    assetId: r.asset_id,
+    assetCode: r.asset_code,
+    assetName: r.asset_name,
+    assetCategory: r.asset_category,
+    employeeId: r.employee_id,
+    employeeName: r.employee_name ?? "",
+    department: r.department ?? "",
+    assignedOn: r.assigned_on,
+    returnedOn: r.returned_on,
+    isOpen: r.is_open,
+    assignedByName: r.assigned_by_name ?? "",
+    receivedByName: r.received_by_name ?? "",
+    remarks: r.remarks ?? "",
+    returnRemarks: r.return_remarks ?? "",
+    signatureUrl: r.signature_url,
+    createdAt: r.created_at,
+  };
+}
+
+export interface AssetMaintenanceRow {
+  id: string;
+  asset_id: string;
+  asset_code: string;
+  asset_name: string;
+  asset_category: string;
+  kind: string;
+  status: string;
+  vendor_id: string | null;
+  vendor_name: string | null;
+  scheduled_on: string | null;
+  started_on: string;
+  completed_on: string | null;
+  cost: string | number;
+  amc_start: string | null;
+  amc_end: string | null;
+  amc_ref: string | null;
+  next_service_on: string | null;
+  notes: string | null;
+  created_by_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export function mapAssetMaintenance(r: AssetMaintenanceRow): AssetMaintenance {
+  return {
+    id: r.id,
+    assetId: r.asset_id,
+    assetCode: r.asset_code,
+    assetName: r.asset_name,
+    assetCategory: r.asset_category,
+    kind: r.kind as MaintenanceKind,
+    status: r.status as MaintenanceStatus,
+    vendorId: r.vendor_id,
+    vendorName: r.vendor_name ?? "",
+    scheduledOn: r.scheduled_on,
+    startedOn: r.started_on,
+    completedOn: r.completed_on,
+    cost: Number(r.cost),
+    amcStart: r.amc_start,
+    amcEnd: r.amc_end,
+    amcRef: r.amc_ref ?? "",
+    nextServiceOn: r.next_service_on,
+    notes: r.notes ?? "",
+    createdByName: r.created_by_name ?? "",
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+export interface AssetEventRow {
+  id: string;
+  asset_id: string;
+  event: string;
+  at: string;
+  actor_name: string | null;
+  detail: Record<string, unknown> | null;
+}
+
+export function mapAssetEvent(r: AssetEventRow): AssetEvent {
+  return {
+    id: r.id,
+    assetId: r.asset_id,
+    event: r.event as AssetEventKind,
+    actorName: r.actor_name ?? "",
+    at: r.at,
+    detail: r.detail ?? {},
+  };
+}
+
+export interface AssetsPage {
+  assets: Asset[];
+  hasMore: boolean;
+}
+
+/**
+ * The asset register (§4.4). `warranty` and `serviceDue` filter on the day counts
+ * the view computes against the STORE's calendar, so a phone in another timezone
+ * gets the same rows as the till.
+ */
+export async function fetchAssetsPage(
+  offset: number,
+  limit: number,
+  filters: AssetFilters = {},
+  windowDays = 30,
+): Promise<AssetsPage> {
+  const supabase = createClient();
+  let query = supabase
+    .from("asset_v")
+    .select("*")
+    .order("name")
+    .order("code");
+
+  if (!filters.includeArchived) query = query.eq("is_archived", false);
+  if (filters.category) query = query.eq("category", filters.category);
+  if (filters.status) query = query.eq("status", filters.status);
+  if (filters.employeeId) query = query.eq("assigned_to", filters.employeeId);
+  if (filters.vendorId) query = query.eq("vendor_id", filters.vendorId);
+  if (filters.location) query = query.ilike("location", `%${filters.location}%`);
+  if (filters.department) query = query.eq("department", filters.department);
+  if (filters.warranty === "expiring") {
+    query = query.gte("warranty_days_left", 0).lte("warranty_days_left", windowDays);
+  } else if (filters.warranty === "expired") {
+    query = query.lt("warranty_days_left", 0);
+  }
+  if (filters.serviceDue) query = query.lte("service_days_left", windowDays);
+
+  const q = filters.q ? orSafe(filters.q) : "";
+  if (q) {
+    query = query.or(
+      `code.ilike.*${q}*,name.ilike.*${q}*,serial_number.ilike.*${q}*,assigned_to_name.ilike.*${q}*`,
+    );
+  }
+
+  const { data, error } = await query.range(offset, offset + limit - 1);
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []) as AssetRow[];
+  return { assets: rows.map(mapAsset), hasMore: rows.length === limit };
+}
+
+export async function fetchAsset(id: string): Promise<Asset | null> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("asset_v")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? mapAsset(data as AssetRow) : null;
+}
+
+/** The custody trail. Pass an employee id for "everything this person holds". */
+export async function fetchAssetAssignments(opts: {
+  assetId?: string;
+  employeeId?: string;
+  openOnly?: boolean;
+}): Promise<AssetAssignment[]> {
+  const supabase = createClient();
+  let query = supabase
+    .from("asset_assignment_v")
+    .select("*")
+    .order("assigned_on", { ascending: false })
+    .order("created_at", { ascending: false });
+  if (opts.assetId) query = query.eq("asset_id", opts.assetId);
+  if (opts.employeeId) query = query.eq("employee_id", opts.employeeId);
+  if (opts.openOnly) query = query.is("returned_on", null);
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as AssetAssignmentRow[]).map(mapAssetAssignment);
+}
+
+export async function fetchAssetMaintenance(opts: {
+  assetId?: string;
+  status?: MaintenanceStatus;
+  from?: string;
+  to?: string;
+}): Promise<AssetMaintenance[]> {
+  const supabase = createClient();
+  let query = supabase
+    .from("asset_maintenance_v")
+    .select("*")
+    .order("started_on", { ascending: false });
+  if (opts.assetId) query = query.eq("asset_id", opts.assetId);
+  if (opts.status) query = query.eq("status", opts.status);
+  if (opts.from) query = query.gte("started_on", opts.from);
+  if (opts.to) query = query.lte("started_on", opts.to);
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as AssetMaintenanceRow[]).map(mapAssetMaintenance);
+}
+
+export async function fetchAssetEvents(assetId: string): Promise<AssetEvent[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("asset_event_v")
+    .select("*")
+    .eq("asset_id", assetId)
+    .order("at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as AssetEventRow[]).map(mapAssetEvent);
+}
+
+/**
+ * Who an asset can be issued to. Deliberately not `fetchEmployees()`: that RPC
+ * is gated on attendance.view and excludes the Owner, and neither is right here.
+ */
+export async function fetchAssetHolders(): Promise<Employee[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("asset_holders");
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as { id: string; name: string }[]).map((r) => ({
+    id: r.id,
+    name: r.name,
+  }));
+}
+
+export async function fetchAssetStats(windowDays = 30): Promise<AssetStats> {
+  const r = await rpc<Record<string, string | number>>("asset_stats", {
+    p_days: windowDays,
+  });
+  return {
+    total: Number(r.total),
+    available: Number(r.available),
+    assigned: Number(r.assigned),
+    underRepair: Number(r.underRepair),
+    maintenance: Number(r.maintenance),
+    lost: Number(r.lost),
+    damaged: Number(r.damaged),
+    retired: Number(r.retired),
+    archived: Number(r.archived),
+    maintenanceDue: Number(r.maintenanceDue),
+    warrantyExpiring: Number(r.warrantyExpiring),
+    warrantyExpired: Number(r.warrantyExpired),
+    totalValue: Number(r.totalValue),
+    repairCostMonth: Number(r.repairCostMonth),
+  };
+}
+
+/** Returns the asset id. Cannot set status or the service dates — by design. */
+export async function rpcSaveAsset(p: AssetInput): Promise<string> {
+  return rpc<string>("save_asset", {
+    p: {
+      id: p.id ?? "",
+      name: p.name,
+      category: p.category,
+      brand: p.brand,
+      model: p.model,
+      serialNumber: p.serialNumber,
+      purchaseDate: p.purchaseDate,
+      purchasePrice: p.purchasePrice,
+      vendorId: p.vendorId ?? "",
+      warrantyStart: p.warrantyStart ?? "",
+      warrantyExpiry: p.warrantyExpiry ?? "",
+      location: p.location,
+      department: p.department,
+      condition: p.condition,
+      notes: p.notes,
+      imageUrl: p.imageUrl ?? "",
+      documents: p.documents,
+    },
+  });
+}
+
+export async function rpcArchiveAsset(id: string, archived: boolean): Promise<void> {
+  await rpc<void>("archive_asset", { p_id: id, p_archived: archived });
+}
+
+/** Soft delete — the row stays for reports and audit (§7). */
+export async function rpcDeleteAsset(id: string): Promise<void> {
+  await rpc<void>("delete_asset", { p_id: id });
+}
+
+/** Returns the new assignment id. */
+export async function rpcAssignAsset(p: {
+  assetId: string;
+  employeeId: string;
+  department?: string;
+  assignedOn?: string;
+  receivedById?: string | null;
+  remarks?: string;
+  signatureUrl?: string | null;
+}): Promise<string> {
+  return rpc<string>("assign_asset", {
+    p: {
+      assetId: p.assetId,
+      employeeId: p.employeeId,
+      department: p.department ?? "",
+      assignedOn: p.assignedOn ?? "",
+      receivedById: p.receivedById ?? "",
+      remarks: p.remarks ?? "",
+      signatureUrl: p.signatureUrl ?? "",
+    },
+  });
+}
+
+export async function rpcReturnAsset(p: {
+  assetId: string;
+  returnedOn?: string;
+  returnRemarks?: string;
+  condition?: AssetCondition;
+}): Promise<void> {
+  await rpc<void>("return_asset", {
+    p: {
+      assetId: p.assetId,
+      returnedOn: p.returnedOn ?? "",
+      returnRemarks: p.returnRemarks ?? "",
+      condition: p.condition ?? "",
+    },
+  });
+}
+
+/** One action, two custody rows: the old closes and the new opens, same date. */
+export async function rpcTransferAsset(p: {
+  assetId: string;
+  employeeId: string;
+  department?: string;
+  onDate?: string;
+  receivedById?: string | null;
+  remarks?: string;
+  signatureUrl?: string | null;
+}): Promise<string> {
+  return rpc<string>("transfer_asset", {
+    p: {
+      assetId: p.assetId,
+      employeeId: p.employeeId,
+      department: p.department ?? "",
+      onDate: p.onDate ?? "",
+      receivedById: p.receivedById ?? "",
+      remarks: p.remarks ?? "",
+      signatureUrl: p.signatureUrl ?? "",
+    },
+  });
+}
+
+/**
+ * Mark lost / damaged / retired, or bring an asset back to available. Retiring
+ * needs `assets.delete`, the rest `assets.edit` — the RPC re-checks.
+ */
+export async function rpcSetAssetStatus(
+  id: string,
+  status: Extract<AssetStatus, "available" | "lost" | "damaged" | "retired">,
+  note = "",
+  onDate: string | null = null,
+): Promise<void> {
+  await rpc<void>("set_asset_status", {
+    p_id: id,
+    p_status: status,
+    p_note: note,
+    p_on: onDate,
+  });
+}
+
+/** Opens or edits a workshop job. Returns the maintenance record id. */
+export async function rpcSaveAssetMaintenance(p: {
+  id?: string;
+  assetId: string;
+  kind: MaintenanceKind;
+  vendorId?: string | null;
+  scheduledOn?: string | null;
+  startedOn?: string;
+  cost?: number;
+  amcStart?: string | null;
+  amcEnd?: string | null;
+  amcRef?: string;
+  nextServiceOn?: string | null;
+  notes?: string;
+  /** Sends the asset to `under_repair` (repair) or `maintenance` (service/AMC). */
+  takeOutOfService?: boolean;
+}): Promise<string> {
+  return rpc<string>("save_asset_maintenance", {
+    p: {
+      id: p.id ?? "",
+      assetId: p.assetId,
+      kind: p.kind,
+      vendorId: p.vendorId ?? "",
+      scheduledOn: p.scheduledOn ?? "",
+      startedOn: p.startedOn ?? "",
+      cost: p.cost ?? 0,
+      amcStart: p.amcStart ?? "",
+      amcEnd: p.amcEnd ?? "",
+      amcRef: p.amcRef ?? "",
+      nextServiceOn: p.nextServiceOn ?? "",
+      notes: p.notes ?? "",
+      takeOutOfService: p.takeOutOfService ?? false,
+    },
+  });
+}
+
+/** Closing the job is what sets `lastServiceDate` and returns it to service. */
+export async function rpcCloseAssetMaintenance(p: {
+  id: string;
+  completedOn?: string;
+  cost?: number;
+  nextServiceOn?: string | null;
+  notes?: string;
+  toStatus?: "available" | "damaged" | "retired";
+}): Promise<void> {
+  await rpc<void>("close_asset_maintenance", {
+    p: {
+      id: p.id,
+      completedOn: p.completedOn ?? "",
+      cost: p.cost ?? 0,
+      nextServiceOn: p.nextServiceOn ?? "",
+      notes: p.notes ?? "",
+      toStatus: p.toStatus ?? "available",
+    },
+  });
+}
+
+// ─── Consumables ────────────────────────────────────────────────────────────
+
+export interface ConsumableRow {
+  id: string;
+  code: string;
+  name: string;
+  category: string;
+  unit: string;
+  vendor_id: string | null;
+  vendor_name: string | null;
+  min_stock: string | number;
+  max_stock: string | number | null;
+  reorder_level: string | number | null;
+  reorder_qty: string | number | null;
+  cost_per_unit: string | number | null;
+  expiry_date: string | null;
+  storage_location: string | null;
+  notes: string | null;
+  current_stock: string | number;
+  last_purchase_date: string | null;
+  last_purchase_cost: string | number | null;
+  last_movement_date: string | null;
+  stock_status: string;
+  recommended_qty: string | number;
+  expiry_days_left: number | null;
+  stock_value: string | number;
+  created_at: string;
+  created_by_name: string | null;
+  updated_at: string;
+  updated_by_name: string | null;
+}
+
+const num = (v: string | number | null): number | null =>
+  v === null ? null : Number(v);
+
+export function mapConsumable(r: ConsumableRow): Consumable {
+  return {
+    id: r.id,
+    code: r.code,
+    name: r.name,
+    category: r.category,
+    unit: r.unit,
+    vendorId: r.vendor_id,
+    vendorName: r.vendor_name ?? "",
+    minStock: Number(r.min_stock),
+    maxStock: num(r.max_stock),
+    reorderLevel: num(r.reorder_level),
+    reorderQty: num(r.reorder_qty),
+    costPerUnit: num(r.cost_per_unit),
+    expiryDate: r.expiry_date,
+    storageLocation: r.storage_location ?? "",
+    notes: r.notes ?? "",
+    // The ledger sum — there is no stored column to disagree with it (AC-2).
+    currentStock: Number(r.current_stock),
+    lastPurchaseDate: r.last_purchase_date,
+    lastPurchaseCost: num(r.last_purchase_cost),
+    lastMovementDate: r.last_movement_date,
+    stockStatus: r.stock_status as StockStatus,
+    recommendedQty: Number(r.recommended_qty),
+    expiryDaysLeft: r.expiry_days_left === null ? null : Number(r.expiry_days_left),
+    stockValue: Number(r.stock_value),
+    createdAt: r.created_at,
+    createdByName: r.created_by_name ?? "",
+    updatedAt: r.updated_at,
+    updatedByName: r.updated_by_name ?? "",
+  };
+}
+
+export interface StockMovementRow {
+  id: string;
+  consumable_id: string;
+  item_code: string;
+  item_name: string;
+  item_category: string;
+  unit: string;
+  movement_type: string;
+  qty: string | number;
+  qty_signed: string | number;
+  on_date: string;
+  unit_cost: string | number | null;
+  movement_value: string | number;
+  vendor_id: string | null;
+  vendor_name: string | null;
+  issued_to: string | null;
+  issued_to_name: string | null;
+  reason: string | null;
+  remarks: string | null;
+  created_by: string | null;
+  created_by_name: string | null;
+  created_at: string;
+}
+
+export function mapStockMovement(r: StockMovementRow): StockMovement {
+  return {
+    id: r.id,
+    consumableId: r.consumable_id,
+    itemCode: r.item_code,
+    itemName: r.item_name,
+    itemCategory: r.item_category,
+    unit: r.unit,
+    movementType: r.movement_type as MovementType,
+    qty: Number(r.qty),
+    qtySigned: Number(r.qty_signed),
+    onDate: r.on_date,
+    unitCost: num(r.unit_cost),
+    movementValue: Number(r.movement_value),
+    vendorId: r.vendor_id,
+    vendorName: r.vendor_name ?? "",
+    issuedTo: r.issued_to,
+    issuedToName: r.issued_to_name ?? "",
+    reason: r.reason ?? "",
+    remarks: r.remarks ?? "",
+    createdById: r.created_by,
+    createdByName: r.created_by_name ?? "",
+    createdAt: r.created_at,
+  };
+}
+
+export interface ConsumableAlertRow {
+  consumable_id: string;
+  code: string;
+  name: string;
+  unit: string;
+  current_stock: string | number;
+  alert: string;
+  severity: number;
+  message: string;
+}
+
+export function mapConsumableAlert(r: ConsumableAlertRow): ConsumableAlert {
+  return {
+    consumableId: r.consumable_id,
+    code: r.code,
+    name: r.name,
+    unit: r.unit,
+    currentStock: Number(r.current_stock),
+    alert: r.alert as ConsumableAlertKind,
+    severity: Number(r.severity),
+    message: r.message,
+  };
+}
+
+export interface ConsumablesPage {
+  items: Consumable[];
+  hasMore: boolean;
+}
+
+export async function fetchConsumablesPage(
+  offset: number,
+  limit: number,
+  filters: ConsumableFilters = {},
+): Promise<ConsumablesPage> {
+  const supabase = createClient();
+  let query = supabase.from("consumable_v").select("*").order("name");
+
+  if (filters.category) query = query.eq("category", filters.category);
+  if (filters.vendorId) query = query.eq("vendor_id", filters.vendorId);
+  if (filters.stockStatus) query = query.eq("stock_status", filters.stockStatus);
+  // The two states that need action, in one filter.
+  if (filters.lowOnly) query = query.in("stock_status", ["low", "out"]);
+  if (filters.expiry === "expiring") {
+    query = query.gte("expiry_days_left", 0).lte("expiry_days_left", 30);
+  } else if (filters.expiry === "expired") {
+    query = query.lt("expiry_days_left", 0);
+  }
+
+  const q = filters.q ? orSafe(filters.q) : "";
+  if (q) {
+    query = query.or(
+      `code.ilike.*${q}*,name.ilike.*${q}*,vendor_name.ilike.*${q}*,storage_location.ilike.*${q}*`,
+    );
+  }
+
+  const { data, error } = await query.range(offset, offset + limit - 1);
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []) as ConsumableRow[];
+  return { items: rows.map(mapConsumable), hasMore: rows.length === limit };
+}
+
+export async function fetchConsumable(id: string): Promise<Consumable | null> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("consumable_v")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? mapConsumable(data as ConsumableRow) : null;
+}
+
+export interface StockMovementsPage {
+  movements: StockMovement[];
+  hasMore: boolean;
+}
+
+export async function fetchStockMovementsPage(
+  offset: number,
+  limit: number,
+  filters: StockMovementFilters = {},
+): Promise<StockMovementsPage> {
+  const supabase = createClient();
+  let query = supabase
+    .from("stock_movement_v")
+    .select("*")
+    .order("on_date", { ascending: false })
+    .order("created_at", { ascending: false });
+
+  if (filters.consumableId) query = query.eq("consumable_id", filters.consumableId);
+  if (filters.movementType) query = query.eq("movement_type", filters.movementType);
+  // `on_date` is a plain date — filters directly, no UTC conversion.
+  if (filters.from) query = query.gte("on_date", filters.from);
+  if (filters.to) query = query.lte("on_date", filters.to);
+
+  const q = filters.q ? orSafe(filters.q) : "";
+  if (q) {
+    query = query.or(
+      `item_code.ilike.*${q}*,item_name.ilike.*${q}*,reason.ilike.*${q}*,remarks.ilike.*${q}*`,
+    );
+  }
+
+  const { data, error } = await query.range(offset, offset + limit - 1);
+  if (error) throw new Error(error.message);
+  const rows = (data ?? []) as StockMovementRow[];
+  return { movements: rows.map(mapStockMovement), hasMore: rows.length === limit };
+}
+
+/** Derived on read, so nothing here can be stale (§3.4). */
+export async function fetchConsumableAlerts(): Promise<ConsumableAlert[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("consumable_alert_v")
+    .select("*")
+    .order("severity", { ascending: false })
+    .order("name");
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as ConsumableAlertRow[]).map(mapConsumableAlert);
+}
+
+/** §3.5's purchase recommendations: the items the view says need ordering. */
+export async function fetchPurchaseRecommendations(): Promise<Consumable[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("consumable_v")
+    .select("*")
+    .gt("recommended_qty", 0)
+    .order("stock_status")
+    .order("name");
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as ConsumableRow[]).map(mapConsumable);
+}
+
+export async function fetchConsumableStats(
+  windowDays = 30,
+): Promise<ConsumableStats> {
+  const r = await rpc<Record<string, unknown>>("consumable_stats", {
+    p_days: windowDays,
+  });
+  const n = (k: string) => Number(r[k] as string | number);
+  return {
+    totalItems: n("totalItems"),
+    lowStock: n("lowStock"),
+    outOfStock: n("outOfStock"),
+    atReorder: n("atReorder"),
+    expiringSoon: n("expiringSoon"),
+    expired: n("expired"),
+    stockValue: n("stockValue"),
+    monthConsumptionQty: n("monthConsumptionQty"),
+    monthWastageQty: n("monthWastageQty"),
+    monthPurchaseQty: n("monthPurchaseQty"),
+    monthPurchaseCost: n("monthPurchaseCost"),
+    recommendations: n("recommendations"),
+    alerts: n("alerts"),
+    mostUsed: ((r.mostUsed ?? []) as { name: string; unit: string; qty: string | number }[])
+      .map((m) => ({ name: m.name, unit: m.unit, qty: Number(m.qty) })),
+  };
+}
+
+export async function rpcSaveConsumable(p: ConsumableInput): Promise<string> {
+  return rpc<string>("save_consumable", {
+    p: {
+      id: p.id ?? "",
+      name: p.name,
+      category: p.category,
+      unit: p.unit,
+      vendorId: p.vendorId ?? "",
+      minStock: p.minStock,
+      maxStock: p.maxStock ?? "",
+      reorderLevel: p.reorderLevel ?? "",
+      reorderQty: p.reorderQty ?? "",
+      costPerUnit: p.costPerUnit ?? "",
+      expiryDate: p.expiryDate ?? "",
+      storageLocation: p.storageLocation,
+      notes: p.notes,
+    },
+  });
+}
+
+/** Soft delete, and only once the shelf is empty — the RPC enforces both. */
+export async function rpcDeleteConsumable(id: string): Promise<void> {
+  await rpc<void>("delete_consumable", { p_id: id });
+}
+
+export interface MovementResult {
+  movementId: string;
+  /** The stock after the movement, straight from the ledger. */
+  currentStock: number;
+}
+
+const movementArgs = (m: StockMovementInput) => ({
+  consumableId: m.consumableId,
+  movementType: m.movementType,
+  qty: m.qty,
+  onDate: m.onDate,
+  unitCost: m.unitCost ?? "",
+  vendorId: m.vendorId ?? "",
+  issuedTo: m.issuedTo ?? "",
+  reason: m.reason ?? "",
+  remarks: m.remarks ?? "",
+});
+
+/**
+ * The only way consumable stock moves. A movement that would push stock negative
+ * is rejected server-side, under a row lock — this is not a client-side warning.
+ */
+export async function rpcRecordStockMovement(
+  m: StockMovementInput,
+): Promise<MovementResult> {
+  const r = await rpc<{ movementId: string; currentStock: string | number }>(
+    "record_stock_movement",
+    { p: movementArgs(m) },
+  );
+  return { movementId: r.movementId, currentStock: Number(r.currentStock) };
+}
+
+/** Bulk stock update (§7). All-or-nothing: one bad row fails the batch. */
+export async function rpcRecordStockMovements(
+  movements: StockMovementInput[],
+): Promise<MovementResult[]> {
+  const rows = await rpc<{ movementId: string; currentStock: string | number }[]>(
+    "record_stock_movements",
+    { p: movements.map(movementArgs) },
+  );
+  return (rows ?? []).map((r) => ({
+    movementId: r.movementId,
+    currentStock: Number(r.currentStock),
+  }));
+}
+
+// ─── Report data (assets & consumables) ─────────────────────────────────────
+
+/**
+ * Everything the asset reports need, in one go. Unbounded within the range, the
+ * same trade `fetchReportData` makes: this is only ever called by an explicit
+ * export click, never on hydration.
+ *
+ * The register deliberately includes ARCHIVED assets — a register that hides an
+ * asset is not a register — so nothing filters on `is_archived` here.
+ */
+export async function fetchAssetReportData(range: {
+  from: string | null;
+  to: string | null;
+}): Promise<{
+  assets: Asset[];
+  assignments: AssetAssignment[];
+  maintenance: AssetMaintenance[];
+}> {
+  const supabase = createClient();
+
+  let assignQuery = supabase
+    .from("asset_assignment_v")
+    .select("*")
+    .order("assigned_on", { ascending: false });
+  // The report filters by `assigned_on` itself, but narrowing here keeps the
+  // payload proportional to the period — except for open rows, which the "out
+  // now" section needs however old they are.
+  if (range.from) assignQuery = assignQuery.or(`assigned_on.gte.${range.from},returned_on.is.null`);
+
+  let maintQuery = supabase
+    .from("asset_maintenance_v")
+    .select("*")
+    .order("started_on", { ascending: false });
+  if (range.from) maintQuery = maintQuery.gte("started_on", range.from);
+  if (range.to) maintQuery = maintQuery.lte("started_on", range.to);
+
+  const [assetRes, assignRes, maintRes] = await Promise.all([
+    supabase.from("asset_v").select("*").order("category").order("name"),
+    assignQuery,
+    maintQuery,
+  ]);
+  for (const r of [assetRes, assignRes, maintRes]) {
+    if (r.error) throw new Error(r.error.message);
+  }
+
+  return {
+    assets: ((assetRes.data ?? []) as AssetRow[]).map(mapAsset),
+    assignments: ((assignRes.data ?? []) as AssetAssignmentRow[]).map(mapAssetAssignment),
+    maintenance: ((maintRes.data ?? []) as AssetMaintenanceRow[]).map(mapAssetMaintenance),
+  };
+}
+
+/**
+ * Everything the consumable reports need. The item list is a snapshot (stock on
+ * hand is a position, not a window) and the ledger is filtered to the period.
+ */
+export async function fetchConsumableReportData(range: {
+  from: string | null;
+  to: string | null;
+}): Promise<{ items: Consumable[]; movements: StockMovement[] }> {
+  const supabase = createClient();
+
+  let moveQuery = supabase
+    .from("stock_movement_v")
+    .select("*")
+    .order("on_date", { ascending: false })
+    .order("created_at", { ascending: false });
+  if (range.from) moveQuery = moveQuery.gte("on_date", range.from);
+  if (range.to) moveQuery = moveQuery.lte("on_date", range.to);
+
+  const [itemRes, moveRes] = await Promise.all([
+    supabase.from("consumable_v").select("*").order("category").order("name"),
+    moveQuery,
+  ]);
+  for (const r of [itemRes, moveRes]) {
+    if (r.error) throw new Error(r.error.message);
+  }
+
+  return {
+    items: ((itemRes.data ?? []) as ConsumableRow[]).map(mapConsumable),
+    movements: ((moveRes.data ?? []) as StockMovementRow[]).map(mapStockMovement),
+  };
 }

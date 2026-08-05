@@ -26,6 +26,8 @@ import {
   fetchCustomers,
   fetchCashbookSummary,
   fetchSupplierSummaries,
+  fetchAssetStats,
+  fetchConsumableStats,
   fetchAttendanceForDate,
   fetchEmployees,
   saveDashboardLayout,
@@ -57,9 +59,18 @@ import { RecentBillsCard } from "./RecentBillsCard";
 import { TopCustomersCard } from "./TopCustomersCard";
 import { StockHealthCard } from "./StockHealthCard";
 import { CashbookSummaryCard } from "./CashbookSummaryCard";
+import { AssetsCard } from "./AssetsCard";
+import { ConsumablesCard } from "./ConsumablesCard";
 import { SupplierBalanceCard } from "./SupplierBalanceCard";
 import dynamic from "next/dynamic";
-import type { Bill, CashbookSummary, Customer, StoredLayout } from "@/lib/types";
+import type {
+  AssetStats,
+  Bill,
+  CashbookSummary,
+  ConsumableStats,
+  Customer,
+  StoredLayout,
+} from "@/lib/types";
 
 // Charts pull in recharts (~110 kB), which no other route needs. Load them on
 // demand so it stays out of the initial dashboard bundle. Client-only (ssr:
@@ -292,6 +303,38 @@ export function Dashboard() {
       alive = false;
     };
   }, [user?.id, attendanceShown]);
+
+  // Assets and consumables — live snapshots, not range-scoped: "3 under repair"
+  // and "2 out of stock" are facts about now (#91 §4.1). Each is fetched only
+  // when its widget is actually on the dashboard, so a user who has never added
+  // it pays nothing.
+  const [assetStats, setAssetStats] = useState<AssetStats | null>(null);
+  const [assetStatsError, setAssetStatsError] = useState(false);
+  const assetsShown = shown.some((s) => s.id === "assets-summary");
+  useEffect(() => {
+    if (!assetsShown || !hasPermission(user, "assets.view")) return;
+    let alive = true;
+    fetchAssetStats()
+      .then((s) => alive && setAssetStats(s))
+      .catch(() => alive && setAssetStatsError(true));
+    return () => {
+      alive = false;
+    };
+  }, [user, assetsShown]);
+
+  const [consumableStats, setConsumableStats] = useState<ConsumableStats | null>(null);
+  const [consumableStatsError, setConsumableStatsError] = useState(false);
+  const consumablesShown = shown.some((s) => s.id === "consumables-stock");
+  useEffect(() => {
+    if (!consumablesShown || !hasPermission(user, "consumables.view")) return;
+    let alive = true;
+    fetchConsumableStats()
+      .then((s) => alive && setConsumableStats(s))
+      .catch(() => alive && setConsumableStatsError(true));
+    return () => {
+      alive = false;
+    };
+  }, [user, consumablesShown]);
 
   // Supplier payables — a live, all-time snapshot (not range-scoped), same as
   // the Suppliers tab's own balance view.
@@ -719,6 +762,22 @@ export function Dashboard() {
     ),
     "attendance-today": (
       <AttendanceCard loading={!attendanceCounts && !attendanceError} error={attendanceError} counts={attendanceCounts} />
+    ),
+    "assets-summary": (
+      <AssetsCard
+        loading={!assetStats && !assetStatsError}
+        error={assetStatsError}
+        stats={assetStats}
+        currency={currency}
+      />
+    ),
+    "consumables-stock": (
+      <ConsumablesCard
+        loading={!consumableStats && !consumableStatsError}
+        error={consumableStatsError}
+        stats={consumableStats}
+        currency={currency}
+      />
     ),
   };
 

@@ -363,10 +363,18 @@ describe("legacy group aliasing (mirrors has_perm in SQL)", () => {
     expect(ungrouped.sort()).toEqual([
       "activity.view", "advance.approve", "advance.delete",
       "advance.request", "advance.view",
+      // Assets and consumables are their own module (#91) — `inventory` aliases
+      // the item catalogue, and reusing it here would hand a pre-0028 policy
+      // reach it never had.
+      "assets.assign", "assets.create", "assets.delete", "assets.edit",
+      "assets.maintain", "assets.reports", "assets.view",
       "attendance.edit", "attendance.view",
       // Deliberately ungrouped: the legacy sales/inventory/analytics aliases
       // predate the cashbook, so no pre-0028 policy can reach these keys.
       "cashbook.close", "cashbook.entry", "cashbook.reopen", "cashbook.reports", "cashbook.view",
+      "consumables.adjust", "consumables.create", "consumables.delete",
+      "consumables.edit", "consumables.issue", "consumables.reports",
+      "consumables.view",
       "expense.cancel", "expense.create", "expense.pay", "expense.view",
       "purchases.create", "purchases.pay", "purchases.return",
       "salary.edit", "salary.pay", "salary.view",
