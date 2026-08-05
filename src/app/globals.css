@@ -308,25 +308,33 @@
   }
 }
 
-/* Print — two documents, never the screen.
+/* Print — three documents, never the screen.
  *
  * RECEIPT: `.print-area` on 80mm thermal paper (PrintHost).
  * REPORT:  `.report-area` on A4 (ReportPrintHost) — a purpose-built document,
  *          not a printout of the UI. Whichever host has content sets
  *          `data-print` on <html>, which selects the page size, since @page
- *          cannot be scoped by selector. */
+ *          cannot be scoped by selector.
+ * LABEL:   `.label-area` on a small label page (LabelPrintHost) — the asset
+ *          barcode label, one asset per page. */
 @media print {
   @page {
     size: 80mm auto;
     margin: 0;
   }
-  body > *:not(.print-area):not(.report-area) {
+  body > *:not(.print-area):not(.report-area):not(.label-area) {
     display: none !important;
   }
-  html[data-print="report"] .print-area {
+  /* The receipt is the default document, so it hides whenever another host has
+     claimed the page. Each of the other two hides unless it is the claimant. */
+  html[data-print="report"] .print-area,
+  html[data-print="label"] .print-area {
     display: none !important;
   }
   html:not([data-print="report"]) .report-area {
+    display: none !important;
+  }
+  html:not([data-print="label"]) .label-area {
     display: none !important;
   }
   .print-area {
@@ -355,6 +363,56 @@
   .print-area .receipt-logo-placeholder {
     width: 20mm;
     height: 20mm;
+  }
+
+  /* ─── The asset label ─────────────────────────────────────────────────── */
+  .label-area {
+    display: block !important;
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    background: #fff;
+    color: #000;
+    font-family: var(--font-sans), system-ui, sans-serif;
+  }
+  /* One asset per page: a sheet of labels for one asset is a stack of copies,
+     and a scanner reads one at a time either way. */
+  .asset-label {
+    break-after: page;
+    padding: 2mm;
+  }
+  .asset-label:last-child {
+    break-after: auto;
+  }
+  .asset-label .l-bars {
+    display: block;
+    width: 100%;
+    height: 12mm;
+  }
+  .asset-label .l-code {
+    font-family: "Courier New", monospace;
+    font-size: 11pt;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-align: center;
+    margin-top: 0.8mm;
+  }
+  .asset-label .l-name {
+    font-size: 8.5pt;
+    font-weight: 700;
+    text-align: center;
+    margin-top: 1mm;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .asset-label .l-meta {
+    font-size: 6.5pt;
+    color: #333;
+    text-align: center;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
 
   /* ─── The report document ─────────────────────────────────────────────── */

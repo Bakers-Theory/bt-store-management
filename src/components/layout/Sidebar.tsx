@@ -22,6 +22,8 @@ import {
   Truck,
   Users,
   Wallet,
+  Laptop,
+  Boxes,
 } from "lucide-react";
 
 // One size and stroke for the whole rail, so no icon reads heavier than its
@@ -41,6 +43,8 @@ const ICONS: Record<string, React.ReactNode> = {
   suppliers: <Truck {...ICON} />,
   purchases: <Calculator {...ICON} />,
   cashbook: <Wallet {...ICON} />,
+  assets: <Laptop {...ICON} />,
+  consumables: <Boxes {...ICON} />,
 };
 
 function initials(name: string): string {

@@ -123,6 +123,8 @@ src/
       attendance/                 # staff attendance: mark a day + history
       salary/                     # payroll, salaries, payment history
       cashbook/                   # the cash ledger: balances, transactions, manual entries
+      assets/                     # the asset register: custody, service, labels
+      consumables/                # stock-tracked items, the movement ledger, alerts
     api/staff/route.ts          # staff CRUD, staff.manage-gated (service-role, server-only)
 
   utils/supabase/               # the four @supabase/ssr clients
@@ -145,6 +147,9 @@ src/
     salary.ts                   # payroll arithmetic, period helpers, report rows
     report.ts                   # printable report documents (pure builders)
     payslip.ts                  # payslip document + amount-in-words
+    asset.ts                    # asset lifecycle + the §2.4 action table
+    consumable.ts               # stock arithmetic, movement validation, reorder math
+    barcode.ts                  # Code 39 encoder for the asset label
     expiry.ts  date-range.ts  format.ts  image.ts   # small pure helpers
     *.test.ts                   # Vitest suites (logic layer only)
 
@@ -154,10 +159,11 @@ src/
       StoreHydrator.tsx         # kicks off store.load() once authed
       ToastHost / OwnerAuthHost / PrintHost / ServiceWorkerRegistrar / ...
       ReportPrintHost.tsx       # prints A4 reports & payslips (vs PrintHost's 80mm receipt)
+      LabelPrintHost.tsx        # prints the asset barcode label on 62×29mm stock
     layout/                     # Sidebar, Topbar, BottomNav
     feature/                    # one folder per section — the "use client" boundary
       dashboard/ stock/ bill/ history/ customers/ settings/
-      attendance/ salary/
+      attendance/ salary/ assets/ consumables/
       Guard.tsx  NoAccess.tsx
     ui/                         # shared primitives (Modal, Skeleton, DateRangePicker, ...)
 
@@ -651,6 +657,13 @@ unit-tested in plain functions. These are the files with `*.test.ts` siblings:
   sign typed), `movementError` mirrors `record_stock_movement`'s validation
   including the negative-stock block, and `stockStatusOf` / `recommendedQty`
   mirror the derived columns in `consumable_v`.
+- **`barcode.ts`** — a Code 39 encoder, so the asset label needs no dependency
+  and no canvas. The symbology is chosen for its charset (an asset code fits
+  exactly) and because it is self-checking, so no check digit has to stay in sync
+  with the server. Its hand-entered pattern table is guarded by structural tests —
+  nine elements per character, exactly three wide, every pattern distinct — which
+  is what catches a typo that would otherwise print a label scanning as the wrong
+  asset.
 - **`expiry.ts`** — day-granularity expiry status (fresh / expiring-soon /
   expired) shared by UI and matching server-side batch logic.
 - **`cashbook.ts`** — the mode→account mirror of `mode_to_account()`, account
@@ -673,7 +686,11 @@ without a browser or a database.
 
 - **System hosts** (`components/system/`) are render-null or portal-style
   components mounted once in the root layout: `AuthProvider`, `StoreHydrator`,
-  `ToastHost`, `OwnerAuthHost`, `PrintHost`, `ServiceWorkerRegistrar`. They wire
+  `ToastHost`, `OwnerAuthHost`, `PrintHost`, `ReportPrintHost`, `LabelPrintHost`,
+  `ServiceWorkerRegistrar`. The three print hosts share one mechanism: each sets
+  `data-print` on `<html>` and injects its own `@page`, because `@page` cannot be
+  scoped by selector, and each undoes both on `afterprint` **and** on a timer,
+  since Safari never fires `afterprint` on a cancelled dialog. They wire
   cross-cutting concerns without cluttering feature code.
 - **Route pages** in `app/(app)/*` are thin — they compose the interactive
   client components from `components/feature/*`. That feature layer is the
