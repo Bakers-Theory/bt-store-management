@@ -7,14 +7,24 @@ import { shareBillOnWhatsApp } from "@/lib/whatsapp";
 import { useUIStore } from "@/lib/ui-store";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { computeTotals, shortfallFor } from "@/lib/bill";
+import { consumableLineError, defaultChargedFor } from "@/lib/bill-consumable";
 import { hasPermission } from "@/lib/permissions";
 import { expiryStatus } from "@/lib/expiry";
 import { formatDate } from "@/lib/format";
-import { fetchCustomerByPhone } from "@/lib/supabase-data";
+import { fetchBillableConsumables, fetchCustomerByPhone } from "@/lib/supabase-data";
+import type { BillableConsumable } from "@/lib/supabase-data";
 import { Modal } from "@/components/ui/Modal";
 import { ItemThumb } from "@/components/ui/ItemThumb";
 import { Receipt } from "./Receipt";
-import type { Bill as BillType, BillLine, Customer, Item, PaymentMethod } from "@/lib/types";
+import { ConsumableCartGroup, ConsumablePicker } from "./BillConsumables";
+import type { Bill as BillType, BillConsumableLine, BillLine, Customer, Item, PaymentMethod } from "@/lib/types";
+
+/**
+ * The pseudo-category that swaps the product grid for the consumable picker.
+ * Cannot collide with a real category: add_list_value trims its input and
+ * rejects an empty string, and no operator names one with two underscores.
+ */
+const CONSUMABLES_TAB = "__consumables";
 
 // Sellable stock for an item: expired batches are never sold (bill generation
 // consumes fresh batches only), so the bill page ignores them. Returns the
@@ -81,6 +91,11 @@ export function Bill() {
   const [returning, setReturning] = useState<Customer | null>(null);
   const [generating, setGenerating] = useState(false);
   const [lines, setLines] = useState<BillLine[]>([]);
+  // Consumables are not in the zustand store — the Consumables page fetches its
+  // own too — and this read is a dedicated RPC because consumable_v needs
+  // `consumables.view`, which a biller does not hold.
+  const [available, setAvailable] = useState<BillableConsumable[]>([]);
+  const [consumableLines, setConsumableLines] = useState<BillConsumableLine[]>([]);
   const [receipt, setReceipt] = useState<BillType | null>(null);
 
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -93,8 +108,17 @@ export function Bill() {
     taxRate,
     discountValue,
     discountMode,
+    consumableLines,
   );
-  const cartCount = lines.reduce((n, l) => n + l.qty, 0);
+  const cartCount =
+    lines.reduce((n, l) => n + l.qty, 0) +
+    consumableLines.reduce((n, l) => n + l.qty, 0);
+  const cartEmpty = lines.length === 0 && consumableLines.length === 0;
+  const consumableQtyById = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const l of consumableLines) map.set(l.consumableId, l.qty);
+    return map;
+  }, [consumableLines]);
   // "" means the biller has not entered an amount at all — that is paid in
   // full, not a ₹0 payment. A half-typed "-" parses to NaN and is treated the
   // same way, so nothing downstream ever sees a non-number.
@@ -102,6 +126,15 @@ export function Bill() {
   const received = Number.isFinite(parsedReceived) ? parsedReceived : null;
   const changeDue = (received ?? total) - total;
   const shortfall = shortfallFor(total, received);
+
+  const stockOfConsumable = (id: string) =>
+    available.find((a) => a.id === id)?.currentStock ?? 0;
+  // generate_bill rejects these too, and rolls the whole checkout back when it
+  // does — so the button is blocked rather than letting a bad line fail at the
+  // counter with a customer waiting.
+  const badConsumableLine = consumableLines.some(
+    (l) => consumableLineError(l, stockOfConsumable(l.consumableId)) !== null,
+  );
 
   // Why the Generate button is disabled — shown inline so it's never a silent
   // dead-end (a disabled button can't fire its own click handler).
@@ -111,7 +144,9 @@ export function Bill() {
       ? "Enter a customer name to generate the bill"
       : customer.phone.length > 0 && customer.phone.length !== 10
         ? "Phone number must be exactly 10 digits"
-        : "";
+        : badConsumableLine
+          ? "Fix the highlighted consumable line"
+          : "";
 
   // Each row carries its fresh (non-expired) qty + earliest fresh expiry.
   // Products with no fresh stock (out of stock, or only expired batches) are
@@ -149,6 +184,18 @@ export function Bill() {
   useEffect(() => {
     refreshSettings();
   }, [refreshSettings]);
+
+  const loadConsumables = () => {
+    // Best-effort, like refreshSettings: an empty picker is a degraded billing
+    // screen, never a broken one.
+    fetchBillableConsumables()
+      .then(setAvailable)
+      .catch(() => setAvailable([]));
+  };
+
+  useEffect(() => {
+    loadConsumables();
+  }, []);
 
   // Autofill on repeat billing: once a full 10-digit phone is entered, look the
   // customer up (debounced, best-effort). On a hit, prefill an empty name field
@@ -202,6 +249,45 @@ export function Bill() {
     });
   };
 
+  const addConsumable = (c: BillableConsumable) => {
+    const inCart = consumableLines.find((l) => l.consumableId === c.id)?.qty ?? 0;
+    if (inCart >= c.currentStock) {
+      toast(`Only ${c.currentStock} ${c.unit} of ${c.name} on hand`, "error");
+      return;
+    }
+    setConsumableLines((prev) => {
+      const idx = prev.findIndex((l) => l.consumableId === c.id);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = { ...copy[idx], qty: copy[idx].qty + 1 };
+        return copy;
+      }
+      return [
+        ...prev,
+        {
+          consumableId: c.id,
+          name: c.name,
+          unit: c.unit,
+          qty: 1,
+          unitCost: c.costPerUnit,
+          charged: defaultChargedFor(c.billMode),
+        },
+      ];
+    });
+  };
+
+  const setConsumableQty = (id: string, qty: number) =>
+    setConsumableLines((prev) =>
+      qty <= 0
+        ? prev.filter((l) => l.consumableId !== id)
+        : prev.map((l) => (l.consumableId === id ? { ...l, qty } : l)),
+    );
+
+  const toggleConsumableCharged = (id: string) =>
+    setConsumableLines((prev) =>
+      prev.map((l) => (l.consumableId === id ? { ...l, charged: !l.charged } : l)),
+    );
+
   const removeFromCart = (item: Item) =>
     setLines((prev) => {
       const idx = prev.findIndex((bi) => bi.itemId === item.id);
@@ -239,6 +325,7 @@ export function Bill() {
     }
     setClearArmed(false);
     setLines([]);
+    setConsumableLines([]);
     setCashReceived("");
     setShortNote("");
   };
@@ -258,9 +345,13 @@ export function Bill() {
         { mode: discountMode, value: discountValue },
         clientRef.current,
         received === null ? undefined : { received, note: shortNote.trim() },
+        consumableLines,
       );
       clientRef.current = null;
       setLines([]);
+      setConsumableLines([]);
+      // Stock just moved, so the picker's on-hand figures are stale.
+      loadConsumables();
       setCustomer({ name: "", phone: "" });
       setPayment("Cash");
       setCashReceived("");
@@ -283,7 +374,9 @@ export function Bill() {
       toast("Store is closed — new bills cannot be created", "error");
       return;
     }
-    if (lines.length === 0) {
+    // A bill of nothing but a charged carry bag is a real sale, so consumables
+    // count towards "the order is not empty".
+    if (lines.length === 0 && consumableLines.length === 0) {
       toast("Add items to the order first", "error");
       return;
     }
@@ -386,8 +479,27 @@ export function Bill() {
                 {c}
               </button>
             ))}
+            <button
+              onClick={() => setCategory(CONSUMABLES_TAB)}
+              aria-pressed={category === CONSUMABLES_TAB}
+              className={`shrink-0 whitespace-nowrap rounded-full px-[15px] py-[7px] text-[13px] font-bold cursor-pointer ${
+                category === CONSUMABLES_TAB
+                  ? "border border-brown bg-brown text-warm-white"
+                  : "border border-line bg-warm-white text-ink-muted"
+              }`}
+            >
+              Consumables
+            </button>
           </div>
-          {view === "grid" ? (
+          {category === CONSUMABLES_TAB ? (
+            <ConsumablePicker
+              available={available}
+              search={search}
+              inCart={consumableQtyById}
+              onAdd={addConsumable}
+              currency={currency}
+            />
+          ) : view === "grid" ? (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(200px,1fr))]">
               {filteredItems.map(({ item, qty: freshQty, earliestExpiry: freshExpiry }) => {
                 const inCart = cartQtyById.get(item.id) || 0;
@@ -572,7 +684,7 @@ export function Bill() {
         </div>
 
         {/* Mobile floating summary bar — tap to open the order sheet */}
-        {lines.length > 0 && !cartOpen && (
+        {!cartEmpty && !cartOpen && (
           <button
             type="button"
             onClick={() => setCartOpen(true)}
@@ -698,7 +810,7 @@ export function Bill() {
             </div>
           )}
 
-          {lines.length === 0 ? (
+          {cartEmpty ? (
             <div className="p-11 text-center text-ink-light">
               <div className="mb-2 flex justify-center">
                 <ShoppingBasket size={34} />
@@ -745,6 +857,14 @@ export function Bill() {
                   </div>
                 ))}
               </div>
+
+              <ConsumableCartGroup
+                lines={consumableLines}
+                available={available}
+                onSetQty={setConsumableQty}
+                onToggleCharged={toggleConsumableCharged}
+                currency={currency}
+              />
 
               <div className="border-t border-line-soft bg-cream px-[18px] py-3.5">
                 <div className="flex justify-between py-0.5 text-[13px] font-semibold text-ink-muted">

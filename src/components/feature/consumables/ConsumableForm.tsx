@@ -6,7 +6,7 @@ import { Modal } from "@/components/ui/Modal";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { fetchSuppliers, rpcSaveConsumable } from "@/lib/supabase-data";
-import type { Consumable, Supplier } from "@/lib/types";
+import type { BillMode, Consumable, Supplier } from "@/lib/types";
 
 const labelCls = "mb-1.5 block text-xs font-bold text-[#8a6a3c]";
 const inputCls =
@@ -48,6 +48,7 @@ export function ConsumableForm({
   const [costPerUnit, setCostPerUnit] = useState(
     item?.costPerUnit === null || !item ? "" : String(item.costPerUnit),
   );
+  const [billMode, setBillMode] = useState<BillMode>(item?.billMode ?? "none");
   const [expiryDate, setExpiryDate] = useState(item?.expiryDate ?? "");
   const [storageLocation, setStorageLocation] = useState(item?.storageLocation ?? "");
   const [notes, setNotes] = useState(item?.notes ?? "");
@@ -85,7 +86,12 @@ export function ConsumableForm({
                 ? "The reorder level cannot be above the maximum"
                 : rqty !== null && rqty <= 0
                   ? "A reorder quantity has to be more than zero"
-                  : null;
+                  : // A charged line is priced from the cost, so billing without
+                    // one would put a zero-value line on a customer's bill. The
+                    // server refuses it too (save_consumable, 0067).
+                    billMode === "charge" && !((optional(costPerUnit) ?? 0) > 0)
+                    ? `Set a cost per ${unit || "unit"} before charging this item on a bill`
+                    : null;
 
   const submit = async () => {
     if (error) return;
@@ -97,9 +103,7 @@ export function ConsumableForm({
         category,
         unit,
         vendorId: vendorId || null,
-        // The picker control for this is Task 6; until then an edit preserves
-        // whatever mode the item already has rather than resetting it to "none".
-        billMode: item?.billMode ?? "none",
+        billMode,
         minStock: min,
         maxStock: max,
         reorderLevel: reorder,
@@ -271,6 +275,42 @@ export function ConsumableForm({
             />
             <p className="mt-1 text-[11px] text-ink-muted">Perishables only.</p>
           </div>
+        </div>
+
+        <div>
+          <span className={labelCls}>At the billing counter</span>
+          <div className="inline-flex overflow-hidden rounded-[11px] border border-line">
+            {(
+              [
+                ["none", "Not offered"],
+                ["charge", "Charge customer"],
+                ["absorb", "Absorb as cost"],
+              ] as const
+            ).map(([mode, label]) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setBillMode(mode)}
+                aria-pressed={billMode === mode}
+                className={`px-3 py-2 text-xs font-bold ${
+                  billMode === mode ? "bg-brown text-white" : "bg-warm-white text-ink-muted"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1 text-[11px] text-ink-muted">
+            {billMode === "none"
+              ? "Billers will not see this item at checkout."
+              : billMode === "charge"
+                ? `Added to the bill at cost${
+                    (optional(costPerUnit) ?? 0) > 0
+                      ? ` (${currency}${optional(costPerUnit)} per ${unit || "unit"})`
+                      : ""
+                  } and printed on the receipt.`
+                : "Deducted from stock without printing; the cost leaves the cash book."}
+          </p>
         </div>
 
         <div>
