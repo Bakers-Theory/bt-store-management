@@ -745,6 +745,20 @@ begin
   end if;
 end $$;
 
+-- ─── Who an asset can be issued to ──────────────────────────────────────────
+-- Not `attendance_roster()`: that one is gated on attendance.view (employee
+-- records are confidential) and excludes the Owner, who is not someone whose
+-- attendance is marked. Both are wrong here — the Owner's own laptop is an asset,
+-- and holding assets.assign should not require access to attendance.
+create or replace function public.asset_holders()
+returns table (id uuid, name text)
+language sql stable security definer set search_path = public as $$
+  select p.id, p.name
+  from public.profiles p
+  where public.has_perm('assets.view')
+  order by p.name
+$$;
+
 -- ─── Dashboard widgets (§4.1) ───────────────────────────────────────────────
 -- One round trip for the whole tile row. `p_days` is the horizon for "due" and
 -- "expiring", measured against the store's calendar, not the browser's.
@@ -796,4 +810,5 @@ grant execute on function public.transfer_asset(jsonb) to authenticated;
 grant execute on function public.set_asset_status(uuid, text, text, date) to authenticated;
 grant execute on function public.save_asset_maintenance(jsonb) to authenticated;
 grant execute on function public.close_asset_maintenance(jsonb) to authenticated;
+grant execute on function public.asset_holders() to authenticated;
 grant execute on function public.asset_stats(int) to authenticated;

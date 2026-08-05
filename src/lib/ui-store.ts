@@ -8,6 +8,18 @@ import type { Payslip } from "./payslip";
 /** Either printable A4 document. */
 export type PrintDoc = PrintReport | Payslip;
 
+/**
+ * One asset's printable label (#91 §2.4). `copies` is how many pages to emit —
+ * one label per page, since a scanner reads one at a time either way.
+ */
+export interface AssetLabelTarget {
+  code: string;
+  name: string;
+  category: string;
+  location: string;
+  copies: number;
+}
+
 interface OwnerAuthRequest {
   label: string;
   onConfirm: () => void;
@@ -36,6 +48,10 @@ interface UIState {
   reportTarget: (PrintDoc & { generatedAt: string }) | null;
   requestReport: (report: PrintDoc) => void;
   clearReport: () => void;
+  /** An asset label awaiting the print dialog (LabelPrintHost). */
+  labelTarget: AssetLabelTarget | null;
+  requestLabel: (label: AssetLabelTarget) => void;
+  clearLabel: () => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -67,6 +83,10 @@ export const useUIStore = create<UIState>((set) => ({
       },
     }),
   clearReport: () => set({ reportTarget: null }),
+
+  labelTarget: null,
+  requestLabel: (label) => set({ labelTarget: label }),
+  clearLabel: () => set({ labelTarget: null }),
 }));
 
 /** Convenience accessor for firing a toast outside of React render. */

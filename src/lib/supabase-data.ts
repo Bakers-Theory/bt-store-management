@@ -2915,6 +2915,20 @@ export async function fetchAssetEvents(assetId: string): Promise<AssetEvent[]> {
   return ((data ?? []) as AssetEventRow[]).map(mapAssetEvent);
 }
 
+/**
+ * Who an asset can be issued to. Deliberately not `fetchEmployees()`: that RPC
+ * is gated on attendance.view and excludes the Owner, and neither is right here.
+ */
+export async function fetchAssetHolders(): Promise<Employee[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("asset_holders");
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as { id: string; name: string }[]).map((r) => ({
+    id: r.id,
+    name: r.name,
+  }));
+}
+
 export async function fetchAssetStats(windowDays = 30): Promise<AssetStats> {
   const r = await rpc<Record<string, string | number>>("asset_stats", {
     p_days: windowDays,
