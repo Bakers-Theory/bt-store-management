@@ -386,8 +386,11 @@ export function planConsumableImport(
         category,
         unit,
         vendorId: null,
-        // An imported consumable is never billable until someone marks it.
+        // An imported consumable is never billable until someone marks it, so
+        // it needs no HSN either — the GST fields only bite on a charged line.
         billMode: "none",
+        hsn: "",
+        gstRate: 0,
         minStock: min,
         maxStock: max,
         reorderLevel: reorder,

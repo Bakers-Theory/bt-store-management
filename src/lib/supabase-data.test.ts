@@ -202,7 +202,33 @@ describe("mapCustomer", () => {
       visitCount: 3,
       totalSpend: 1250.5,
       lastPurchase: "2026-06-30T10:00:00Z",
+      // The row above carries no GST columns at all — a customer cached before
+      // migration 0068. Unregistered and non-GST is the only safe reading.
+      gstin: "",
+      stateCode: "",
+      billingAddress: "",
+      defaultInvoiceType: "non_gst",
     });
+  });
+
+  it("carries the GST details through when the row has them", () => {
+    const c = mapCustomer({
+      id: "c3",
+      phone: "9000000000",
+      name: "Acme",
+      first_seen: "2026-01-01T00:00:00Z",
+      visit_count: 1,
+      total_spend: 100,
+      last_purchase: null,
+      gstin: "29ABCDE1234F1Z5",
+      state_code: "29",
+      billing_address: "12 MG Road",
+      default_invoice_type: "gst",
+    });
+    expect(c.gstin).toBe("29ABCDE1234F1Z5");
+    expect(c.stateCode).toBe("29");
+    expect(c.billingAddress).toBe("12 MG Road");
+    expect(c.defaultInvoiceType).toBe("gst");
   });
 
   it("keeps a null last_purchase as null (customer with no active bills)", () => {
@@ -266,6 +292,46 @@ describe("mapBill", () => {
     // before this feature has no column at all.
     expect(mapBill({ ...baseRow, customer_id: null, shortfall: "2.50" as unknown as number }, []).shortfall).toBe(2.5);
     expect(mapBill({ ...baseRow, customer_id: null, shortfall: undefined as unknown as number }, []).shortfall).toBe(0);
+  });
+
+  it("reads a bill with no GST columns as a non-GST bill with no series number", () => {
+    // baseRow predates migration 0068 entirely. Getting this wrong would print
+    // a legacy thermal receipt as an A4 tax invoice with zeroes on it.
+    const b = mapBill({ ...baseRow, customer_id: null }, []);
+    expect(b.invoiceType).toBe("non_gst");
+    expect(b.invoiceNo).toBeNull();
+    expect(b.customerGstin).toBe("");
+    expect(b.placeOfSupply).toBe("");
+    expect(b.isInterstate).toBe(false);
+    expect(b.taxableValue).toBe(0);
+    expect(b.cgst).toBe(0);
+    expect(b.sgst).toBe(0);
+    expect(b.igst).toBe(0);
+  });
+
+  it("coerces the GST split from numeric-as-string", () => {
+    const b = mapBill(
+      {
+        ...baseRow,
+        customer_id: null,
+        invoice_type: "gst",
+        invoice_no: "GST/2026-27/0001",
+        customer_gstin: "29ABCDE1234F1Z5",
+        place_of_supply: "29",
+        is_interstate: false,
+        taxable_value: "100.00",
+        cgst: "9.00",
+        sgst: "9.00",
+        igst: "0",
+      },
+      [],
+    );
+    expect(b.invoiceType).toBe("gst");
+    expect(b.invoiceNo).toBe("GST/2026-27/0001");
+    expect(b.taxableValue).toBe(100);
+    expect(b.cgst).toBe(9);
+    expect(b.sgst).toBe(9);
+    expect(b.igst).toBe(0);
   });
 });
 
@@ -379,5 +445,19 @@ describe("mapItem", () => {
 
   it("maps a null image_url to null (emoji-only item)", () => {
     expect(mapItem({ ...row, image_url: null }).imageUrl).toBeNull();
+  });
+
+  it("defaults a missing hsn/gst_rate to blank and zero", () => {
+    // A blank HSN is what blocks the item from a GST invoice — the server names
+    // it. Defaulting to anything else would let a wrong invoice through.
+    const i = mapItem({ ...row, image_url: null });
+    expect(i.hsn).toBe("");
+    expect(i.gstRate).toBe(0);
+  });
+
+  it("coerces a numeric-as-string gst_rate", () => {
+    const i = mapItem({ ...row, image_url: null, hsn: "1905", gst_rate: "18" });
+    expect(i.hsn).toBe("1905");
+    expect(i.gstRate).toBe(18);
   });
 });

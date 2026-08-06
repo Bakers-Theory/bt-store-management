@@ -20,6 +20,8 @@ const line = (
   qty,
   unitCost,
   charged,
+  hsn: "",
+  gstRate: 0,
   ...over,
 });
 

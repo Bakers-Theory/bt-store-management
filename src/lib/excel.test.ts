@@ -16,6 +16,7 @@ const DEFAULT_BAKERY: Bakery = {
   logo: null,
   currency: "₹",
   taxRate: 0,
+  gstStateCode: "", pricesIncludeGst: true,
   lowStockAlert: 5,
   expiringSoonDays: 3,
   isOpen: true,
@@ -25,15 +26,17 @@ const DEFAULT_BAKERY: Bakery = {
 
 const item: Item = {
   id: "i1", name: "Bread", emoji: "🍞", imageUrl: null, category: "Breads", unit: "pcs",
-  price: 40, costPrice: 20, qty: 5, tracksExpiry: true, earliestExpiry: null, batches: [],
+  price: 40, costPrice: 20, hsn: "", gstRate: 0, qty: 5, tracksExpiry: true, earliestExpiry: null, batches: [],
 };
 
 const bill = (over: Partial<Bill>): Bill => ({
   id: "b", billNo: 1001, customerName: "", customerPhone: "",
-  items: [{ itemId: "i1", name: "Bread", emoji: "🍞", imageUrl: null, unit: "pcs", qty: 2, price: 40, costPrice: 20 }],
+  items: [{ itemId: "i1", name: "Bread", emoji: "🍞", imageUrl: null, unit: "pcs", qty: 2, price: 40, costPrice: 20, hsn: "", gstRate: 0, taxableValue: 0, cgst: 0, sgst: 0, igst: 0, }],
   consumables: [],
   subtotal: 80, tax: 0, total: 80, taxRate: 0, paymentMethod: "Cash", discountPercent: 0,
   discountType: "percent", discountAmount: 0, shortfall: 0, shortfallNote: "", billerName: "",
+  invoiceType: "non_gst", invoiceNo: null, customerGstin: "", placeOfSupply: "",
+  isInterstate: false, taxableValue: 0, cgst: 0, sgst: 0, igst: 0,
   date: "2026-06-01T10:00:00.000Z", status: "active", ...over,
 });
 
@@ -110,6 +113,7 @@ describe("snapshot builders", () => {
     const custs: Customer[] = [{
       id: "c1", phone: "999", name: "Ann", firstSeen: "2026-01-01T00:00:00.000Z",
       visitCount: 3, totalSpend: 500, lastPurchase: null,
+      gstin: "", stateCode: "", billingAddress: "", defaultInvoiceType: "non_gst",
     }];
     const cRows = buildCustomersReport({ ...data, customers: custs }, nowD)[0].rows;
     expect(cRows[0]["Name"]).toBe("Ann");

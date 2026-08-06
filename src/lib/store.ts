@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import { persist, createJSONStorage, type StateStorage } from "zustand/middleware";
-import type { Bakery, Bill, BillConsumableLine, BillLine, Item, PaymentMethod, StoreLists } from "./types";
+import type { Bakery, Bill, BillConsumableLine, BillLine, InvoiceType, Item, PaymentMethod, StoreLists } from "./types";
 import {
   fetchBaseData,
   fetchItems,
@@ -57,6 +57,10 @@ export interface ItemInput {
   qty: number;
   tracksExpiry: boolean;
   expiryDate: string | null;
+  /** HSN or SAC. Required before this item can go on a GST invoice. */
+  hsn: string;
+  /** 0–28. */
+  gstRate: number;
 }
 
 export interface SettingsInput {
@@ -66,7 +70,10 @@ export interface SettingsInput {
   phone: string;
   gst: string;
   currency: string;
-  taxRate: number;
+  /** The store's own 2-digit GST state code. */
+  gstStateCode: string;
+  /** Whether item prices already contain GST. */
+  pricesIncludeGst: boolean;
   lowStockAlert: number;
   expiringSoonDays: number;
 }
@@ -101,7 +108,16 @@ interface StoreState {
   updateBatchExpiry: (batchId: string, expiry: string) => Promise<Result>;
 
   generateBill: (
-    customer: { name: string; phone: string },
+    customer: {
+      name: string;
+      phone: string;
+      /** Chosen on the bill screen; pre-filled from the matched customer. */
+      invoiceType: InvoiceType;
+      /** "" is a legal B2C tax invoice. Ignored on a non-GST bill. */
+      gstin: string;
+      /** 2-digit state code; "" lets the server default it. */
+      placeOfSupply: string;
+    },
     lines: BillLine[],
     paymentMethod: PaymentMethod,
     discount: { mode: "percent" | "flat"; value: number },
@@ -144,6 +160,8 @@ const PLACEHOLDER_BAKERY: Bakery = {
   logo: null,
   currency: "₹",
   taxRate: 0,
+  gstStateCode: "",
+  pricesIncludeGst: true,
   lowStockAlert: 5,
   expiringSoonDays: 3,
   isOpen: true,
