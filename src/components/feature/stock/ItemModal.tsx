@@ -7,6 +7,7 @@ import { ItemThumb } from "@/components/ui/ItemThumb";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { fetchItemBatches } from "@/lib/supabase-data";
+import { GST_RATES } from "@/lib/constants";
 import { compressImage, uploadProductImage, deleteProductImage, MAX_UPLOAD_BYTES } from "@/lib/image";
 import dynamic from "next/dynamic";
 import { expiryStatus, type ExpiryStatus } from "@/lib/expiry";
@@ -67,6 +68,8 @@ export function ItemModal({
     editing ? String(editing.costPrice) : "",
   );
   const [price, setPrice] = useState(editing ? String(editing.price) : "");
+  const [hsn, setHsn] = useState(editing?.hsn ?? "");
+  const [gstRate, setGstRate] = useState(editing ? String(editing.gstRate) : "0");
   const [qty, setQty] = useState(editing ? String(editing.qty) : "");
   const [nameErr, setNameErr] = useState("");
   const [saving, setSaving] = useState(false);
@@ -160,6 +163,8 @@ export function ItemModal({
         unit !== editing.unit ||
         tracksExpiry !== editing.tracksExpiry ||
         costPrice !== String(editing.costPrice) ||
+        hsn !== editing.hsn ||
+        gstRate !== String(editing.gstRate) ||
         price !== String(editing.price))
     : name.trim().length > 0;
 
@@ -180,6 +185,8 @@ export function ItemModal({
           unit,
           price: parseFloat(price) || 0,
           costPrice: parseFloat(costPrice) || 0,
+          hsn: hsn.trim(),
+          gstRate: parseFloat(gstRate) || 0,
           qty: parseFloat(qty) || 0,
           tracksExpiry,
           expiryDate: tracksExpiry && expiryDate ? expiryDate : null,
@@ -330,6 +337,32 @@ export function ItemModal({
           />
         </div>
       </div>
+
+      <div className="mb-1.5 grid grid-cols-2 gap-2.5">
+        <div>
+          <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">HSN / SAC</label>
+          <input
+            type="text"
+            inputMode="numeric"
+            placeholder="e.g. 1905"
+            value={hsn}
+            onChange={(e) => setHsn(e.target.value.replace(/[^0-9]/g, "").slice(0, 8))}
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">GST %</label>
+          <select value={gstRate} onChange={(e) => setGstRate(e.target.value)}>
+            {GST_RATES.map((r) => (
+              <option key={r} value={r}>
+                {r}%
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <p className="mb-3.5 text-[11.5px] text-ink-light">
+        A GST invoice needs an HSN on every line. 0% is fine; blank is not.
+      </p>
 
       <div className="mb-3.5 flex items-center justify-between rounded-[11px] border border-line bg-cream px-3 py-2.5">
         <label htmlFor="tracksExpiry" className="text-[13px] font-semibold text-ink">

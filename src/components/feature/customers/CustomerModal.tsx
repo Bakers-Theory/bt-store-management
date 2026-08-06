@@ -10,7 +10,8 @@ import { fetchCustomerBills, rpcUpdateCustomer } from "@/lib/supabase-data";
 import { formatDateFull, relativeDay } from "@/lib/format";
 import { hasPermission } from "@/lib/permissions";
 import { useCurrentUser } from "@/components/system/AuthProvider";
-import type { Bill, Customer } from "@/lib/types";
+import { isValidGstin, stateCodeFromGstin } from "@/lib/gst";
+import type { Bill, Customer, InvoiceType } from "@/lib/types";
 
 export function CustomerModal({
   customer,
@@ -36,11 +37,22 @@ export function CustomerModal({
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(customer.name);
   const [phone, setPhone] = useState(customer.phone);
+  const [gstin, setGstin] = useState(customer.gstin);
+  const [stateCode, setStateCode] = useState(customer.stateCode);
+  const [billingAddress, setBillingAddress] = useState(customer.billingAddress);
+  const [invoiceType, setInvoiceType] = useState<InvoiceType>(customer.defaultInvoiceType);
   const [saving, setSaving] = useState(false);
+
+  // Shown as the state-code placeholder: leaving the field blank adopts this.
+  const derivedStateCode = stateCodeFromGstin(gstin.trim().toUpperCase());
 
   const startEdit = () => {
     setName(customer.name);
     setPhone(customer.phone);
+    setGstin(customer.gstin);
+    setStateCode(customer.stateCode);
+    setBillingAddress(customer.billingAddress);
+    setInvoiceType(customer.defaultInvoiceType);
     setEditing(true);
   };
 
@@ -49,11 +61,27 @@ export function CustomerModal({
       toast("Phone number must be exactly 10 digits", "error");
       return;
     }
+    const gst = gstin.trim().toUpperCase();
+    if (gst !== "" && !isValidGstin(gst)) {
+      toast("That GSTIN does not look right", "error");
+      return;
+    }
+    // A blank state code follows the GSTIN, so the two cannot silently disagree
+    // about where the customer is. The server applies the same fallback.
+    const state = stateCode.trim() || stateCodeFromGstin(gst);
     const trimmedName = name.trim();
+    const patch = {
+      name: trimmedName,
+      phone,
+      gstin: gst,
+      stateCode: state,
+      billingAddress: billingAddress.trim(),
+      defaultInvoiceType: invoiceType,
+    };
     setSaving(true);
     try {
-      await rpcUpdateCustomer(customer.id, trimmedName, phone);
-      onUpdated?.({ ...customer, name: trimmedName, phone });
+      await rpcUpdateCustomer(customer.id, patch);
+      onUpdated?.({ ...customer, ...patch });
       toast("Customer updated", "success");
       setEditing(false);
     } catch (e) {
@@ -105,6 +133,69 @@ export function CustomerModal({
               placeholder="10-digit phone"
               className="w-full"
             />
+
+            <label className="mb-1 mt-3 block text-[11px] font-bold text-ink-muted">GSTIN</label>
+            <input
+              type="text"
+              value={gstin}
+              onChange={(e) => setGstin(e.target.value.toUpperCase().slice(0, 15))}
+              placeholder="Blank if unregistered"
+              className="w-full uppercase"
+            />
+
+            <label className="mb-1 mt-3 block text-[11px] font-bold text-ink-muted">
+              State code
+            </label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={stateCode}
+              onChange={(e) => setStateCode(e.target.value.replace(/\D/g, "").slice(0, 2))}
+              placeholder={derivedStateCode || "e.g. 29"}
+              className="w-full"
+            />
+
+            <label className="mb-1 mt-3 block text-[11px] font-bold text-ink-muted">
+              Billing address
+            </label>
+            <textarea
+              value={billingAddress}
+              onChange={(e) => setBillingAddress(e.target.value)}
+              rows={2}
+              placeholder="Printed on the tax invoice"
+              className="w-full"
+            />
+
+            <span className="mb-1 mt-3 block text-[11px] font-bold text-ink-muted">
+              Default invoice type
+            </span>
+            <div className="inline-flex overflow-hidden rounded-[11px] border border-line">
+              {(
+                [
+                  ["non_gst", "Non-GST"],
+                  ["gst", "GST"],
+                ] as const
+              ).map(([type, label]) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => setInvoiceType(type)}
+                  aria-pressed={invoiceType === type}
+                  className={`px-3.5 py-2 text-xs font-bold ${
+                    invoiceType === type
+                      ? "bg-brown text-warm-white"
+                      : "bg-warm-white text-ink-muted"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-[11px] text-ink-muted">
+              Pre-fills the toggle at the counter; the biller can still change it
+              on the bill.
+            </p>
+
             <div className="mt-3.5 flex gap-2">
               <button
                 type="button"

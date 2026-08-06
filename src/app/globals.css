@@ -311,6 +311,10 @@
 /* Print — three documents, never the screen.
  *
  * RECEIPT: `.print-area` on 80mm thermal paper (PrintHost).
+ * INVOICE: `.print-area` too, but A4 — a GST tax invoice goes on a sheet in an
+ *          ordinary printer, not on the thermal roll. PrintHost sets
+ *          `data-print="invoice"` and injects the A4 `@page`, so the 80mm width
+ *          and the monospace face below are scoped away from it.
  * REPORT:  `.report-area` on A4 (ReportPrintHost) — a purpose-built document,
  *          not a printout of the UI. Whichever host has content sets
  *          `data-print` on <html>, which selects the page size, since @page
@@ -345,9 +349,17 @@
     position: static !important;
     left: auto !important;
     top: auto !important;
-    width: 80mm;
     background: #fff;
+  }
+  /* Thermal paper and a receipt-printer face — the receipt only. Scoped, not
+     unset later, so the invoice never inherits a width it has to fight. */
+  html:not([data-print="invoice"]) .print-area {
+    width: 80mm;
     font-family: "Courier New", monospace;
+  }
+  html[data-print="invoice"] .print-area {
+    width: auto;
+    font-family: var(--font-sans), system-ui, sans-serif;
   }
   .print-area .receipt {
     padding: 4mm;

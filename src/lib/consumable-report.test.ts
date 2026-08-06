@@ -26,6 +26,8 @@ const item = (over: Partial<Consumable> = {}): Consumable => ({
   reorderQty: null,
   costPerUnit: 8,
   billMode: "none",
+  hsn: "",
+  gstRate: 0,
   expiryDate: null,
   storageLocation: "Store room",
   notes: "",

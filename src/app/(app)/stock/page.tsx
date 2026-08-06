@@ -1,15 +1,13 @@
 import { Guard } from "@/components/feature/Guard";
 import { Stock } from "@/components/feature/stock/Stock";
 
-export default function StockPage({
+export default async function StockPage({
   searchParams,
 }: {
-  searchParams: { tab?: string };
+  searchParams: Promise<{ tab?: string }>;
 }) {
-  const tab =
-    searchParams.tab === "in" || searchParams.tab === "out"
-      ? searchParams.tab
-      : "all";
+  const { tab: tabParam } = await searchParams;
+  const tab = tabParam === "in" || tabParam === "out" ? tabParam : "all";
   return (
     <Guard section="stock">
       <Stock initialTab={tab} />

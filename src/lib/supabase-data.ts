@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@/utils/supabase/client";
-import type { Asset, AssetAssignment, AssetCondition, AssetDocument, AssetEvent, AssetEventKind, AssetFilters, AssetInput, AssetMaintenance, AssetStats, AssetStatus, Attendance, AttendanceStatus, AttendanceSummary, AdvanceBalance, Bakery, Batch, Bill, BillConsumable, BillLine, BillMode, BillStatus, CashAccount, CashCategory, CashDay, CashDayStatus, CashDaySummary, CashDirection, CashEntry, CashEntryFilters, CashEntryStatus, CashPaymentMode, CashSourceType, CashbookSummary, Consumable, ConsumableAlert, ConsumableAlertKind, ConsumableFilters, ConsumableInput, ConsumableStats, Customer, Employee, EmployeeSalary, Expense, ExpenseBankMode, ExpenseEvent, ExpenseEventKind, ExpenseFilters, ExpenseInput, ExpenseMode, ExpenseStatus, Item, LinkedExpenseInput, Log, MaintenanceKind, MaintenanceStatus, MovementType, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, StaffAdvance, StockMovement, StockMovementFilters, StockMovementInput, StockStatus, StoreLists, StoredLayout, Supplier, SupplierProduct, SupplierStatus, InvoiceStatus, PurchaseInvoice, PurchaseInvoiceLine, PurchaseMode, PurchaseReturn, PurchaseReturnLine, SupplierPayment, SupplierSummary, User } from "./types";
+import type { Asset, AssetAssignment, AssetCondition, AssetDocument, AssetEvent, AssetEventKind, AssetFilters, AssetInput, AssetMaintenance, AssetStats, AssetStatus, Attendance, AttendanceStatus, AttendanceSummary, AdvanceBalance, Bakery, Batch, Bill, BillConsumable, BillLine, BillMode, BillStatus, CashAccount, CashCategory, CashDay, CashDayStatus, CashDaySummary, CashDirection, CashEntry, CashEntryFilters, CashEntryStatus, CashPaymentMode, CashSourceType, CashbookSummary, Consumable, ConsumableAlert, ConsumableAlertKind, ConsumableFilters, ConsumableInput, ConsumableStats, Customer, Employee, EmployeeSalary, Expense, ExpenseBankMode, ExpenseEvent, ExpenseEventKind, ExpenseFilters, ExpenseInput, ExpenseMode, ExpenseStatus, InvoiceType, Item, LinkedExpenseInput, Log, MaintenanceKind, MaintenanceStatus, MovementType, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, StaffAdvance, StockMovement, StockMovementFilters, StockMovementInput, StockStatus, StoreLists, StoredLayout, Supplier, SupplierProduct, SupplierStatus, InvoiceStatus, PurchaseInvoice, PurchaseInvoiceLine, PurchaseMode, PurchaseReturn, PurchaseReturnLine, SupplierPayment, SupplierSummary, User } from "./types";
 import type { SupplierInput } from "./supplier";
 import { isPurchaseMode, type DraftLine } from "./purchase";
 import { isAttendanceStatus } from "./attendance";
@@ -26,6 +26,10 @@ interface ItemRow {
   tracks_expiry: boolean;
   earliest_expiry: string | null;
   batches: { qty: number | string; expiryDate: string | null }[] | null;
+  // Migration 0068. Optional for the same reason `shortfall` is coerced below:
+  // a row cached in the client from before the migration has nothing here.
+  hsn?: string;
+  gst_rate?: number | string;
 }
 interface BillRow {
   id: string;
@@ -48,6 +52,16 @@ interface BillRow {
   cancelled_at: string | null;
   cancelled_by: string | null;
   biller_name: string | null; // joined from profiles via created_by (bills_v)
+  // Migration 0068 — optional, see ItemRow.
+  invoice_type?: "gst" | "non_gst";
+  invoice_no?: string | null;
+  customer_gstin?: string;
+  place_of_supply?: string;
+  is_interstate?: boolean;
+  taxable_value?: number | string;
+  cgst?: number | string;
+  sgst?: number | string;
+  igst?: number | string;
 }
 interface BillItemRow {
   id: string;
@@ -59,6 +73,13 @@ interface BillItemRow {
   unit: string;
   qty: number;
   price: number;
+  // Migration 0068 — optional, see ItemRow.
+  hsn?: string;
+  gst_rate?: number | string;
+  taxable_value?: number | string;
+  cgst?: number | string;
+  sgst?: number | string;
+  igst?: number | string;
 }
 interface LogRow {
   id: string;
@@ -83,6 +104,11 @@ interface CustomerRow {
   visit_count: number | string;
   total_spend: number | string;
   last_purchase: string | null;
+  // Migration 0068 — optional, see ItemRow.
+  gstin?: string;
+  state_code?: string;
+  billing_address?: string;
+  default_invoice_type?: "gst" | "non_gst";
 }
 interface SettingsRow {
   name: string;
@@ -98,6 +124,9 @@ interface SettingsRow {
   is_open: boolean;
   status_changed_at: string | null;
   status_changed_by: string;
+  // Migration 0068 — optional, see ItemRow.
+  gst_state_code?: string;
+  prices_include_gst?: boolean;
 }
 interface BatchRow {
   id: string;
@@ -123,6 +152,8 @@ export const mapItem = (r: ItemRow): Item => ({
   unit: r.unit,
   price: r.price,
   costPrice: r.cost_price ?? 0,
+  hsn: r.hsn ?? "",
+  gstRate: Number(r.gst_rate ?? 0),
   qty: r.qty,
   tracksExpiry: r.tracks_expiry,
   earliestExpiry: r.earliest_expiry,
@@ -138,6 +169,14 @@ const mapLine = (r: BillItemRow): BillLine => ({
   qty: r.qty,
   price: r.price,
   costPrice: 0, // cost is never fetched into the client; analytics uses item cost
+  // Number(): a numeric arrives as a string over the wire, and a line from
+  // before migration 0068 has no column at all.
+  hsn: r.hsn ?? "",
+  gstRate: Number(r.gst_rate ?? 0),
+  taxableValue: Number(r.taxable_value ?? 0),
+  cgst: Number(r.cgst ?? 0),
+  sgst: Number(r.sgst ?? 0),
+  igst: Number(r.igst ?? 0),
 });
 
 export interface BillConsumableRow {
@@ -148,6 +187,13 @@ export interface BillConsumableRow {
   qty: string | number;
   unit_cost: string | number;
   charged: boolean;
+  // Migration 0068 — optional, see ItemRow.
+  hsn?: string;
+  gst_rate?: number | string;
+  taxable_value?: number | string;
+  cgst?: number | string;
+  sgst?: number | string;
+  igst?: number | string;
 }
 
 export const mapBillConsumable = (r: BillConsumableRow): BillConsumable => ({
@@ -158,6 +204,12 @@ export const mapBillConsumable = (r: BillConsumableRow): BillConsumable => ({
   qty: Number(r.qty),
   unitCost: Number(r.unit_cost),
   charged: r.charged,
+  hsn: r.hsn ?? "",
+  gstRate: Number(r.gst_rate ?? 0),
+  taxableValue: Number(r.taxable_value ?? 0),
+  cgst: Number(r.cgst ?? 0),
+  sgst: Number(r.sgst ?? 0),
+  igst: Number(r.igst ?? 0),
 });
 
 /**
@@ -181,6 +233,17 @@ export const mapBill = (
   tax: r.tax,
   total: r.total,
   taxRate: r.tax_rate,
+  // A bill from before migration 0068 is non-GST by definition, has no series
+  // number, and carries no split — which is exactly what these defaults say.
+  invoiceType: r.invoice_type ?? "non_gst",
+  invoiceNo: r.invoice_no ?? null,
+  customerGstin: r.customer_gstin ?? "",
+  placeOfSupply: r.place_of_supply ?? "",
+  isInterstate: r.is_interstate ?? false,
+  taxableValue: Number(r.taxable_value ?? 0),
+  cgst: Number(r.cgst ?? 0),
+  sgst: Number(r.sgst ?? 0),
+  igst: Number(r.igst ?? 0),
   paymentMethod: r.payment_method,
   discountPercent: r.discount_percent,
   discountType: r.discount_type,
@@ -206,6 +269,10 @@ export const mapCustomer = (r: CustomerRow): Customer => ({
   visitCount: Number(r.visit_count),
   totalSpend: Number(r.total_spend),
   lastPurchase: r.last_purchase,
+  gstin: r.gstin ?? "",
+  stateCode: r.state_code ?? "",
+  billingAddress: r.billing_address ?? "",
+  defaultInvoiceType: r.default_invoice_type ?? "non_gst",
 });
 
 const mapLog = (r: LogRow): Log => ({
@@ -233,6 +300,10 @@ const mapBakery = (r: SettingsRow): Bakery => ({
   logo: r.logo_url,
   currency: r.currency,
   taxRate: r.tax_rate,
+  gstStateCode: r.gst_state_code ?? "",
+  // Default true, matching the column default: an unmigrated cache must not
+  // silently flip the store to tax-exclusive pricing.
+  pricesIncludeGst: r.prices_include_gst ?? true,
   lowStockAlert: r.low_stock_alert,
   expiringSoonDays: r.expiring_soon_days,
   isOpen: r.is_open,
@@ -355,7 +426,7 @@ export async function fetchReportData(): Promise<FullStoreData> {
   const [billsRes, billItemsRes, logsRes, costRes, custRows] = await Promise.all([
     supabase.from("bills_v").select("*").order("created_at"),
     // Explicit columns — cost_price is revoked from the client role (see 0002).
-    supabase.from("bill_items").select("id,bill_id,item_id,name,emoji,image_url,unit,qty,price"),
+    supabase.from("bill_items").select("id,bill_id,item_id,name,emoji,image_url,unit,qty,price,hsn,gst_rate,taxable_value,cgst,sgst,igst"),
     supabase.from("activity_log_v").select("*").order("created_at", { ascending: false }),
     // Historical per-line cost (analytics-gated SECURITY DEFINER; see 0005), so
     // the report's COGS/profit match the dashboard. Empty for non-analytics users.
@@ -468,6 +539,8 @@ export interface BillsPage {
 export interface BillFilters {
   q?: string; // numeric → exact bill_no; text → customer_name contains
   status?: BillStatus;
+  /** Omitted means both. Filtered server-side, like status. */
+  invoiceType?: InvoiceType;
   from?: string | null; // local YYYY-MM-DD (inclusive)
   to?: string | null; // local YYYY-MM-DD (inclusive)
 }
@@ -487,6 +560,7 @@ export async function fetchBillsPage(
   const supabase = createClient();
   let query = supabase.from("bills_v").select("*").order("created_at", { ascending: false });
   if (filters.status) query = query.eq("status", filters.status);
+  if (filters.invoiceType) query = query.eq("invoice_type", filters.invoiceType);
   if (filters.from) query = query.gte("created_at", dayStartISO(filters.from));
   if (filters.to) query = query.lte("created_at", dayEndISO(filters.to));
   const q = filters.q?.trim();
@@ -499,14 +573,19 @@ export async function fetchBillsPage(
       query = query.ilike("customer_name", `%${q}%`);
     }
   }
-  const { data: billRows } = await query.range(offset, offset + limit - 1);
+  const { data: billRows, error: billErr } = await query.range(offset, offset + limit - 1);
+  // Throw rather than coalesce to []: a rejected query and a genuinely empty
+  // history are not the same thing, and rendering the first as the second is
+  // how a schema mismatch reaches the counter as "0 items" instead of an error.
+  if (billErr) throw new Error(billErr.message);
   const rows = (billRows ?? []) as BillRow[];
   if (rows.length === 0) return { bills: [], hasMore: false };
 
-  const { data: lineRows } = await supabase
+  const { data: lineRows, error: lineErr } = await supabase
     .from("bill_items")
-    .select("id,bill_id,item_id,name,emoji,image_url,unit,qty,price")
+    .select("id,bill_id,item_id,name,emoji,image_url,unit,qty,price,hsn,gst_rate,taxable_value,cgst,sgst,igst")
     .in("bill_id", rows.map((r) => r.id));
+  if (lineErr) throw new Error(lineErr.message);
   const linesByBill = linesByBillId((lineRows ?? []) as BillItemRow[]);
 
   return {
@@ -520,10 +599,11 @@ export async function fetchBill(id: string): Promise<Bill | null> {
   const supabase = createClient();
   const { data: billRow } = await supabase.from("bills_v").select("*").eq("id", id).single();
   if (!billRow) return null;
-  const { data: lineRows } = await supabase
+  const { data: lineRows, error: lineErr } = await supabase
     .from("bill_items")
-    .select("id,bill_id,item_id,name,emoji,image_url,unit,qty,price")
+    .select("id,bill_id,item_id,name,emoji,image_url,unit,qty,price,hsn,gst_rate,taxable_value,cgst,sgst,igst")
     .eq("bill_id", id);
+  if (lineErr) throw new Error(lineErr.message);
   return mapBill(billRow as BillRow, ((lineRows ?? []) as BillItemRow[]).map(mapLine));
 }
 
@@ -534,11 +614,26 @@ export async function fetchCustomers(): Promise<Customer[]> {
   return (rows ?? []).map(mapCustomer);
 }
 
-/** Correct a mistyped customer name/phone. Throws on a phone collision. */
-export const rpcUpdateCustomer = (id: string, name: string, phone: string) =>
-  rpc<{ id: string; name: string; phone: string }>("update_customer", {
-    p_id: id, p_name: name, p_phone: phone,
-  });
+/**
+ * Correct a customer's details. Throws on a phone collision, and on a GSTIN
+ * that fails the format check.
+ *
+ * Takes an object because migration 0068 moved the RPC to a single jsonb
+ * argument — six positional parameters would have been easy to transpose at the
+ * call site, and three of them are now strings that look alike.
+ */
+export const rpcUpdateCustomer = (
+  id: string,
+  p: {
+    name: string;
+    phone: string;
+    gstin: string;
+    /** "" lets the server derive it from the GSTIN. */
+    stateCode: string;
+    billingAddress: string;
+    defaultInvoiceType: InvoiceType;
+  },
+) => rpc<CustomerRow>("update_customer", { p_id: id, p });
 
 /**
  * Look a customer up by exact phone for billing autofill. Best-effort: returns
@@ -573,10 +668,11 @@ export async function fetchCustomerBills(customerId: string): Promise<Bill[]> {
   const rows = (billRows ?? []) as BillRow[];
   if (rows.length === 0) return [];
 
-  const { data: lineRows } = await supabase
+  const { data: lineRows, error: lineErr } = await supabase
     .from("bill_items")
-    .select("id,bill_id,item_id,name,emoji,image_url,unit,qty,price")
+    .select("id,bill_id,item_id,name,emoji,image_url,unit,qty,price,hsn,gst_rate,taxable_value,cgst,sgst,igst")
     .in("bill_id", rows.map((r) => r.id));
+  if (lineErr) throw new Error(lineErr.message);
   const linesByBill = linesByBillId((lineRows ?? []) as BillItemRow[]);
 
   return rows.map((b) => mapBill(b, linesByBill.get(b.id) ?? []));
@@ -694,6 +790,7 @@ export interface ItemInputDb {
   name: string; emoji: string; imageUrl: string | null; category: string; unit: string;
   price: number; costPrice: number; qty: number;
   tracksExpiry: boolean; expiryDate: string | null;
+  hsn: string; gstRate: number;
 }
 
 // The item-scoped RPCs below return the affected items_v row (rather than
@@ -761,6 +858,16 @@ export const rpcGenerateBill = async (
     discount: number; discountType: "percent" | "flat";
     /** What the customer actually handed over; omitted means paid in full. */
     received?: number; shortfallNote?: string;
+    /**
+     * Chosen on the bill screen. The server refuses to store any GST data on a
+     * non-GST bill, so the two fields below are ignored there rather than
+     * leaking onto a plain counter receipt.
+     */
+    invoiceType: InvoiceType;
+    /** "" is a legal B2C tax invoice, not an error. */
+    gstin: string;
+    /** 2-digit state code; "" lets the server default it. */
+    placeOfSupply: string;
   },
   lines: { itemId: string; qty: number }[],
   clientRef: string,
@@ -786,10 +893,16 @@ export const rpcCancelBill = (id: string, by: string) =>
 export const rpcDeleteBill = (id: string, by: string) =>
   rpc<void>("delete_bill", { p_id: id, p_by: by });
 
+/**
+ * `taxRate` is deliberately absent: rates live on the item now, and
+ * save_settings coalesces an absent key to the CURRENT value, so a legacy rate
+ * is left alone rather than zeroed on the next save.
+ */
 export const rpcSaveSettings = (p: {
   name: string; tagline: string; address: string; phone: string;
-  gst: string; currency: string; taxRate: number; lowStockAlert: number;
+  gst: string; currency: string; lowStockAlert: number;
   expiringSoonDays: number;
+  gstStateCode: string; pricesIncludeGst: boolean;
 }) => rpc<void>("save_settings", { p });
 export const rpcSetStoreStatus = (open: boolean, by: string) =>
   rpc<void>("set_store_status", { p_open: open, p_by: by });
@@ -3240,6 +3353,8 @@ export interface ConsumableRow {
   reorder_qty: string | number | null;
   cost_per_unit: string | number | null;
   bill_mode: string | null;
+  hsn: string | null;
+  gst_rate: string | number | null;
   expiry_date: string | null;
   storage_location: string | null;
   notes: string | null;
@@ -3275,6 +3390,8 @@ export function mapConsumable(r: ConsumableRow): Consumable {
     reorderQty: num(r.reorder_qty),
     costPerUnit: num(r.cost_per_unit),
     billMode: (r.bill_mode ?? "none") as BillMode,
+    hsn: r.hsn ?? "",
+    gstRate: Number(r.gst_rate ?? 0),
     expiryDate: r.expiry_date,
     storageLocation: r.storage_location ?? "",
     notes: r.notes ?? "",
@@ -3517,6 +3634,8 @@ export async function rpcSaveConsumable(p: ConsumableInput): Promise<string> {
       reorderQty: p.reorderQty ?? "",
       costPerUnit: p.costPerUnit ?? "",
       billMode: p.billMode,
+      hsn: p.hsn,
+      gstRate: p.gstRate,
       expiryDate: p.expiryDate ?? "",
       storageLocation: p.storageLocation,
       notes: p.notes,
@@ -3540,6 +3659,9 @@ export interface BillableConsumable {
   /** 0 when the operator has not set one; a charged line then cannot be added. */
   costPerUnit: number;
   currentStock: number;
+  /** Needed so the cart can preview GST on a charged line (migration 0068). */
+  hsn: string;
+  gstRate: number;
 }
 
 interface BillableConsumableRow {
@@ -3550,6 +3672,8 @@ interface BillableConsumableRow {
   bill_mode: string;
   cost_per_unit: string | number;
   current_stock: string | number;
+  hsn?: string;
+  gst_rate?: number | string;
 }
 
 export async function fetchBillableConsumables(): Promise<BillableConsumable[]> {
@@ -3562,6 +3686,8 @@ export async function fetchBillableConsumables(): Promise<BillableConsumable[]> 
     billMode: r.bill_mode as BillMode,
     costPerUnit: Number(r.cost_per_unit),
     currentStock: Number(r.current_stock),
+    hsn: r.hsn ?? "",
+    gstRate: Number(r.gst_rate ?? 0),
   }));
 }
 

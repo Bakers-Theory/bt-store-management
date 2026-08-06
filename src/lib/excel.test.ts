@@ -16,6 +16,7 @@ const DEFAULT_BAKERY: Bakery = {
   logo: null,
   currency: "₹",
   taxRate: 0,
+  gstStateCode: "", pricesIncludeGst: true,
   lowStockAlert: 5,
   expiringSoonDays: 3,
   isOpen: true,
@@ -25,15 +26,17 @@ const DEFAULT_BAKERY: Bakery = {
 
 const item: Item = {
   id: "i1", name: "Bread", emoji: "🍞", imageUrl: null, category: "Breads", unit: "pcs",
-  price: 40, costPrice: 20, qty: 5, tracksExpiry: true, earliestExpiry: null, batches: [],
+  price: 40, costPrice: 20, hsn: "", gstRate: 0, qty: 5, tracksExpiry: true, earliestExpiry: null, batches: [],
 };
 
 const bill = (over: Partial<Bill>): Bill => ({
   id: "b", billNo: 1001, customerName: "", customerPhone: "",
-  items: [{ itemId: "i1", name: "Bread", emoji: "🍞", imageUrl: null, unit: "pcs", qty: 2, price: 40, costPrice: 20 }],
+  items: [{ itemId: "i1", name: "Bread", emoji: "🍞", imageUrl: null, unit: "pcs", qty: 2, price: 40, costPrice: 20, hsn: "", gstRate: 0, taxableValue: 0, cgst: 0, sgst: 0, igst: 0, }],
   consumables: [],
   subtotal: 80, tax: 0, total: 80, taxRate: 0, paymentMethod: "Cash", discountPercent: 0,
   discountType: "percent", discountAmount: 0, shortfall: 0, shortfallNote: "", billerName: "",
+  invoiceType: "non_gst", invoiceNo: null, customerGstin: "", placeOfSupply: "",
+  isInterstate: false, taxableValue: 0, cgst: 0, sgst: 0, igst: 0,
   date: "2026-06-01T10:00:00.000Z", status: "active", ...over,
 });
 
@@ -110,6 +113,7 @@ describe("snapshot builders", () => {
     const custs: Customer[] = [{
       id: "c1", phone: "999", name: "Ann", firstSeen: "2026-01-01T00:00:00.000Z",
       visitCount: 3, totalSpend: 500, lastPurchase: null,
+      gstin: "", stateCode: "", billingAddress: "", defaultInvoiceType: "non_gst",
     }];
     const cRows = buildCustomersReport({ ...data, customers: custs }, nowD)[0].rows;
     expect(cRows[0]["Name"]).toBe("Ann");
@@ -185,6 +189,9 @@ describe("full report", () => {
     expect(names).toEqual([
       "Summary", "Sales", "Bills", "Products", "Stock", "Expiry & Wastage", "Stock Log", "Customers",
       "Top Selling Items", "Category P&L", "Stock Health", "Recommendations",
+      // The GST filing sheets come last — they read from the same bills as
+      // Sales and Bills above, so they belong after the trading picture.
+      "B2B", "B2C", "HSN Summary",
     ]);
   });
 
@@ -229,5 +236,93 @@ describe("expiry & wastage builder", () => {
   it("emits a placeholder when nothing is at risk", () => {
     const rows = buildExpiryReport({ ...data, items: [bread] }, nowD)[0].rows;
     expect(rows[0]["Item Name"]).toBe("No expiring or expired stock");
+  });
+});
+
+describe("Bills report — invoice columns", () => {
+  const nowD = new Date("2026-08-01T00:00:00.000Z");
+  const all = { from: null, to: null };
+  const dataOf = (bills: Bill[]) => ({
+    bakery: DEFAULT_BAKERY, items: [item], customers: [], logs: [], bills,
+  });
+
+  it("carries the invoice type, number and tax split", () => {
+    const rows = buildBillsReport(
+      dataOf([
+        bill({
+          invoiceType: "gst",
+          invoiceNo: "GST/2026-27/0001",
+          subtotal: 118, taxableValue: 100, cgst: 9, sgst: 9, igst: 0,
+          tax: 18, total: 118,
+        }),
+      ]),
+      all, nowD,
+    )[0].rows;
+    expect(rows[0]["Invoice Type"]).toBe("GST");
+    expect(rows[0]["Invoice No"]).toBe("GST/2026-27/0001");
+    expect(rows[0]["Taxable (₹)"]).toBe(100);
+    expect(rows[0]["CGST (₹)"]).toBe(9);
+    expect(rows[0]["SGST (₹)"]).toBe(9);
+    expect(rows[0]["IGST (₹)"]).toBe(0);
+  });
+
+  it("shows a legacy bill as Non-GST with a blank invoice number", () => {
+    const rows = buildBillsReport(dataOf([bill({ invoiceNo: null })]), all, nowD)[0].rows;
+    expect(rows[0]["Invoice Type"]).toBe("Non-GST");
+    expect(rows[0]["Invoice No"]).toBe("");
+  });
+
+  it("splits an inter-state bill into IGST alone", () => {
+    const rows = buildBillsReport(
+      dataOf([
+        bill({
+          invoiceType: "gst", invoiceNo: "GST/2026-27/0002", isInterstate: true,
+          subtotal: 236, taxableValue: 200, cgst: 0, sgst: 0, igst: 36,
+          tax: 36, total: 236,
+        }),
+      ]),
+      all, nowD,
+    )[0].rows;
+    expect(rows[0]["IGST (₹)"]).toBe(36);
+    expect(rows[0]["CGST (₹)"]).toBe(0);
+  });
+});
+
+describe("Sales report — GST columns", () => {
+  const nowD = new Date("2026-08-01T00:00:00.000Z");
+  const all = { from: null, to: null };
+
+  it("sums the taxable value and the GST per month", () => {
+    const rows = buildSalesReport(
+      {
+        bakery: DEFAULT_BAKERY, items: [item], customers: [], logs: [],
+        bills: [
+          bill({
+            id: "g1", date: "2026-07-02T10:00:00.000Z", invoiceType: "gst",
+            subtotal: 118, taxableValue: 100, cgst: 9, sgst: 9, tax: 18, total: 118,
+          }),
+          bill({
+            id: "g2", date: "2026-07-09T10:00:00.000Z", invoiceType: "gst",
+            subtotal: 236, taxableValue: 200, cgst: 18, sgst: 18, tax: 36, total: 236,
+          }),
+        ],
+      },
+      all, nowD,
+    )[0].rows;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]["Taxable (₹)"]).toBe(300);
+    expect(rows[0]["GST (₹)"]).toBe(54);
+  });
+
+  it("reports zero GST for a month of non-GST bills", () => {
+    const rows = buildSalesReport(
+      {
+        bakery: DEFAULT_BAKERY, items: [item], customers: [], logs: [],
+        bills: [bill({ date: "2026-07-02T10:00:00.000Z" })],
+      },
+      all, nowD,
+    )[0].rows;
+    expect(rows[0]["Taxable (₹)"]).toBe(0);
+    expect(rows[0]["GST (₹)"]).toBe(0);
   });
 });

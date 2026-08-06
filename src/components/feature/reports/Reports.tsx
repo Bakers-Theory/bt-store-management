@@ -19,6 +19,7 @@ const labelCls = "mb-[5px] block text-xs font-bold text-[#8a6a3c]";
 
 const ALL_REPORTS: ReportType[] = [
   "sales", "bills", "products", "stock", "stockLog", "customers", "analytics", "expiry",
+  "gstSummary",
 ];
 
 export function Reports() {

@@ -90,7 +90,9 @@ export function Receipt({ bill }: { bill: Bill }) {
           <span>−{b.currency}{bill.discountAmount.toFixed(2)}</span>
         </div>
       )}
-      {bill.tax > 0 && (
+      {/* A GST bill prints as a TaxInvoice, never here, so this row only
+          ever describes a legacy bill's store-wide tax. */}
+      {bill.invoiceType === "non_gst" && bill.tax > 0 && (
         <div className="receipt-row">
           <span>Tax ({bill.taxRate}%)</span>
           <span>{b.currency}{bill.tax.toFixed(2)}</span>

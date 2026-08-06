@@ -34,7 +34,8 @@ export function Settings() {
   const [address, setAddress] = useState(bakery.address);
   const [phone, setPhone] = useState(bakery.phone);
   const [gst, setGst] = useState(bakery.gst);
-  const [taxRate, setTaxRate] = useState(String(bakery.taxRate));
+  const [gstStateCode, setGstStateCode] = useState(bakery.gstStateCode);
+  const [pricesIncludeGst, setPricesIncludeGst] = useState(bakery.pricesIncludeGst);
   const [lowStockAlert, setLowStockAlert] = useState(String(bakery.lowStockAlert));
   const [expiringSoonDays, setExpiringSoonDays] = useState(String(bakery.expiringSoonDays));
   const [tab, setTab] = useState<"store" | "staff">("store");
@@ -63,7 +64,8 @@ export function Settings() {
     address !== bakery.address ||
     phone !== bakery.phone ||
     gst !== bakery.gst ||
-    taxRate !== String(bakery.taxRate) ||
+    gstStateCode !== bakery.gstStateCode ||
+    pricesIncludeGst !== bakery.pricesIncludeGst ||
     lowStockAlert !== String(bakery.lowStockAlert) ||
     expiringSoonDays !== String(bakery.expiringSoonDays);
 
@@ -89,7 +91,8 @@ export function Settings() {
         phone: phone.trim(),
         gst: gst.trim(),
         currency: "₹",
-        taxRate: parseFloat(taxRate) || 0,
+        gstStateCode: gstStateCode.trim(),
+        pricesIncludeGst,
         lowStockAlert: parseInt(lowStockAlert) || 5,
         expiringSoonDays: parseInt(expiringSoonDays) || 3,
       });
@@ -223,15 +226,17 @@ export function Settings() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className={labelCls}>Tax rate (%)</label>
+                <label className={labelCls}>GST state code</label>
                 <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.1"
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={2}
                   className={inputCls}
-                  value={taxRate}
-                  onChange={(e) => setTaxRate(e.target.value)}
+                  value={gstStateCode}
+                  placeholder="e.g. 29"
+                  onChange={(e) =>
+                    setGstStateCode(e.target.value.replace(/\D/g, "").slice(0, 2))
+                  }
                 />
               </div>
               <div>
@@ -254,6 +259,36 @@ export function Settings() {
                   onChange={(e) => setExpiringSoonDays(e.target.value)}
                 />
               </div>
+            </div>
+            <p className="-mt-1 text-[11px] text-ink-muted">
+              The 2-digit code from your own GST number. A GST invoice cannot be
+              raised without it, and it decides CGST+SGST versus IGST.
+            </p>
+            <div className="flex items-start justify-between gap-3 rounded-[12px] border border-line bg-cream px-3 py-2.5">
+              <div>
+                <span className={labelCls}>Selling prices include GST</span>
+                <p className="mt-1 text-[11px] text-ink-muted">
+                  {pricesIncludeGst
+                    ? "An item's price already contains the tax; it is backed out on the invoice."
+                    : "GST is added on top of an item's price at billing."}
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={pricesIncludeGst}
+                aria-label="Selling prices include GST"
+                onClick={() => setPricesIncludeGst((v) => !v)}
+                className={`mt-0.5 h-7 w-12 flex-shrink-0 rounded-full p-[2px] transition-colors ${
+                  pricesIncludeGst ? "bg-brown" : "bg-cream-dark"
+                }`}
+              >
+                <span
+                  className={`block h-6 w-6 rounded-full bg-warm-white transition-transform ${
+                    pricesIncludeGst ? "translate-x-[20px]" : "translate-x-0"
+                  }`}
+                />
+              </button>
             </div>
             <button
               onClick={save}

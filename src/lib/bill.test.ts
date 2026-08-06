@@ -4,6 +4,7 @@ import type { BillLine } from "./types";
 
 const line = (qty: number, price: number): BillLine => ({
   itemId: "x", name: "x", emoji: "📦", imageUrl: null, unit: "pcs", qty, price, costPrice: 0,
+  hsn: "", gstRate: 0, taxableValue: 0, cgst: 0, sgst: 0, igst: 0,
 });
 
 describe("computeTotals", () => {
@@ -29,7 +30,7 @@ describe("computeTotals", () => {
   it("adds charged consumables to the subtotal", () => {
     const bag = {
       consumableId: "c1", name: "Carry bag", unit: "pcs",
-      qty: 2, unitCost: 5, charged: true,
+      qty: 2, unitCost: 5, charged: true, hsn: "", gstRate: 0,
     };
     expect(computeTotals([line(1, 100)], 0, 0, "percent", [bag])).toEqual({
       subtotal: 110, discount: 0, tax: 0, total: 110,
@@ -39,7 +40,7 @@ describe("computeTotals", () => {
   it("ignores absorbed consumables entirely", () => {
     const wrap = {
       consumableId: "c2", name: "Foil wrap", unit: "pcs",
-      qty: 2, unitCost: 5, charged: false,
+      qty: 2, unitCost: 5, charged: false, hsn: "", gstRate: 0,
     };
     expect(computeTotals([line(1, 100)], 0, 0, "percent", [wrap])).toEqual({
       subtotal: 100, discount: 0, tax: 0, total: 100,
@@ -49,11 +50,27 @@ describe("computeTotals", () => {
   it("taxes and discounts a charged consumable like an item line", () => {
     const bag = {
       consumableId: "c1", name: "Carry bag", unit: "pcs",
-      qty: 1, unitCost: 10, charged: true,
+      qty: 1, unitCost: 10, charged: true, hsn: "", gstRate: 0,
     };
     // subtotal 110, 10% off -> 99 taxable, 5% tax -> 4.95, total 103.95.
     expect(computeTotals([line(1, 100)], 5, 10, "percent", [bag])).toEqual({
       subtotal: 110, discount: 11, tax: 4.95, total: 103.95,
+    });
+  });
+});
+
+describe("computeTotals — non-GST bills charge no tax", () => {
+  // From migration 0069 on, every new bill passes rate 0 here: a non-GST
+  // invoice charges nothing, and a GST one is priced by computeGstTotals
+  // instead. These pin the behaviour the bill screen now depends on.
+  it("is subtotal minus discount when the rate is zero", () => {
+    expect(computeTotals([line(1, 100)], 0, 10)).toEqual({
+      subtotal: 100, discount: 10, tax: 0, total: 90,
+    });
+  });
+  it("charges no tax on a flat discount either", () => {
+    expect(computeTotals([line(1, 100)], 0, 25, "flat")).toEqual({
+      subtotal: 100, discount: 25, tax: 0, total: 75,
     });
   });
 });

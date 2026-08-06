@@ -28,6 +28,22 @@ export interface AssetLabelTarget {
   qrModules: boolean[][] | null;
 }
 
+/**
+ * Which paper a bill goes on. A non-GST bill is always the 80mm roll; a GST bill
+ * can go either way — A4 for the sheet the customer files, thermal for the
+ * counter's receipt printer — so the choice is the operator's, not the bill's.
+ */
+export type PrintFormat = "a4" | "thermal";
+
+export interface PrintBillTarget {
+  bill: Bill;
+  format: PrintFormat;
+}
+
+/** A4 for a GST bill, the roll for everything else, unless asked otherwise. */
+export const defaultPrintFormat = (bill: Bill): PrintFormat =>
+  bill.invoiceType === "gst" ? "a4" : "thermal";
+
 interface OwnerAuthRequest {
   label: string;
   onConfirm: () => void;
@@ -48,9 +64,9 @@ interface UIState {
   requireOwnerAuth: (label: string, onConfirm: () => void) => void;
   closeOwnerAuth: () => void;
 
-  // Thermal-receipt printing
-  printTarget: Bill | null;
-  requestPrint: (bill: Bill) => void;
+  // Bill printing
+  printTarget: PrintBillTarget | null;
+  requestPrint: (bill: Bill, format?: PrintFormat) => void;
   clearPrint: () => void;
   /** A built report or payslip awaiting the print dialog (ReportPrintHost). */
   reportTarget: (PrintDoc & { generatedAt: string }) | null;
@@ -75,7 +91,8 @@ export const useUIStore = create<UIState>((set) => ({
   closeOwnerAuth: () => set({ ownerAuth: null }),
 
   printTarget: null,
-  requestPrint: (bill) => set({ printTarget: bill }),
+  requestPrint: (bill, format) =>
+    set({ printTarget: { bill, format: format ?? defaultPrintFormat(bill) } }),
   clearPrint: () => set({ printTarget: null }),
   reportTarget: null,
   // Stamp the timestamp here rather than in render: a Date during render would

@@ -1,3 +1,11 @@
+import type { InvoiceType } from "./gst";
+
+/**
+ * "gst" | "non_gst". Defined next to the arithmetic that depends on it and
+ * re-exported here so the rest of the app has one place to import types from.
+ */
+export type { InvoiceType } from "./gst";
+
 /**
  * The granular permission catalogue. Mirrored by `has_perm()` in SQL — the SQL
  * copy is the actual enforcement; this one only decides what the UI renders.
@@ -95,7 +103,16 @@ export interface Bakery {
   gst: string;
   logo: string | null; // base64 data URL
   currency: string;
+  /**
+   * The legacy store-wide rate. Kept so a bill raised before migration 0068
+   * still reprints with the tax it actually charged; no new-bill path reads it,
+   * and the Settings form no longer offers it.
+   */
   taxRate: number;
+  /** The store's own 2-digit GST state code; "" until Settings is filled in. */
+  gstStateCode: string;
+  /** Whether `Item.price` already contains GST. Defaults to true. */
+  pricesIncludeGst: boolean;
   lowStockAlert: number;
   expiringSoonDays: number;
   isOpen: boolean;
@@ -112,6 +129,10 @@ export interface Item {
   unit: string;
   price: number; // selling price
   costPrice: number; // bought price (private)
+  /** HSN or SAC code. "" blocks this item from a GST invoice entirely. */
+  hsn: string;
+  /** 0–28. A 0% rate is legal; a blank HSN is not. */
+  gstRate: number;
   qty: number;
   tracksExpiry: boolean;
   earliestExpiry: string | null; // "YYYY-MM-DD" of soonest in-stock batch, or null
@@ -152,6 +173,18 @@ export interface BillLine {
   qty: number;
   price: number;
   costPrice: number;
+  /**
+   * The GST block, snapshotted from the item at bill time — never joined. An
+   * invoice is a statement about a moment and must not change when a master
+   * record does. All zero on a non-GST bill and on anything raised before
+   * migration 0069; `hsn` is "" there too.
+   */
+  hsn: string;
+  gstRate: number;
+  taxableValue: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
 }
 
 export type BillStatus = "active" | "cancelled";
@@ -176,6 +209,13 @@ export interface BillConsumableLine {
   /** `consumable.cost_per_unit`; 0 when the operator has not set one. */
   unitCost: number;
   charged: boolean;
+  /**
+   * Carried so the cart can preview GST on a charged line. A CHARGED line on a
+   * tax invoice is a supply like any other and needs a real HSN; an absorbed
+   * one never reaches the customer, so it needs neither field.
+   */
+  hsn: string;
+  gstRate: number;
 }
 
 /** A stored consumable line, as it comes back on a generated bill. */
@@ -188,6 +228,13 @@ export interface BillConsumable {
   qty: number;
   unitCost: number;
   charged: boolean;
+  /** Snapshotted like `BillLine`'s. All zero on an absorbed line. */
+  hsn: string;
+  gstRate: number;
+  taxableValue: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
 }
 
 export interface Customer {
@@ -198,6 +245,14 @@ export interface Customer {
   visitCount: number;
   totalSpend: number;
   lastPurchase: string | null; // ISO or null if no active bills
+  /** 15-char GSTIN, "" when unregistered. */
+  gstin: string;
+  /** 2-digit state code; falls back to the GSTIN's first two digits. */
+  stateCode: string;
+  /** Recipient address printed on the tax invoice. */
+  billingAddress: string;
+  /** Pre-fills the invoice-type toggle on the bill screen. */
+  defaultInvoiceType: InvoiceType;
 }
 
 export interface Bill {
@@ -214,9 +269,28 @@ export interface Bill {
    */
   consumables: BillConsumable[];
   subtotal: number;
+  /** The TOTAL tax — `cgst + sgst + igst` on a GST bill. Never split away. */
   tax: number;
+  /** Always `taxableValue + tax`. */
   total: number;
+  /**
+   * The legacy store-wide rate this bill was charged at. 0 on everything raised
+   * after migration 0069, where rates live on the line.
+   */
   taxRate: number;
+  invoiceType: InvoiceType;
+  /** Formatted series number (`GST/2026-27/0001`); null on legacy bills. */
+  invoiceNo: string | null;
+  /** Snapshot at bill time. "" for B2C and for every non-GST bill. */
+  customerGstin: string;
+  /** 2-digit state code; "" on a non-GST bill. */
+  placeOfSupply: string;
+  /** Derived server-side from the place of supply; drives IGST vs CGST+SGST. */
+  isInterstate: boolean;
+  taxableValue: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
   paymentMethod: PaymentMethod;
   discountPercent: number;
   discountType: "percent" | "flat";
@@ -1211,6 +1285,10 @@ export interface Consumable {
   costPerUnit: number | null;
   /** Whether this is offered at the counter, and how. Defaults to `"none"`. */
   billMode: BillMode;
+  /** HSN or SAC. Required before a CHARGED line can go on a GST invoice. */
+  hsn: string;
+  /** 0–28. */
+  gstRate: number;
   expiryDate: string | null;
   storageLocation: string;
   notes: string;
@@ -1310,6 +1388,8 @@ export interface ConsumableInput {
   reorderQty: number | null;
   costPerUnit: number | null;
   billMode: BillMode;
+  hsn: string;
+  gstRate: number;
   expiryDate: string | null;
   storageLocation: string;
   notes: string;

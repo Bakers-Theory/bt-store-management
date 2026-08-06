@@ -11,6 +11,7 @@ const bakery: Bakery = {
   logo: null,
   currency: "₹",
   taxRate: 5,
+  gstStateCode: "", pricesIncludeGst: true,
   lowStockAlert: 5,
   expiringSoonDays: 3,
   isOpen: true,
@@ -20,6 +21,7 @@ const bakery: Bakery = {
 
 const line = (name: string, qty: number, price: number): BillLine => ({
   itemId: "x", name, emoji: "🥐", imageUrl: null, unit: "pcs", qty, price, costPrice: 0,
+  hsn: "", gstRate: 0, taxableValue: 0, cgst: 0, sgst: 0, igst: 0,
 });
 
 const bill = (over: Partial<Bill> = {}): Bill => ({
@@ -33,6 +35,8 @@ const bill = (over: Partial<Bill> = {}): Bill => ({
   tax: 0,
   total: 280,
   taxRate: 5,
+  invoiceType: "non_gst", invoiceNo: null, customerGstin: "", placeOfSupply: "",
+  isInterstate: false, taxableValue: 0, cgst: 0, sgst: 0, igst: 0,
   paymentMethod: "UPI",
   discountPercent: 0,
   discountType: "percent",
