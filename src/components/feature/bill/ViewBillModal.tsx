@@ -8,6 +8,7 @@ import { useCurrentUser } from "@/components/system/AuthProvider";
 import { hasPermission } from "@/lib/permissions";
 import { shareBillOnWhatsApp } from "@/lib/whatsapp";
 import { Receipt } from "./Receipt";
+import { TaxInvoice } from "./TaxInvoice";
 import type { Bill } from "@/lib/types";
 
 export function ViewBillModal({ bill, onClose }: { bill: Bill; onClose: () => void }) {
@@ -15,8 +16,10 @@ export function ViewBillModal({ bill, onClose }: { bill: Bill; onClose: () => vo
   const bakery = useBakeryStore((s) => s.bakery);
   const user = useCurrentUser();
   return (
-    <Modal title={`Bill #${bill.billNo}`} onClose={onClose}>
-      <Receipt bill={bill} />
+    <Modal title={bill.invoiceNo ?? `Bill #${bill.billNo}`} onClose={onClose}>
+      {/* The invoice type decides the document, so a reprint is always the
+          same paper the customer was originally handed. */}
+      {bill.invoiceType === "gst" ? <TaxInvoice bill={bill} /> : <Receipt bill={bill} />}
       {bill.shortfall > 0 && (
         <div className="mt-3 rounded-xl border border-danger/30 bg-danger-bg px-3 py-2.5 text-[13px]">
           <div className="flex justify-between font-semibold text-ink">

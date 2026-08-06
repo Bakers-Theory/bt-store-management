@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useUIStore } from "@/lib/ui-store";
 import { Receipt } from "@/components/feature/bill/Receipt";
+import { TaxInvoice } from "@/components/feature/bill/TaxInvoice";
 
 /**
  * Renders the receipt for the current print target off-screen, then triggers
@@ -19,7 +20,7 @@ export function PrintHost() {
       // The browser uses document.title as the suggested filename when the
       // print dialog saves to PDF. Set it to the invoice number, then restore.
       const prevTitle = document.title;
-      document.title = `Invoice #${target.billNo}`;
+      document.title = target.invoiceNo ?? `Invoice #${target.billNo}`;
       window.print();
       document.title = prevTitle;
       clearPrint();
@@ -32,7 +33,12 @@ export function PrintHost() {
       className="print-area"
       style={target ? { position: "absolute", left: "-9999px", top: 0 } : { display: "none" }}
     >
-      {target && <Receipt bill={target} />}
+      {target &&
+        (target.invoiceType === "gst" ? (
+          <TaxInvoice bill={target} />
+        ) : (
+          <Receipt bill={target} />
+        ))}
     </div>
   );
 }

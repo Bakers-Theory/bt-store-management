@@ -6,6 +6,7 @@ import { Modal } from "@/components/ui/Modal";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { fetchSuppliers, rpcSaveConsumable } from "@/lib/supabase-data";
+import { GST_RATES } from "@/lib/constants";
 import type { BillMode, Consumable, Supplier } from "@/lib/types";
 
 const labelCls = "mb-1.5 block text-xs font-bold text-[#8a6a3c]";
@@ -49,6 +50,8 @@ export function ConsumableForm({
     item?.costPerUnit === null || !item ? "" : String(item.costPerUnit),
   );
   const [billMode, setBillMode] = useState<BillMode>(item?.billMode ?? "none");
+  const [hsn, setHsn] = useState(item?.hsn ?? "");
+  const [gstRate, setGstRate] = useState(item ? String(item.gstRate) : "0");
   const [expiryDate, setExpiryDate] = useState(item?.expiryDate ?? "");
   const [storageLocation, setStorageLocation] = useState(item?.storageLocation ?? "");
   const [notes, setNotes] = useState(item?.notes ?? "");
@@ -104,6 +107,8 @@ export function ConsumableForm({
         unit,
         vendorId: vendorId || null,
         billMode,
+        hsn: hsn.trim(),
+        gstRate: parseFloat(gstRate) || 0,
         minStock: min,
         maxStock: max,
         reorderLevel: reorder,
@@ -312,6 +317,42 @@ export function ConsumableForm({
                 : "Deducted from stock without printing; the cost leaves the cash book."}
           </p>
         </div>
+
+        {billMode === "charge" && (
+          <div className="grid grid-cols-2 gap-2.5">
+            <div className="min-w-0">
+              <label className={labelCls} htmlFor="cn-hsn">HSN / SAC</label>
+              <input
+                id="cn-hsn"
+                type="text"
+                inputMode="numeric"
+                placeholder="e.g. 4819"
+                value={hsn}
+                onChange={(e) => setHsn(e.target.value.replace(/[^0-9]/g, "").slice(0, 8))}
+                className={inputCls}
+              />
+            </div>
+            <div className="min-w-0">
+              <label className={labelCls} htmlFor="cn-gst">GST %</label>
+              <select
+                id="cn-gst"
+                value={gstRate}
+                onChange={(e) => setGstRate(e.target.value)}
+                className={inputCls}
+              >
+                {GST_RATES.map((r) => (
+                  <option key={r} value={r}>
+                    {r}%
+                  </option>
+                ))}
+              </select>
+            </div>
+            <p className="col-span-2 text-[11px] text-ink-muted">
+              A charged line on a GST invoice is a supply like any other, so it
+              needs an HSN. Absorbed items never reach the customer, so they do not.
+            </p>
+          </div>
+        )}
 
         <div>
           <label className={labelCls} htmlFor="cn-vendor">Usually bought from (optional)</label>

@@ -6,7 +6,8 @@ import { useBakeryStore } from "@/lib/store";
 import { shareBillOnWhatsApp } from "@/lib/whatsapp";
 import { useUIStore } from "@/lib/ui-store";
 import { useCurrentUser } from "@/components/system/AuthProvider";
-import { computeTotals, shortfallFor } from "@/lib/bill";
+import { shortfallFor } from "@/lib/bill";
+import { computeGstTotals, isValidGstin, stateCodeFromGstin } from "@/lib/gst";
 import { consumableLineError, defaultChargedFor } from "@/lib/bill-consumable";
 import { hasPermission } from "@/lib/permissions";
 import { expiryStatus } from "@/lib/expiry";
@@ -17,8 +18,9 @@ import { Modal } from "@/components/ui/Modal";
 import { ItemThumb } from "@/components/ui/ItemThumb";
 import { tabCls } from "@/components/ui/tabClass";
 import { Receipt } from "./Receipt";
+import { TaxInvoice } from "./TaxInvoice";
 import { ConsumableCartGroup, ConsumablePicker } from "./BillConsumables";
-import type { Bill as BillType, BillConsumableLine, BillLine, Customer, Item, PaymentMethod } from "@/lib/types";
+import type { Bill as BillType, BillConsumableLine, BillLine, Customer, InvoiceType, Item, PaymentMethod } from "@/lib/types";
 
 // Sellable stock for an item: expired batches are never sold (bill generation
 // consumes fresh batches only), so the bill page ignores them. Returns the
@@ -52,7 +54,9 @@ export function Bill() {
   const items = useBakeryStore((s) => s.items);
   const bakery = useBakeryStore((s) => s.bakery);
   const currency = useBakeryStore((s) => s.bakery.currency);
-  const taxRate = useBakeryStore((s) => s.bakery.taxRate);
+  const storeGstin = useBakeryStore((s) => s.bakery.gst);
+  const storeStateCode = useBakeryStore((s) => s.bakery.gstStateCode);
+  const pricesIncludeGst = useBakeryStore((s) => s.bakery.pricesIncludeGst);
   const expiringSoonDays = useBakeryStore((s) => s.bakery.expiringSoonDays);
   const generateBill = useBakeryStore((s) => s.generateBill);
   const categories = useBakeryStore((s) => s.lists.categories);
@@ -69,6 +73,9 @@ export function Bill() {
   const [cartOpen, setCartOpen] = useState(false); // mobile bottom-sheet expansion
   const [customer, setCustomer] = useState({ name: "", phone: "" });
   const [payment, setPayment] = useState<PaymentMethod>("Cash");
+  const [invoiceType, setInvoiceType] = useState<InvoiceType>("non_gst");
+  const [gstin, setGstin] = useState("");
+  const [placeOfSupply, setPlaceOfSupply] = useState("");
   const [cashReceived, setCashReceived] = useState("");
   const [shortNote, setShortNote] = useState("");
   // Set when Generate is pressed on a short-paid bill; the dialog it opens is
@@ -98,13 +105,38 @@ export function Bill() {
   const clientRef = useRef<string | null>(null);
 
   const discountValue = Math.max(0, parseFloat(discount) || 0);
-  const { subtotal, discount: discountAmt, tax, total } = computeTotals(
-    lines,
-    taxRate,
-    discountValue,
-    discountMode,
-    consumableLines,
+  const isGst = invoiceType === "gst";
+  // Place of supply follows the GSTIN until the biller overrides it, and falls
+  // back to the store's own state — a walk-in B2C sale over the counter.
+  const effectivePos =
+    placeOfSupply || stateCodeFromGstin(gstin.trim().toUpperCase()) || storeStateCode;
+  const interstate = isGst && effectivePos !== "" && effectivePos !== storeStateCode;
+
+  // Item lines first, then the CHARGED consumables — the exact order
+  // generate_bill builds its arrays in, so the pro-rata discount split lands on
+  // the same line on both sides. Absorbed lines are money the store spends, not
+  // money the customer pays, so they are not here at all.
+  //
+  // One totals path for both invoice types: a non-GST bill is simply every rate
+  // at 0, which makes tax 0 and total = subtotal - discount.
+  const gstTotals = computeGstTotals(
+    [
+      ...lines.map((l) => ({
+        name: l.name, hsn: l.hsn, gstRate: isGst ? l.gstRate : 0,
+        qty: l.qty, price: l.price,
+      })),
+      ...consumableLines
+        .filter((c) => c.charged)
+        .map((c) => ({
+          name: c.name, hsn: c.hsn, gstRate: isGst ? c.gstRate : 0,
+          qty: c.qty, price: c.unitCost,
+        })),
+    ],
+    { pricesIncludeGst, interstate, discountValue, discountMode },
   );
+  const {
+    subtotal, discount: discountAmt, taxable, cgst, sgst, igst, total,
+  } = gstTotals;
   const cartCount =
     lines.reduce((n, l) => n + l.qty, 0) +
     consumableLines.reduce((n, l) => n + l.qty, 0);
@@ -131,6 +163,27 @@ export function Bill() {
     (l) => consumableLineError(l, stockOfConsumable(l.consumableId)) !== null,
   );
 
+  // Mirrors generate_bill's server-side rules so the biller sees the problem
+  // before pressing the button with a customer waiting. The server is still the
+  // authority — this only moves the error earlier.
+  const missingHsn = !isGst
+    ? []
+    : [
+        ...lines.filter((l) => l.hsn.trim() === "").map((l) => l.name),
+        ...consumableLines.filter((c) => c.charged && c.hsn.trim() === "").map((c) => c.name),
+      ];
+  const gstBlocker = !isGst
+    ? ""
+    : storeGstin.trim() === ""
+      ? "Add the store GSTIN in Settings before raising a GST invoice"
+      : storeStateCode === ""
+        ? "Add the store state code in Settings before raising a GST invoice"
+        : gstin.trim() !== "" && !isValidGstin(gstin.trim().toUpperCase())
+          ? "That GSTIN does not look right"
+          : missingHsn.length > 0
+            ? `Set an HSN code on these first: ${missingHsn.join(", ")}`
+            : "";
+
   // Why the Generate button is disabled — shown inline so it's never a silent
   // dead-end (a disabled button can't fire its own click handler).
   const disabledReason = !isOpen
@@ -141,7 +194,7 @@ export function Bill() {
         ? "Phone number must be exactly 10 digits"
         : badConsumableLine
           ? "Fix the highlighted consumable line"
-          : "";
+          : gstBlocker;
 
   // Each row carries its fresh (non-expired) qty + earliest fresh expiry.
   // Products with no fresh stock (out of stock, or only expired batches) are
@@ -205,6 +258,11 @@ export function Bill() {
       const found = await fetchCustomerByPhone(customer.phone);
       if (!alive || !found) return;
       setReturning(found);
+      // The customer record is the store's standing instruction for how this
+      // person is invoiced; the biller can still override it below.
+      setInvoiceType(found.defaultInvoiceType);
+      setGstin(found.gstin);
+      setPlaceOfSupply(found.stateCode);
       setCustomer((c) =>
         c.phone === found.phone && c.name.trim() === "" ? { ...c, name: found.name } : c,
       );
@@ -239,6 +297,14 @@ export function Bill() {
           qty: 1,
           price: item.price,
           costPrice: item.costPrice || 0,
+          hsn: item.hsn,
+          gstRate: item.gstRate,
+          // Placeholders: the real figures come back from the server on the
+          // generated bill, computed once and stored.
+          taxableValue: 0,
+          cgst: 0,
+          sgst: 0,
+          igst: 0,
         },
       ];
     });
@@ -266,6 +332,8 @@ export function Bill() {
           qty: 1,
           unitCost: c.costPerUnit,
           charged: defaultChargedFor(c.billMode),
+          hsn: c.hsn,
+          gstRate: c.gstRate,
         },
       ];
     });
@@ -334,7 +402,14 @@ export function Bill() {
     setGenerating(true);
     try {
       const bill = await generateBill(
-        customer,
+        {
+          ...customer,
+          invoiceType,
+          // The server stores "" for both on a non-GST bill regardless; sending
+          // blanks keeps the payload honest about what was actually chosen.
+          gstin: isGst ? gstin.trim().toUpperCase() : "",
+          placeOfSupply: isGst ? effectivePos : "",
+        },
         lines,
         payment,
         { mode: discountMode, value: discountValue },
@@ -349,6 +424,9 @@ export function Bill() {
       loadConsumables();
       setCustomer({ name: "", phone: "" });
       setPayment("Cash");
+      setInvoiceType("non_gst");
+      setGstin("");
+      setPlaceOfSupply("");
       setCashReceived("");
       setShortNote("");
       setDiscount("");
@@ -781,6 +859,54 @@ export function Bill() {
             </div>
           </div>
           <div className="flex flex-col gap-2 border-b border-line-soft px-[18px] py-3.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[13px] font-semibold text-ink-muted">Invoice</span>
+              <div className="flex gap-1.5 rounded-[10px] bg-cream-dark p-[3px]">
+                {(
+                  [
+                    ["non_gst", "Non-GST"],
+                    ["gst", "GST"],
+                  ] as const
+                ).map(([type, label]) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => setInvoiceType(type)}
+                    aria-pressed={invoiceType === type}
+                    className={`cursor-pointer rounded-[7px] border-none px-3.5 py-1 text-[12.5px] font-bold ${
+                      invoiceType === type
+                        ? "bg-brown text-warm-white"
+                        : "bg-transparent text-ink-muted"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {isGst && (
+              <>
+                <input
+                  type="text"
+                  placeholder="Customer GSTIN (optional)"
+                  aria-label="Customer GSTIN"
+                  value={gstin}
+                  onChange={(e) => setGstin(e.target.value.toUpperCase().slice(0, 15))}
+                  className="w-full rounded-[10px] border border-line bg-cream px-[11px] py-[9px] text-[13px] uppercase outline-none focus:border-brown"
+                />
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder={`Place of supply${effectivePos ? ` (${effectivePos})` : ""}`}
+                  aria-label="Place of supply state code"
+                  value={placeOfSupply}
+                  onChange={(e) =>
+                    setPlaceOfSupply(e.target.value.replace(/\D/g, "").slice(0, 2))
+                  }
+                  className="w-full rounded-[10px] border border-line bg-cream px-[11px] py-[9px] text-[13px] outline-none focus:border-brown"
+                />
+              </>
+            )}
             <div className="relative">
               <Phone
                 size={15}
@@ -953,14 +1079,44 @@ export function Bill() {
                   </span>
                 </div>
                 )}
-                {tax > 0 && (
-                  <div className="flex justify-between py-0.5 text-[13px] font-semibold text-ink-muted">
-                    <span>Tax ({taxRate}%)</span>
-                    <span className="num">
-                      {currency}
-                      {tax.toFixed(2)}
-                    </span>
-                  </div>
+                {/* A non-GST bill charges no tax, so it shows no tax row at
+                    all — there is nothing to state. */}
+                {isGst && (
+                  <>
+                    <div className="flex justify-between py-0.5 text-[13px] font-semibold text-ink-muted">
+                      <span>Taxable</span>
+                      <span className="num">
+                        {currency}
+                        {taxable.toFixed(2)}
+                      </span>
+                    </div>
+                    {interstate ? (
+                      <div className="flex justify-between py-0.5 text-[13px] font-semibold text-ink-muted">
+                        <span>IGST</span>
+                        <span className="num">
+                          {currency}
+                          {igst.toFixed(2)}
+                        </span>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex justify-between py-0.5 text-[13px] font-semibold text-ink-muted">
+                          <span>CGST</span>
+                          <span className="num">
+                            {currency}
+                            {cgst.toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between py-0.5 text-[13px] font-semibold text-ink-muted">
+                          <span>SGST</span>
+                          <span className="num">
+                            {currency}
+                            {sgst.toFixed(2)}
+                          </span>
+                        </div>
+                      </>
+                    )}
+                  </>
                 )}
                 <div className="mt-[7px] flex justify-between border-t-[1.5px] border-line pt-[9px] text-lg font-extrabold">
                   <span>Total</span>
@@ -1041,7 +1197,10 @@ export function Bill() {
                     generating ||
                     !isOpen ||
                     customer.name.trim() === "" ||
-                    (customer.phone.length > 0 && customer.phone.length !== 10)
+                    (customer.phone.length > 0 && customer.phone.length !== 10) ||
+                    // generate_bill rolls the whole checkout back on any of
+                    // these, so block rather than let it fail at the counter.
+                    gstBlocker !== ""
                   }
                   className="mt-3.5 flex w-full items-center justify-center gap-2 rounded-[13px] border-none bg-brown p-3.5 text-[15px] font-extrabold text-warm-white shadow-[0_4px_14px_rgba(124,74,30,.3)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
@@ -1064,8 +1223,12 @@ export function Bill() {
       </div>
 
       {receipt && (
-        <Modal title={`Bill #${receipt.billNo}`} onClose={done}>
-          <Receipt bill={receipt} />
+        <Modal title={receipt.invoiceNo ?? `Bill #${receipt.billNo}`} onClose={done}>
+          {receipt.invoiceType === "gst" ? (
+            <TaxInvoice bill={receipt} />
+          ) : (
+            <Receipt bill={receipt} />
+          )}
           <div className="mt-4 flex flex-col gap-2.5">
             {canPrint && (
               <div className="flex gap-2.5">
