@@ -1246,7 +1246,7 @@ export function Bill() {
                   className="btn-primary flex flex-1 items-center justify-center gap-2"
                   onClick={() => requestPrint(receipt)}
                 >
-                  <Printer size={16} /> Print
+                  <Printer size={16} /> {receipt.invoiceType === "gst" ? "Print A4" : "Print"}
                 </button>
                 <button
                   className="btn-secondary flex flex-1 items-center justify-center gap-2"
@@ -1256,13 +1256,25 @@ export function Bill() {
                 </button>
               </div>
             )}
+            {/* A GST bill can also go on the roll — same tax details, thermal
+                layout — for counters without a sheet printer. */}
+            {canPrint && receipt.invoiceType === "gst" && (
+              <button
+                className="btn-secondary flex w-full items-center justify-center gap-2"
+                onClick={() => requestPrint(receipt, "thermal")}
+              >
+                <Printer size={16} /> Print thermal (80mm)
+              </button>
+            )}
             <button className="btn-secondary flex w-full items-center justify-center gap-2" onClick={done}>
               <Check size={16} /> Done
             </button>
           </div>
           {canPrint && (
             <div className="mt-2.5 text-center text-xs text-ink-muted">
-              Print to a 3&quot; (80mm) thermal printer
+              {receipt.invoiceType === "gst"
+                ? "A4 for the sheet printer, or the same tax invoice on a 3\" (80mm) roll"
+                : "Print to a 3\" (80mm) thermal printer"}
             </div>
           )}
         </Modal>

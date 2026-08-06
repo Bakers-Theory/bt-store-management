@@ -42,19 +42,31 @@ export function ViewBillModal({ bill, onClose }: { bill: Bill; onClose: () => vo
         </div>
       )}
       {hasPermission(user, "bill.print") && (
-        <div className="mt-4 flex gap-2.5">
-          <button
-            className="btn-primary flex flex-1 items-center justify-center gap-2"
-            onClick={() => requestPrint(bill)}
-          >
-            <Printer size={16} /> Print
-          </button>
-          <button
-            className="btn-secondary flex flex-1 items-center justify-center gap-2"
-            onClick={() => shareBillOnWhatsApp(bill, bakery)}
-          >
-            <MessageCircle size={16} /> Share
-          </button>
+        <div className="mt-4 flex flex-col gap-2.5">
+          <div className="flex gap-2.5">
+            <button
+              className="btn-primary flex flex-1 items-center justify-center gap-2"
+              onClick={() => requestPrint(bill)}
+            >
+              <Printer size={16} /> {bill.invoiceType === "gst" ? "Print A4" : "Print"}
+            </button>
+            <button
+              className="btn-secondary flex flex-1 items-center justify-center gap-2"
+              onClick={() => shareBillOnWhatsApp(bill, bakery)}
+            >
+              <MessageCircle size={16} /> Share
+            </button>
+          </div>
+          {/* A GST bill can also go on the roll — same tax details, thermal
+              layout — for counters without a sheet printer. */}
+          {bill.invoiceType === "gst" && (
+            <button
+              className="btn-secondary flex w-full items-center justify-center gap-2"
+              onClick={() => requestPrint(bill, "thermal")}
+            >
+              <Printer size={16} /> Print thermal (80mm)
+            </button>
+          )}
         </div>
       )}
     </Modal>
