@@ -100,6 +100,9 @@ export function Bill() {
   const [consumableLines, setConsumableLines] = useState<BillConsumableLine[]>([]);
   const [receipt, setReceipt] = useState<BillType | null>(null);
 
+  // Set the moment the biller picks an invoice type by hand. The customer
+  // lookup below must not overwrite a deliberate choice — see that effect.
+  const invoiceTouched = useRef(false);
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Idempotency key for the checkout in flight; see submit().
   const clientRef = useRef<string | null>(null);
@@ -258,11 +261,14 @@ export function Bill() {
       const found = await fetchCustomerByPhone(customer.phone);
       if (!alive || !found) return;
       setReturning(found);
-      // The customer record is the store's standing instruction for how this
-      // person is invoiced; the biller can still override it below.
-      setInvoiceType(found.defaultInvoiceType);
-      setGstin(found.gstin);
-      setPlaceOfSupply(found.stateCode);
+      // Prefill only what the biller has NOT already decided — the same rule
+      // the name field below follows. The lookup is debounced 350ms behind the
+      // phone box, so it lands AFTER the biller has picked an invoice type;
+      // overwriting unconditionally silently flipped a GST bill back to
+      // non-GST (every customer predating migration 0068 defaults to non_gst).
+      if (!invoiceTouched.current) setInvoiceType(found.defaultInvoiceType);
+      setGstin((g) => (g === "" ? found.gstin : g));
+      setPlaceOfSupply((p) => (p === "" ? found.stateCode : p));
       setCustomer((c) =>
         c.phone === found.phone && c.name.trim() === "" ? { ...c, name: found.name } : c,
       );
@@ -427,6 +433,7 @@ export function Bill() {
       setInvoiceType("non_gst");
       setGstin("");
       setPlaceOfSupply("");
+      invoiceTouched.current = false;
       setCashReceived("");
       setShortNote("");
       setDiscount("");
@@ -871,7 +878,10 @@ export function Bill() {
                   <button
                     key={type}
                     type="button"
-                    onClick={() => setInvoiceType(type)}
+                    onClick={() => {
+                      invoiceTouched.current = true;
+                      setInvoiceType(type);
+                    }}
                     aria-pressed={invoiceType === type}
                     className={`cursor-pointer rounded-[7px] border-none px-3.5 py-1 text-[12.5px] font-bold ${
                       invoiceType === type

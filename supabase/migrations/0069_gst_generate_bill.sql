@@ -466,6 +466,10 @@ end $$;
 grant execute on function
   public.generate_bill(jsonb, jsonb, text, uuid, jsonb) to authenticated;
 
+grant select (hsn, gst_rate, taxable_value, cgst, sgst, igst)
+  on public.bill_items to authenticated;
+
+
 -- ─── deliberately NOT touched ───────────────────────────────────────────────
 -- cancel_bill, delete_bill, return_bill_consumables and cashbook_cogs are
 -- correct as of 0067 and stay that way. A cancelled GST invoice KEEPS its

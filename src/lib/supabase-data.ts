@@ -573,14 +573,19 @@ export async function fetchBillsPage(
       query = query.ilike("customer_name", `%${q}%`);
     }
   }
-  const { data: billRows } = await query.range(offset, offset + limit - 1);
+  const { data: billRows, error: billErr } = await query.range(offset, offset + limit - 1);
+  // Throw rather than coalesce to []: a rejected query and a genuinely empty
+  // history are not the same thing, and rendering the first as the second is
+  // how a schema mismatch reaches the counter as "0 items" instead of an error.
+  if (billErr) throw new Error(billErr.message);
   const rows = (billRows ?? []) as BillRow[];
   if (rows.length === 0) return { bills: [], hasMore: false };
 
-  const { data: lineRows } = await supabase
+  const { data: lineRows, error: lineErr } = await supabase
     .from("bill_items")
     .select("id,bill_id,item_id,name,emoji,image_url,unit,qty,price,hsn,gst_rate,taxable_value,cgst,sgst,igst")
     .in("bill_id", rows.map((r) => r.id));
+  if (lineErr) throw new Error(lineErr.message);
   const linesByBill = linesByBillId((lineRows ?? []) as BillItemRow[]);
 
   return {
@@ -594,10 +599,11 @@ export async function fetchBill(id: string): Promise<Bill | null> {
   const supabase = createClient();
   const { data: billRow } = await supabase.from("bills_v").select("*").eq("id", id).single();
   if (!billRow) return null;
-  const { data: lineRows } = await supabase
+  const { data: lineRows, error: lineErr } = await supabase
     .from("bill_items")
     .select("id,bill_id,item_id,name,emoji,image_url,unit,qty,price,hsn,gst_rate,taxable_value,cgst,sgst,igst")
     .eq("bill_id", id);
+  if (lineErr) throw new Error(lineErr.message);
   return mapBill(billRow as BillRow, ((lineRows ?? []) as BillItemRow[]).map(mapLine));
 }
 
@@ -662,10 +668,11 @@ export async function fetchCustomerBills(customerId: string): Promise<Bill[]> {
   const rows = (billRows ?? []) as BillRow[];
   if (rows.length === 0) return [];
 
-  const { data: lineRows } = await supabase
+  const { data: lineRows, error: lineErr } = await supabase
     .from("bill_items")
     .select("id,bill_id,item_id,name,emoji,image_url,unit,qty,price,hsn,gst_rate,taxable_value,cgst,sgst,igst")
     .in("bill_id", rows.map((r) => r.id));
+  if (lineErr) throw new Error(lineErr.message);
   const linesByBill = linesByBillId((lineRows ?? []) as BillItemRow[]);
 
   return rows.map((b) => mapBill(b, linesByBill.get(b.id) ?? []));
