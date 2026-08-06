@@ -77,9 +77,15 @@ export function TaxInvoice({ bill }: { bill: Bill }) {
         .ti-foot { display: flex; justify-content: space-between; gap: 24px;
                    border: 1px solid #999; border-top: none; padding: 8px 12px; }
         .ti-sign { margin-top: 34px; border-top: 1px solid #999; padding-top: 4px; }
+        /* No @page here: PrintHost injects it, the way ReportPrintHost does.
+           Two competing @page rules would leave the paper size decided by
+           stylesheet order rather than by intent. */
         @media print {
-          @page { size: A4; margin: 10mm; }
-          .tax-invoice { width: auto; }
+          .tax-invoice { width: auto; font-size: 10pt; }
+          /* Keep a table's header with at least some of its body, and never
+             split a row down the middle of a page. */
+          .tax-invoice tr { break-inside: avoid; }
+          .tax-invoice thead { display: table-header-group; }
         }
       `}</style>
 
