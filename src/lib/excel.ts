@@ -29,6 +29,7 @@ import {
   type ConsumableReportData,
   type ConsumableReportType,
 } from "./consumable-report";
+import { gstSummarySheets } from "./gst-report";
 
 export interface ReportData {
   bakery: Bakery;
@@ -47,7 +48,7 @@ export type DateRange = { from: string | null; to: string | null };
 
 export type ReportType =
   | "sales" | "bills" | "products" | "stock"
-  | "stockLog" | "customers" | "analytics" | "expiry" | "full";
+  | "stockLog" | "customers" | "analytics" | "expiry" | "gstSummary" | "full";
 
 export interface Sheet {
   name: string;
@@ -63,6 +64,7 @@ export const REPORT_META: Record<ReportType, { name: string; slug: string; snaps
   customers: { name: "Customers",   slug: "Customers",   snapshot: true },
   analytics: { name: "Analytics",   slug: "Analytics",   snapshot: false },
   expiry:    { name: "Expiry & Wastage", slug: "Expiry_Wastage", snapshot: true },
+  gstSummary:{ name: "GST Summary", slug: "GST_Summary", snapshot: false },
   full:      { name: "Full Report", slug: "Full_Report", snapshot: false },
 };
 
@@ -150,8 +152,16 @@ export function buildBillsReport(data: ReportData, range: DateRange, _now: Date)
         Time: new Date(b.date).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
         Customer: b.customerName || "Walk-in",
         Phone: b.customerPhone || "",
+        "Invoice Type": b.invoiceType === "gst" ? "GST" : "Non-GST",
+        // Blank, not a dash: a legacy bill has no series number at all, and a
+        // filled-looking cell would read as one.
+        "Invoice No": b.invoiceNo ?? "",
         Items: b.items.map((i) => `${i.name} x${i.qty}`).join(", "),
         [`Subtotal (${cur})`]: +b.subtotal.toFixed(2),
+        [`Taxable (${cur})`]: +b.taxableValue.toFixed(2),
+        [`CGST (${cur})`]: +b.cgst.toFixed(2),
+        [`SGST (${cur})`]: +b.sgst.toFixed(2),
+        [`IGST (${cur})`]: +b.igst.toFixed(2),
         [`Tax (${cur})`]: +b.tax.toFixed(2),
         [`Total (${cur})`]: +b.total.toFixed(2),
         [`Est. Profit (${cur})`]: b.status === "cancelled" ? 0 : +(b.subtotal - cogs).toFixed(2),
@@ -166,14 +176,22 @@ export function buildSalesReport(data: ReportData, range: DateRange, _now: Date)
   const cur = bakery.currency;
   const activeBills = bills.filter(isActiveBill).filter((b) => inRange(b.date, range));
 
-  const monthly: Record<string, { revenue: number; bills: number; itemsSold: number; cogs: number }> = {};
+  const monthly: Record<
+    string,
+    { revenue: number; bills: number; itemsSold: number; cogs: number; taxable: number; tax: number }
+  > = {};
   activeBills.forEach((b) => {
     const key = b.date.slice(0, 7); // "YYYY-MM" — matches inRange's date basis (no TZ drift)
-    if (!monthly[key]) monthly[key] = { revenue: 0, bills: 0, itemsSold: 0, cogs: 0 };
+    if (!monthly[key])
+      monthly[key] = { revenue: 0, bills: 0, itemsSold: 0, cogs: 0, taxable: 0, tax: 0 };
     monthly[key].revenue += b.total;
     monthly[key].bills += 1;
     monthly[key].itemsSold += b.items.reduce((s, i) => s + i.qty, 0);
     monthly[key].cogs += b.items.reduce((s, bi) => s + bi.qty * costOf(items, bi), 0);
+    // Both are 0 on a non-GST bill, so a month of plain counter sales reports
+    // zeroes rather than being silently absent from the column.
+    monthly[key].taxable += b.taxableValue;
+    monthly[key].tax += b.tax;
   });
   const months = Object.keys(monthly).sort();
   const rows: Record<string, string | number>[] = months.map((m, idx) => {
@@ -185,6 +203,8 @@ export function buildSalesReport(data: ReportData, range: DateRange, _now: Date)
     return {
       Month: m,
       [`Revenue (${cur})`]: +c.revenue.toFixed(2),
+      [`Taxable (${cur})`]: +c.taxable.toFixed(2),
+      [`GST (${cur})`]: +c.tax.toFixed(2),
       "Bills Count": c.bills,
       "Items Sold": +c.itemsSold.toFixed(2),
       [`Avg Bill Value (${cur})`]: +(c.revenue / c.bills).toFixed(2),
@@ -443,6 +463,7 @@ export function buildFullReport(data: ReportData, range: DateRange, now: Date): 
     ...buildStockLogReport(data, range, now),
     ...buildCustomersReport(data, now),
     ...buildAnalyticsReport(data, range, now),
+    ...gstSummarySheets(data, range),
   ];
 }
 
@@ -459,6 +480,7 @@ export function buildReport(
     : type === "customers" ? buildCustomersReport(data, now)
     : type === "analytics" ? buildAnalyticsReport(data, range, now)
     : type === "expiry" ? buildExpiryReport(data, now)
+    : type === "gstSummary" ? gstSummarySheets(data, range)
     : buildFullReport(data, range, now);
   return { sheets, reportName: meta.name, isSnapshot: meta.snapshot };
 }

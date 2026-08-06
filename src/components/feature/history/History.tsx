@@ -41,6 +41,9 @@ import type { DateRange } from "@/lib/date-range";
 import type { Bill, BillStatus, Log } from "@/lib/types";
 
 type StatusFilter = "All" | "Active" | "Cancelled";
+// "All" means both, matching StatusFilter — the value maps to the
+// invoice_type column only when it is one of the two real types.
+type InvoiceFilter = "All" | "GST" | "Non-GST";
 type LogTypeFilter = Log["type"] | "all";
 
 const PAGE_SIZE = 30;
@@ -273,6 +276,7 @@ export function History() {
   const [loadingBills, setLoadingBills] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
+  const [invoiceFilter, setInvoiceFilter] = useState<InvoiceFilter>("All");
   const [billRange, setBillRange] = useState<DateRange>(EMPTY_RANGE);
   const debSearch = useDebounced(search, 300);
 
@@ -280,12 +284,20 @@ export function History() {
     () => ({
       q: debSearch.trim() || undefined,
       status: statusFilter === "All" ? undefined : (statusFilter.toLowerCase() as BillStatus),
+      invoiceType:
+        invoiceFilter === "All" ? undefined : invoiceFilter === "GST" ? "gst" : "non_gst",
       from: billRange.from,
       to: billRange.to,
     }),
-    [debSearch, statusFilter, billRange.from, billRange.to],
+    [debSearch, statusFilter, invoiceFilter, billRange.from, billRange.to],
   );
-  const billsFiltered = !!(billFilters.q || billFilters.status || billFilters.from || billFilters.to);
+  const billsFiltered = !!(
+    billFilters.q ||
+    billFilters.status ||
+    billFilters.invoiceType ||
+    billFilters.from ||
+    billFilters.to
+  );
 
   // ─── Stock log ───────────────────────────────────────────────────────────
   const cachedLogs = logsCache && logsCache.uid === user?.id ? logsCache : null;
@@ -584,10 +596,21 @@ export function History() {
                 </button>
               )}
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {(["All", "Active", "Cancelled"] as const).map((f) => (
                 <button key={f} className={chipCls(statusFilter === f)} onClick={() => setStatusFilter(f)}>
                   {f}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {(["All", "GST", "Non-GST"] as const).map((f) => (
+                <button
+                  key={f}
+                  className={chipCls(invoiceFilter === f)}
+                  onClick={() => setInvoiceFilter(f)}
+                >
+                  {f === "All" ? "All invoices" : f}
                 </button>
               ))}
             </div>
