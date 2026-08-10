@@ -71,7 +71,7 @@ describe("buildBillText", () => {
     expect(text).toContain("🧑‍🍳 Billed by Asha");
     expect(text).toContain("💳 Paid via UPI");
     expect(text).toContain("_Thank you for your visit!_");
-    expect(text).toContain("_Please come again · 9876543210_");
+    expect(text).toContain("_Please come again_");
   });
 
   it("puts every item and total inside the monospace block", () => {
