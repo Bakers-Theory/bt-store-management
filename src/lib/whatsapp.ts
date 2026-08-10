@@ -66,7 +66,7 @@ export function buildBillText(bill: Bill, bakery: Bakery): string {
 
   lines.push(`💳 Paid via ${bill.paymentMethod}`);
   lines.push("", "_Thank you for your visit!_");
-  lines.push(bakery.phone ? `_Please come again · ${bakery.phone}_` : `_${bakery.name}_`);
+  lines.push(bakery.phone ? `_Please come again · _` : `_${bakery.name}_`);
 
   return lines.join("\n");
 }
