@@ -24,6 +24,7 @@ export type PermissionKey =
   | "bill.cancel"
   | "bill.delete"
   | "bill.history"
+  | "loyalty.redeem"
   // Inventory
   | "stock.view"
   | "stock.in"
@@ -36,6 +37,8 @@ export type PermissionKey =
   // Customers
   | "customers.view"
   | "customers.edit"
+  // Loyalty
+  | "loyalty.settings"
   // Reports
   | "reports.view"
   | "reports.export"
@@ -376,6 +379,32 @@ export interface StoredLayout {
   visible: DashboardWidgetSlot[];
   dismissed: DashboardWidgetSlot[];
 }
+
+/** Which occasion a customer's bill qualified for. */
+export type OccasionKind = "birthday" | "anniversary";
+
+/**
+ * The owner's loyalty configuration, mirrored by the `loyalty_*`,
+ * `points_*`, `min_redeem_points` and `occasion_*` columns on
+ * `store_settings`. `enabled` false means every function in `loyalty.ts`
+ * returns a zero — the programme is inert, not merely hidden.
+ */
+export interface LoyaltySettings {
+  enabled: boolean;
+  /** Points granted per `pointsAmountUnit` rupees spent. */
+  pointsPerAmount: number;
+  /** The rupee block that earns `pointsPerAmount`. Always > 0. */
+  pointsAmountUnit: number;
+  /** Points needed to buy ₹1 on redemption. Always > 0. */
+  pointsPerRupee: number;
+  /** Redemption below this many points is refused. */
+  minRedeemPoints: number;
+  /** Applies to birthday and anniversary alike, 0–100. */
+  occasionDiscountPercent: number;
+  /** ₹ ceiling on a single occasion discount. */
+  occasionDiscountCap: number;
+}
+
 export interface User {
   id: string;
   name: string;

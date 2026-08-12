@@ -9,6 +9,7 @@ import {
   hasPermission,
   isPermissionKey,
   navItems,
+  permissionLabel,
   presetForPerms,
   roleLabel,
 } from "./permissions";
@@ -376,6 +377,7 @@ describe("legacy group aliasing (mirrors has_perm in SQL)", () => {
       "consumables.edit", "consumables.issue", "consumables.reports",
       "consumables.view",
       "expense.cancel", "expense.create", "expense.pay", "expense.view",
+      "loyalty.redeem", "loyalty.settings",
       "purchases.create", "purchases.pay", "purchases.return",
       "salary.edit", "salary.pay", "salary.view",
       "staff.manage", "store.lists", "store.settings", "store.status",
@@ -551,5 +553,33 @@ describe("suppliers & purchasing permissions", () => {
   it("lands a suppliers-only user on /suppliers", () => {
     expect(defaultRoute(staff(["suppliers.view"]))).toBe("/suppliers");
     expect(defaultRoute(staff(["purchases.create"]))).toBe("/purchases");
+  });
+});
+
+describe("loyalty permissions", () => {
+  it("are both in the catalogue", () => {
+    expect(ALL_PERMISSIONS).toContain("loyalty.settings");
+    expect(ALL_PERMISSIONS).toContain("loyalty.redeem");
+  });
+
+  it("give a Cashier redemption but not configuration", () => {
+    expect(ROLE_PRESETS.Cashier).toContain("loyalty.redeem");
+    expect(ROLE_PRESETS.Cashier).not.toContain("loyalty.settings");
+  });
+
+  it("give an Admin both", () => {
+    expect(ROLE_PRESETS.Admin).toContain("loyalty.settings");
+    expect(ROLE_PRESETS.Admin).toContain("loyalty.redeem");
+  });
+
+  it("are withheld from a Manager and a Storekeeper", () => {
+    for (const role of ["Manager", "Storekeeper"] as const) {
+      expect(ROLE_PRESETS[role]).not.toContain("loyalty.settings");
+      expect(ROLE_PRESETS[role]).not.toContain("loyalty.redeem");
+    }
+  });
+
+  it("carry a human label", () => {
+    expect(permissionLabel("loyalty.redeem")).toBe("Redeem loyalty points");
   });
 });

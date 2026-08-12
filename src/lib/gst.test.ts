@@ -205,3 +205,56 @@ describe("amountInWords", () => {
     expect(amountInWords(0.05)).toBe("Zero Rupees and Five Paise Only");
   });
 });
+
+describe("computeGstTotals with extraDiscount", () => {
+  const lines = [{ name: "Cake", hsn: "1905", gstRate: 18, qty: 1, price: 1000 }];
+
+  it("adds the extra discount to the manual one before allocating", () => {
+    const r = computeGstTotals(lines, {
+      pricesIncludeGst: true,
+      interstate: false,
+      discountValue: 10,
+      discountMode: "percent",
+      extraDiscount: 150,
+    });
+    // 10% of 1000 = 100, plus 150 extra = 250 off a 1000 subtotal.
+    expect(r.discount).toBe(250);
+    expect(r.total).toBe(750);
+  });
+
+  it("clamps the combined figure to the subtotal", () => {
+    const r = computeGstTotals(lines, {
+      pricesIncludeGst: true,
+      interstate: false,
+      discountValue: 800,
+      discountMode: "flat",
+      extraDiscount: 500,
+    });
+    expect(r.discount).toBe(1000);
+    expect(r.total).toBe(0);
+  });
+
+  it("is a no-op when omitted, matching the pre-loyalty behaviour", () => {
+    const base = { pricesIncludeGst: true, interstate: false, discountValue: 10, discountMode: "percent" } as const;
+    expect(computeGstTotals(lines, base)).toEqual(
+      computeGstTotals(lines, { ...base, extraDiscount: 0 }),
+    );
+  });
+
+  it("still allocates the whole discount across lines with no residue", () => {
+    const three = [
+      { name: "A", hsn: "1905", gstRate: 18, qty: 1, price: 333.33 },
+      { name: "B", hsn: "1905", gstRate: 5, qty: 1, price: 333.33 },
+      { name: "C", hsn: "1905", gstRate: 12, qty: 1, price: 333.34 },
+    ];
+    const r = computeGstTotals(three, {
+      pricesIncludeGst: true,
+      interstate: false,
+      discountValue: 0,
+      discountMode: "percent",
+      extraDiscount: 100,
+    });
+    const allocated = r.lines.reduce((s, l) => s + l.discount, 0);
+    expect(Math.round(allocated * 100) / 100).toBe(100);
+  });
+});

@@ -49,6 +49,7 @@ export const PERMISSION_CATALOG: PermissionGroup[] = [
       { key: "bill.cancel", label: "Cancel bills", hint: "Void a bill and return its stock" },
       { key: "bill.delete", label: "Delete bills", hint: "Permanently remove a bill — leaves no trail" },
       { key: "bill.history", label: "View bill history", hint: "Browse and search past bills" },
+      { key: "loyalty.redeem", label: "Redeem loyalty points", hint: "Apply a customer's points as money off a bill" },
     ],
   },
   {
@@ -165,6 +166,7 @@ export const PERMISSION_CATALOG: PermissionGroup[] = [
       { key: "store.settings", label: "Store profile & tax", hint: "Name, address, GST, tax rate, thresholds, logo" },
       { key: "store.status", label: "Open & close store", hint: "Toggle whether the store is trading" },
       { key: "store.lists", label: "Manage lists", hint: "Categories, units, emojis and stock-out reasons" },
+      { key: "loyalty.settings", label: "Loyalty programme setup", hint: "Turn the programme on or off and set earn, redemption and occasion rates" },
       { key: "staff.manage", label: "Manage staff", hint: "Add staff and change their permissions" },
       { key: "activity.view", label: "View activity log", hint: "Stock movements and bill events" },
     ],
@@ -288,6 +290,7 @@ export const ROLE_PRESETS: Record<PresetRole, PermissionKey[]> = {
     "bill.print",
     "bill.cancel",
     "bill.history",
+    "loyalty.redeem",
     "customers.view",
     "customers.edit",
     "cashbook.view",
