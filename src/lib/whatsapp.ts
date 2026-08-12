@@ -203,7 +203,7 @@ export function buildOfferText(
   }
 
   lines.push("", "_Come say hello!_");
-  if (bakery.phone) lines.push(`_${bakery.name} · ${bakery.phone}_`);
+  if (bakery.phone) lines.push(`_${bakery.name}_`);
 
   return lines.join("\n");
 }
