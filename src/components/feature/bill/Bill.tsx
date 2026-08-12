@@ -10,6 +10,13 @@ import { shortfallFor } from "@/lib/bill";
 import { computeGstTotals, isValidGstin, stateCodeFromGstin } from "@/lib/gst";
 import { consumableLineError, defaultChargedFor } from "@/lib/bill-consumable";
 import { hasPermission } from "@/lib/permissions";
+import {
+  combinedDiscount,
+  occasionDiscount,
+  occasionForToday,
+  redeemValue,
+  storeToday,
+} from "@/lib/loyalty";
 import { expiryStatus } from "@/lib/expiry";
 import { formatDate } from "@/lib/format";
 import { fetchBillableConsumables, fetchCustomerByPhone } from "@/lib/supabase-data";
@@ -91,6 +98,12 @@ export function Bill() {
   const [phoneErr, setPhoneErr] = useState("");
   const [nameErr, setNameErr] = useState("");
   const [returning, setReturning] = useState<Customer | null>(null);
+  const loyalty = useBakeryStore((s) => s.bakery.loyalty);
+  const canRedeem = hasPermission(currentUser, "loyalty.redeem");
+  // "YYYY-MM-DD" or "" — only ever SENT for a customer the lookup did not find.
+  const [dob, setDob] = useState("");
+  const [anniversary, setAnniversary] = useState("");
+  const [redeemInput, setRedeemInput] = useState("");
   const [generating, setGenerating] = useState(false);
   const [lines, setLines] = useState<BillLine[]>([]);
   // Consumables are not in the zustand store — the Consumables page fetches its
@@ -122,21 +135,67 @@ export function Bill() {
   //
   // One totals path for both invoice types: a non-GST bill is simply every rate
   // at 0, which makes tax 0 and total = subtotal - discount.
-  const gstTotals = computeGstTotals(
-    [
-      ...lines.map((l) => ({
-        name: l.name, hsn: l.hsn, gstRate: isGst ? l.gstRate : 0,
-        qty: l.qty, price: l.price,
+  const gstLinesInput = [
+    ...lines.map((l) => ({
+      name: l.name, hsn: l.hsn, gstRate: isGst ? l.gstRate : 0,
+      qty: l.qty, price: l.price,
+    })),
+    ...consumableLines
+      .filter((c) => c.charged)
+      .map((c) => ({
+        name: c.name, hsn: c.hsn, gstRate: isGst ? c.gstRate : 0,
+        qty: c.qty, price: c.unitCost,
       })),
-      ...consumableLines
-        .filter((c) => c.charged)
-        .map((c) => ({
-          name: c.name, hsn: c.hsn, gstRate: isGst ? c.gstRate : 0,
-          qty: c.qty, price: c.unitCost,
-        })),
-    ],
-    { pricesIncludeGst, interstate, discountValue, discountMode },
-  );
+  ];
+  // The occasion discount is an INPUT to the totals (it feeds extraDiscount
+  // below), so the subtotal it is computed on must exist before the real
+  // computeGstTotals call. The subtotal never depends on discountValue,
+  // discountMode or extraDiscount, so this preliminary call — reusing the same
+  // pure function rather than re-deriving its round2 arithmetic here — always
+  // returns the exact figure the final call below reproduces bit-for-bit.
+  const subtotalPreview = computeGstTotals(gstLinesInput, {
+    pricesIncludeGst, interstate, discountValue, discountMode,
+  }).subtotal;
+
+  // The server derives the occasion itself and is the authority; this is the
+  // preview, computed from the same stored dates the server will read.
+  // Skipped entirely when the programme is off — this is the busiest screen in
+  // the app, and a disabled store gets none of this work on every render.
+  const occasion =
+    loyalty.enabled && returning
+      ? occasionForToday(
+          returning,
+          storeToday(new Date(), Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"),
+        )
+      : null;
+  const occasionAmt = occasionDiscount(subtotalPreview, occasion, loyalty);
+  // Preview-only rupee value of the biller's own discount, used for the
+  // "points not used" hint below — computeGstTotals derives its own,
+  // authoritative manual discount independently, so precision here does not
+  // affect the actual bill total.
+  const manualDiscountAmt =
+    discountMode === "flat" ? discountValue : (subtotalPreview * discountValue) / 100;
+
+  const balance = returning?.pointsBalance ?? 0;
+  const redeemPoints = Math.min(balance, Math.max(0, parseInt(redeemInput) || 0));
+  const redeemAmt = redeemValue(redeemPoints, loyalty);
+  const extraDiscount = occasionAmt + redeemAmt;
+
+  // Each date is asked for independently: a NEW customer has neither on
+  // record, but a RETURNING one may be missing just one — the till is the
+  // only place these get captured, so a stored gap is worth asking about too.
+  // A date already on record is never re-asked (the customer screen corrects
+  // one, billing only ever fills a blank).
+  const needDob =
+    loyalty.enabled && customer.phone.length === 10 && (!returning || returning.dob === null);
+  const needAnniversary =
+    loyalty.enabled &&
+    customer.phone.length === 10 &&
+    (!returning || returning.anniversary === null);
+
+  const gstTotals = computeGstTotals(gstLinesInput, {
+    pricesIncludeGst, interstate, discountValue, discountMode, extraDiscount,
+  });
   const {
     subtotal, discount: discountAmt, taxable, cgst, sgst, igst, total,
   } = gstTotals;
@@ -252,8 +311,19 @@ export function Bill() {
   // customer up (debounced, best-effort). On a hit, prefill an empty name field
   // and flag the returning customer. Never blocks bill generation.
   useEffect(() => {
+    // Points and dates typed for one customer must never carry to the next —
+    // now that a date field can appear for a RETURNING customer too, a
+    // leftover value from the previous phone would otherwise be submitted
+    // for whoever this phone number turns out to belong to.
+    setRedeemInput("");
+    setDob("");
+    setAnniversary("");
+    // Cleared unconditionally, before the lookup runs — otherwise correcting
+    // the last digit of a phone number leaves the PREVIOUS customer in
+    // `returning` until the debounced lookup resolves (or forever, on a
+    // miss), and occasion/balance/needDob all read `returning`.
+    setReturning(null);
     if (customer.phone.length !== 10) {
-      setReturning(null);
       return;
     }
     let alive = true;
@@ -415,6 +485,19 @@ export function Bill() {
           // blanks keeps the payload honest about what was actually chosen.
           gstin: isGst ? gstin.trim().toUpperCase() : "",
           placeOfSupply: isGst ? effectivePos : "",
+          // Each date is sent independently, only when it was actually typed
+          // AND is genuinely missing on record (mirrors needDob/needAnniversary
+          // above — a key must be ABSENT, not undefined, when it doesn't
+          // apply). The server's upsert only ever fills a stored null and
+          // never overwrites a date already on record, so this is safe for a
+          // returning customer too.
+          ...(needDob && dob ? { dob } : {}),
+          ...(needAnniversary && anniversary ? { anniversary } : {}),
+          // The SQL RAISES on a sub-minimum request rather than clamping it to
+          // zero like redeemValue does — so a below-minimum amount is omitted
+          // entirely rather than sent as 0. Also gated on `enabled` so a
+          // disabled programme never sends this field at all.
+          ...(loyalty.enabled && redeemPoints >= loyalty.minRedeemPoints ? { redeemPoints } : {}),
         },
         lines,
         payment,
@@ -437,6 +520,9 @@ export function Bill() {
       setCashReceived("");
       setShortNote("");
       setDiscount("");
+      setDob("");
+      setAnniversary("");
+      setRedeemInput("");
       setPhoneErr("");
       setNameErr("");
       setClearArmed(false);
@@ -961,6 +1047,39 @@ export function Bill() {
                 className="w-full rounded-[10px] border border-line bg-cream py-[9px] pl-9 pr-[11px] text-[13px] outline-none focus:border-brown"
               />
             </div>
+            {(needDob || needAnniversary) && (
+              <>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  {needDob && (
+                    <div>
+                      <label className="mb-1 block text-[11px] font-bold text-ink-muted">
+                        🎂 Birthday
+                      </label>
+                      <input
+                        type="date" value={dob}
+                        onChange={(e) => setDob(e.target.value)} className="w-full"
+                      />
+                    </div>
+                  )}
+                  {needAnniversary && (
+                    <div>
+                      <label className="mb-1 block text-[11px] font-bold text-ink-muted">
+                        💍 Anniversary
+                      </label>
+                      <input
+                        type="date" value={anniversary}
+                        onChange={(e) => setAnniversary(e.target.value)} className="w-full"
+                      />
+                    </div>
+                  )}
+                </div>
+                <p className="mt-1 text-[11px] text-ink-muted">
+                  {returning
+                    ? "Optional. Add the missing date to enable their discount on the day."
+                    : "Optional. Used only to give them a discount on the day."}
+                </p>
+              </>
+            )}
           </div>
           {nameErr && (
             <div className="border-b border-line-soft px-[18px] py-2 text-[11px] font-semibold text-danger">
@@ -976,6 +1095,7 @@ export function Bill() {
             <div className="flex items-center gap-1.5 border-b border-line-soft bg-success-bg px-[18px] py-2 text-[11px] font-bold text-success">
               <UserCheck size={13} />
               Returning customer · {returning.visitCount} visit{returning.visitCount === 1 ? "" : "s"}
+              {loyalty.enabled && ` · ${returning.pointsBalance} points`}
             </div>
           )}
 
@@ -1043,6 +1163,12 @@ export function Bill() {
                     {subtotal.toFixed(2)}
                   </span>
                 </div>
+                {loyalty.enabled && occasion !== null && occasionAmt > 0 && (
+                  <div className="mb-2 rounded-[11px] border border-line bg-cream px-3 py-2 text-[12.5px] font-bold text-ink">
+                    {occasion === "birthday" ? "🎂 Birthday" : "💍 Anniversary"} — {currency}
+                    {occasionAmt.toFixed(2)} off, applied automatically
+                  </div>
+                )}
                 {canDiscount && (
                 <div className="flex items-center justify-between py-0.5 text-[13px] font-semibold text-ink-muted">
                   <span className="flex items-center gap-1.5">
@@ -1088,6 +1214,46 @@ export function Bill() {
                     {discountAmt > 0 ? `−${currency}${discountAmt.toFixed(2)}` : `${currency}0.00`}
                   </span>
                 </div>
+                )}
+                {loyalty.enabled && canRedeem && returning && balance > 0 && (
+                  <div className="mt-2">
+                    <label className="mb-1 block text-[11px] font-bold text-ink-muted">
+                      Redeem points ({balance} available)
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number" min={0} max={balance} inputMode="numeric"
+                        value={redeemInput}
+                        onChange={(e) => setRedeemInput(e.target.value.replace(/\D/g, ""))}
+                        placeholder={`Minimum ${loyalty.minRedeemPoints}`}
+                        className="flex-1"
+                      />
+                      <span className="num shrink-0 text-[14px] font-extrabold text-ink">
+                        −{currency}{redeemAmt.toFixed(2)}
+                      </span>
+                    </div>
+                    {redeemPoints > 0 && redeemPoints < loyalty.minRedeemPoints && (
+                      <p className="mt-1 text-[11px] text-danger">
+                        At least {loyalty.minRedeemPoints} points are needed to redeem.
+                      </p>
+                    )}
+                    {(() => {
+                      const c = combinedDiscount({
+                        subtotal: subtotalPreview,
+                        manual: manualDiscountAmt,
+                        occasion: occasionAmt,
+                        redeem: redeemAmt,
+                        settings: loyalty,
+                      });
+                      const unused = redeemAmt - c.redeem;
+                      return unused > 0 ? (
+                        <p className="mt-1 text-[11px] text-ink-muted">
+                          {currency}{unused.toFixed(2)} of points not used — the bill is already
+                          fully covered. Those points stay on the balance.
+                        </p>
+                      ) : null;
+                    })()}
+                  </div>
                 )}
                 {/* A non-GST bill charges no tax, so it shows no tax row at
                     all — there is nothing to state. */}

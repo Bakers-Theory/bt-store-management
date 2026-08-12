@@ -1,4 +1,5 @@
-import type { Bakery, Bill } from "./types";
+import type { Bakery, Bill, Customer, LoyaltySettings, OccasionKind } from "./types";
+import { redeemValue } from "./loyalty";
 
 /**
  * A 10-digit Indian number prefixed with the 91 country code, or undefined when
@@ -21,6 +22,11 @@ const MONO_WIDTH = 24;
 function monoRow(label: string, amount: string): string {
   const pad = MONO_WIDTH - amount.length;
   return pad > label.length ? label.padEnd(pad) + amount : `${label} ${amount}`;
+}
+
+/** Rounds to 2 decimal places, avoiding float noise like 42.499999999999996. */
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }
 
 /**
@@ -57,14 +63,27 @@ export function buildBillText(bill: Bill, bakery: Bakery): string {
   lines.push("─".repeat(MONO_WIDTH));
   lines.push(monoRow("Subtotal", money(bill.subtotal)));
   if (bill.discountAmount > 0) {
-    const label = bill.discountType === "percent" ? `Discount (${bill.discountPercent}%)` : "Discount";
-    lines.push(monoRow(label, `-${money(bill.discountAmount)}`));
+    // discount_amount is the TOTAL of all three reductions; the manual part is
+    // what is left once the occasion and the points are taken out of it.
+    const manual = round2(bill.discountAmount - bill.occasionDiscount - bill.pointsRedeemValue);
+    if (manual > 0) {
+      const label = bill.discountType === "percent" ? `Discount (${bill.discountPercent}%)` : "Discount";
+      lines.push(monoRow(label, `-${money(manual)}`));
+    }
+    if (bill.occasionDiscount > 0) {
+      const label = bill.occasionKind === "birthday" ? "Birthday offer" : "Anniversary offer";
+      lines.push(monoRow(label, `-${money(bill.occasionDiscount)}`));
+    }
+    if (bill.pointsRedeemValue > 0) {
+      lines.push(monoRow(`Points redeemed (${bill.pointsRedeemed})`, `-${money(bill.pointsRedeemValue)}`));
+    }
   }
   if (bill.tax > 0) lines.push(monoRow(`Tax (${bill.taxRate}%)`, money(bill.tax)));
   lines.push(monoRow("TOTAL", money(bill.total)));
   lines.push("```", "");
 
   lines.push(`💳 Paid via ${bill.paymentMethod}`);
+  if (bill.pointsEarned > 0) lines.push(`⭐ You earned ${bill.pointsEarned} points`);
   lines.push("", "_Thank you for your visit!_");
   lines.push(bakery.phone ? `_Please come again_` : `_${bakery.name}_`);
 
@@ -149,6 +168,55 @@ function openAppWithWebFallback(appUrl: string, webUrl: string): void {
 export function shareBillOnWhatsApp(bill: Bill, bakery: Bakery): void {
   const text = buildBillText(bill, bakery);
   const { primary, fallback } = whatsAppTargets(text, bill.customerPhone, isMobileDevice());
+  if (fallback) openAppWithWebFallback(primary, fallback);
+  else window.open(primary, "_blank", "noopener,noreferrer");
+}
+
+/**
+ * The birthday/anniversary offer as a WhatsApp message. Uses WhatsApp's markup
+ * (*bold*, _italic_) like buildBillText, but no ``` block — there is no column
+ * of amounts to align here.
+ */
+export function buildOfferText(
+  customer: Customer,
+  bakery: Bakery,
+  kind: OccasionKind,
+  settings: LoyaltySettings,
+): string {
+  const who = customer.name.trim();
+  const occasion = kind === "birthday" ? "Happy Birthday" : "Happy Anniversary";
+  const lines: string[] = [];
+
+  lines.push(`🎉 *${occasion}${who ? `, ${who}` : ""}!*`, "");
+  lines.push(
+    `From all of us at *${bakery.name}* — here's ${settings.occasionDiscountPercent}% off ` +
+      `anything you pick up today, up to ${bakery.currency}${settings.occasionDiscountCap}.`,
+  );
+
+  if (customer.pointsBalance >= settings.minRedeemPoints) {
+    const worth = redeemValue(customer.pointsBalance, settings);
+    lines.push(
+      "",
+      `You also have *${customer.pointsBalance} points* saved up — ` +
+        `worth ${bakery.currency}${worth.toFixed(2)} off.`,
+    );
+  }
+
+  lines.push("", "_Come say hello!_");
+  if (bakery.phone) lines.push(`_${bakery.name} · ${bakery.phone}_`);
+
+  return lines.join("\n");
+}
+
+/** Opens WhatsApp with the offer prefilled. Must be called synchronously from a click handler. */
+export function shareOfferOnWhatsApp(
+  customer: Customer,
+  bakery: Bakery,
+  kind: OccasionKind,
+  settings: LoyaltySettings,
+): void {
+  const text = buildOfferText(customer, bakery, kind, settings);
+  const { primary, fallback } = whatsAppTargets(text, customer.phone, isMobileDevice());
   if (fallback) openAppWithWebFallback(primary, fallback);
   else window.open(primary, "_blank", "noopener,noreferrer");
 }

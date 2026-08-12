@@ -6,6 +6,11 @@ import { amountInWords, hsnSummary } from "@/lib/gst";
 import type { Bill } from "@/lib/types";
 import { gstRowsForBill } from "./gst-rows";
 
+/** Rounds to 2 decimal places, avoiding float noise like 42.499999999999996. */
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 /**
  * 80mm thermal tax invoice — the same GST-compliant content as the A4
  * `TaxInvoice`, laid out one column wide so it survives a receipt printer.
@@ -133,15 +138,34 @@ export function TaxReceipt({ bill }: { bill: Bill }) {
       ))}
 
       <div className="receipt-divider" />
-      {bill.discountAmount > 0 && (
-        <div className="receipt-row">
-          <span>
-            Discount before tax
-            {bill.discountType === "percent" ? ` (${bill.discountPercent}%)` : ""}
-          </span>
-          <span>−{money(bill.discountAmount)}</span>
-        </div>
-      )}
+      {bill.discountAmount > 0 && (() => {
+        const manual = round2(bill.discountAmount - bill.occasionDiscount - bill.pointsRedeemValue);
+        return (
+          <>
+            {manual > 0 && (
+              <div className="receipt-row">
+                <span>
+                  Discount before tax
+                  {bill.discountType === "percent" ? ` (${bill.discountPercent}%)` : ""}
+                </span>
+                <span>−{money(manual)}</span>
+              </div>
+            )}
+            {bill.occasionDiscount > 0 && (
+              <div className="receipt-row">
+                <span>{bill.occasionKind === "birthday" ? "Birthday offer" : "Anniversary offer"}</span>
+                <span>−{money(bill.occasionDiscount)}</span>
+              </div>
+            )}
+            {bill.pointsRedeemValue > 0 && (
+              <div className="receipt-row">
+                <span>Points redeemed ({bill.pointsRedeemed})</span>
+                <span>−{money(bill.pointsRedeemValue)}</span>
+              </div>
+            )}
+          </>
+        );
+      })()}
       <div className="receipt-row">
         <span>Taxable value</span>
         <span>{money(bill.taxableValue)}</span>

@@ -10,6 +10,7 @@ import { MyAccount } from "./MyAccount";
 import { UserManagement } from "./UserManagement";
 import { ChangePasswordCard } from "./ChangePasswordCard";
 import { ListManager } from "./ListManager";
+import { LoyaltyCard } from "./LoyaltyCard";
 import { tabCls } from "@/components/ui/tabClass";
 import { hasPermission } from "@/lib/permissions";
 
@@ -47,9 +48,10 @@ export function Settings() {
   // lists without also being handed the store profile or the danger zone.
   const canProfile = hasPermission(user, "store.settings");
   const canLists = hasPermission(user, "store.lists");
+  const canLoyalty = hasPermission(user, "loyalty.settings");
   const canStaff = hasPermission(user, "staff.manage");
   const isOwner = user?.role === "Owner";
-  const storeTab = canProfile || canLists;
+  const storeTab = canProfile || canLists || canLoyalty;
   const staffTab = canStaff || isOwner;
 
   // Nothing administrative to show — this is just their own account.
@@ -304,6 +306,9 @@ export function Settings() {
 
         {/* Item options */}
         {canLists && <ListManager />}
+
+        {/* Loyalty programme */}
+        {canLoyalty && <LoyaltyCard />}
       </div>
       )}
 

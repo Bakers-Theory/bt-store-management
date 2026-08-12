@@ -25,6 +25,14 @@
 --      and now spans all three sources. The manual part is recoverable as
 --      discount_amount - occasion_discount - points_redeem_value, so every
 --      existing report and receipt still reconciles.
+--   6. An occasion date counts only from the NEXT bill onward. generate_bill
+--      derives the occasion from dob/anniversary as they stood BEFORE the
+--      bill's own upsert, so a date supplied by this bill's payload earns
+--      nothing today. Without that, a biller holding neither bill.discount nor
+--      loyalty.redeem could type today's date into a new customer's birthday
+--      field and grant themselves up to occasion_discount_cap, repeatably. The
+--      cost is that a genuine same-day walk-in misses the discount on their
+--      first visit only; they receive it every year after.
 -- ============================================================================
 
 -- ─── store_settings: the owner's configuration ──────────────────────────────
@@ -122,7 +130,13 @@ begin
       gst = coalesce(p->>'gst',''),
       currency = coalesce(nullif(p->>'currency',''),'₹'),
       tax_rate = coalesce((p->>'taxRate')::numeric, tax_rate),
+      -- CHANGED (0070): 0068 fell back to literals (5 and 3). This UPDATE now
+      -- also runs when the payload carries only loyalty keys (an Admin
+      -- holding both permissions saving just the loyalty section), so the
+      -- fallback must be the CURRENT column value — a literal here would
+      -- silently reset the store's stock thresholds on a loyalty-only save.
       low_stock_alert = coalesce((p->>'lowStockAlert')::numeric, low_stock_alert),
+      -- CHANGED (0070): see low_stock_alert above.
       expiring_soon_days = coalesce((p->>'expiringSoonDays')::integer, expiring_soon_days),
       gst_state_code = btrim(coalesce(p->>'gstStateCode', gst_state_code)),
       prices_include_gst =
@@ -330,6 +344,7 @@ declare v_sub numeric := 0; v_tax numeric := 0; v_bill public.bills;
         v_pts_red integer := 0; v_pts_earn integer := 0;
         v_over numeric; v_cut numeric;
         v_dob date; v_anniv date; v_today date; v_feb28 boolean := false;
+        v_prior_dob date; v_prior_anniv date;
 begin
   if not public.has_perm('bill.create') then raise exception 'forbidden'; end if;
   -- A biller without bill.discount cannot smuggle one in through the payload.
@@ -453,9 +468,21 @@ begin
   v_absorbed := round(v_absorbed, 2);
 
   if v_phone <> '' then
-    -- ADDED (0070): the two dates are written on a NEW customer and filled in
-    -- on an existing one ONLY when currently null. Billing never overwrites a
-    -- date already on record — correcting one is the customer screen's job.
+    -- ADDED (0070): note 6 — the occasion is decided on the dates as they stood
+    -- BEFORE this bill touched them, so they are read FIRST, under the same row
+    -- lock the upsert below takes. A date this bill's own payload supplied
+    -- therefore earns nothing today: otherwise a biller holding neither
+    -- bill.discount nor loyalty.redeem could type today's date into a new
+    -- customer's birthday field and hand themselves occasion_discount_cap on
+    -- the spot, once per new customer. A brand-new customer has no row here, so
+    -- both come back null and no occasion fires — which is the intent.
+    select c.dob, c.anniversary into v_prior_dob, v_prior_anniv
+      from public.customers c where c.phone = v_phone for update;
+
+    -- The two dates are still WRITTEN here: they are set on a NEW customer and
+    -- filled in on an existing one ONLY when currently null. Billing never
+    -- overwrites a date already on record — correcting one is the customer
+    -- screen's job. They simply do not count until the NEXT bill.
     v_dob := nullif(btrim(coalesce(customer->>'dob','')), '')::date;
     v_anniv := nullif(btrim(coalesce(customer->>'anniversary','')), '')::date;
     insert into public.customers (phone, name, dob, anniversary)
@@ -466,12 +493,13 @@ begin
             dob = coalesce(public.customers.dob, excluded.dob),
             anniversary = coalesce(public.customers.anniversary, excluded.anniversary),
             last_seen = now()
-      returning id, dob, anniversary, points_balance
-      into v_customer, v_dob, v_anniv, v_pts_bal;
+      returning id, points_balance
+      into v_customer, v_pts_bal;
   end if;
 
-  -- ADDED (0070): note 4 — the occasion is derived here, from the STORED
-  -- dates against today in the store timezone, and never read from the payload.
+  -- ADDED (0070): notes 4 and 6 — the occasion is derived here, from the dates
+  -- as STORED BEFORE this bill, against today in the store timezone, and never
+  -- read from the payload.
   v_loy_on := coalesce(v_store.loyalty_enabled, false) and v_customer is not null;
   if v_loy_on then
     v_today := v_on;
@@ -484,22 +512,25 @@ begin
     -- the anniversary is looked at at all. That is occasionForToday()'s
     -- precedence: a birthday wins when both fall today, and a 29 February
     -- birthday still outranks a 28 February anniversary on 28 February.
-    if v_dob is not null
-       and ((extract(month from v_dob) = extract(month from v_today)
-             and extract(day from v_dob) = extract(day from v_today))
-            or (v_feb28 and extract(month from v_dob) = 2
-                and extract(day from v_dob) = 29)) then
+    if v_prior_dob is not null
+       and ((extract(month from v_prior_dob) = extract(month from v_today)
+             and extract(day from v_prior_dob) = extract(day from v_today))
+            or (v_feb28 and extract(month from v_prior_dob) = 2
+                and extract(day from v_prior_dob) = 29)) then
       v_occ := 'birthday';
-    elsif v_anniv is not null
-       and ((extract(month from v_anniv) = extract(month from v_today)
-             and extract(day from v_anniv) = extract(day from v_today))
-            or (v_feb28 and extract(month from v_anniv) = 2
-                and extract(day from v_anniv) = 29)) then
+    elsif v_prior_anniv is not null
+       and ((extract(month from v_prior_anniv) = extract(month from v_today)
+             and extract(day from v_prior_anniv) = extract(day from v_today))
+            or (v_feb28 and extract(month from v_prior_anniv) = 2
+                and extract(day from v_prior_anniv) = 29)) then
       v_occ := 'anniversary';
     end if;
   end if;
 
-  -- Flat clamps the ₹-off to the subtotal; percent clamps the rate to 0–100.
+  -- Flat is just the entered ₹-off floored at 0; percent clamps the rate to
+  -- 0–100 before applying it. Neither is clamped to the subtotal here — that
+  -- clamp now happens once, below, in the combined cut-back that also covers
+  -- the occasion discount and redemption.
   v_type := case when customer->>'discountType' = 'flat' then 'flat' else 'percent' end;
   if v_type = 'flat' then
     v_manual := greatest(0, round(coalesce((customer->>'discount')::numeric, 0), 2));
