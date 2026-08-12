@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@/utils/supabase/client";
-import type { Asset, AssetAssignment, AssetCondition, AssetDocument, AssetEvent, AssetEventKind, AssetFilters, AssetInput, AssetMaintenance, AssetStats, AssetStatus, Attendance, AttendanceStatus, AttendanceSummary, AdvanceBalance, Bakery, Batch, Bill, BillConsumable, BillLine, BillMode, BillStatus, CashAccount, CashCategory, CashDay, CashDayStatus, CashDaySummary, CashDirection, CashEntry, CashEntryFilters, CashEntryStatus, CashPaymentMode, CashSourceType, CashbookSummary, Consumable, ConsumableAlert, ConsumableAlertKind, ConsumableFilters, ConsumableInput, ConsumableStats, Customer, Employee, EmployeeSalary, Expense, ExpenseBankMode, ExpenseEvent, ExpenseEventKind, ExpenseFilters, ExpenseInput, ExpenseMode, ExpenseStatus, InvoiceType, Item, LinkedExpenseInput, Log, MaintenanceKind, MaintenanceStatus, MovementType, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, StaffAdvance, StockMovement, StockMovementFilters, StockMovementInput, StockStatus, StoreLists, StoredLayout, Supplier, SupplierProduct, SupplierStatus, InvoiceStatus, PurchaseInvoice, PurchaseInvoiceLine, PurchaseMode, PurchaseReturn, PurchaseReturnLine, SupplierPayment, SupplierSummary, User } from "./types";
+import type { Asset, AssetAssignment, AssetCondition, AssetDocument, AssetEvent, AssetEventKind, AssetFilters, AssetInput, AssetMaintenance, AssetStats, AssetStatus, Attendance, AttendanceStatus, AttendanceSummary, AdvanceBalance, Bakery, Batch, Bill, BillConsumable, BillLine, BillMode, BillStatus, CashAccount, CashCategory, CashDay, CashDayStatus, CashDaySummary, CashDirection, CashEntry, CashEntryFilters, CashEntryStatus, CashPaymentMode, CashSourceType, CashbookSummary, Consumable, ConsumableAlert, ConsumableAlertKind, ConsumableFilters, ConsumableInput, ConsumableStats, Customer, Employee, EmployeeSalary, Expense, ExpenseBankMode, ExpenseEvent, ExpenseEventKind, ExpenseFilters, ExpenseInput, ExpenseMode, ExpenseStatus, InvoiceType, Item, LinkedExpenseInput, Log, LoyaltyEntry, MaintenanceKind, MaintenanceStatus, MovementType, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, StaffAdvance, StockMovement, StockMovementFilters, StockMovementInput, StockStatus, StoreLists, StoredLayout, Supplier, SupplierProduct, SupplierStatus, InvoiceStatus, PurchaseInvoice, PurchaseInvoiceLine, PurchaseMode, PurchaseReturn, PurchaseReturnLine, SupplierPayment, SupplierSummary, User } from "./types";
 import type { SupplierInput } from "./supplier";
 import { isPurchaseMode, type DraftLine } from "./purchase";
 import { isAttendanceStatus } from "./attendance";
@@ -62,6 +62,12 @@ interface BillRow {
   cgst?: number | string;
   sgst?: number | string;
   igst?: number | string;
+  // Migration 0070 — optional, see ItemRow.
+  occasion_kind?: "birthday" | "anniversary" | null;
+  occasion_discount?: number | string;
+  points_redeemed?: number | string;
+  points_redeem_value?: number | string;
+  points_earned?: number | string;
 }
 interface BillItemRow {
   id: string;
@@ -109,6 +115,10 @@ interface CustomerRow {
   state_code?: string;
   billing_address?: string;
   default_invoice_type?: "gst" | "non_gst";
+  // Migration 0070 — optional, see ItemRow.
+  dob?: string | null;
+  anniversary?: string | null;
+  points_balance?: number | string;
 }
 interface SettingsRow {
   name: string;
@@ -127,6 +137,14 @@ interface SettingsRow {
   // Migration 0068 — optional, see ItemRow.
   gst_state_code?: string;
   prices_include_gst?: boolean;
+  // Migration 0070 — optional, see ItemRow.
+  loyalty_enabled?: boolean;
+  points_per_amount?: number;
+  points_amount_unit?: number;
+  points_per_rupee?: number;
+  min_redeem_points?: number;
+  occasion_discount_percent?: number;
+  occasion_discount_cap?: number;
 }
 interface BatchRow {
   id: string;
@@ -257,6 +275,11 @@ export const mapBill = (
   status: r.status,
   cancelledAt: r.cancelled_at ?? undefined,
   cancelledBy: r.cancelled_by ?? undefined,
+  occasionKind: r.occasion_kind ?? null,
+  occasionDiscount: Number(r.occasion_discount ?? 0),
+  pointsRedeemed: Number(r.points_redeemed ?? 0),
+  pointsRedeemValue: Number(r.points_redeem_value ?? 0),
+  pointsEarned: Number(r.points_earned ?? 0),
 });
 
 // visit_count / total_spend arrive as bigint/numeric — Postgres serialises those
@@ -273,6 +296,9 @@ export const mapCustomer = (r: CustomerRow): Customer => ({
   stateCode: r.state_code ?? "",
   billingAddress: r.billing_address ?? "",
   defaultInvoiceType: r.default_invoice_type ?? "non_gst",
+  dob: r.dob ?? null,
+  anniversary: r.anniversary ?? null,
+  pointsBalance: Number(r.points_balance ?? 0),
 });
 
 const mapLog = (r: LogRow): Log => ({
@@ -304,6 +330,17 @@ const mapBakery = (r: SettingsRow): Bakery => ({
   // Default true, matching the column default: an unmigrated cache must not
   // silently flip the store to tax-exclusive pricing.
   pricesIncludeGst: r.prices_include_gst ?? true,
+  // Defaults match the column defaults, so an unmigrated cache reads as a
+  // store that simply has not switched the programme on.
+  loyalty: {
+    enabled: r.loyalty_enabled ?? false,
+    pointsPerAmount: Number(r.points_per_amount ?? 1),
+    pointsAmountUnit: Number(r.points_amount_unit ?? 100),
+    pointsPerRupee: Number(r.points_per_rupee ?? 10),
+    minRedeemPoints: Number(r.min_redeem_points ?? 100),
+    occasionDiscountPercent: Number(r.occasion_discount_percent ?? 10),
+    occasionDiscountCap: Number(r.occasion_discount_cap ?? 200),
+  },
   lowStockAlert: r.low_stock_alert,
   expiringSoonDays: r.expiring_soon_days,
   isOpen: r.is_open,
@@ -632,6 +669,13 @@ export const rpcUpdateCustomer = (
     stateCode: string;
     billingAddress: string;
     defaultInvoiceType: InvoiceType;
+    /**
+     * Optional because `update_customer` distinguishes an ABSENT key (leave the
+     * stored date alone) from an explicit null (clear it). Omit the key entirely
+     * when the caller did not touch the field; send `null` to clear it.
+     */
+    dob?: string | null;
+    anniversary?: string | null;
   },
 ) => rpc<CustomerRow>("update_customer", { p_id: id, p });
 
@@ -676,6 +720,27 @@ export async function fetchCustomerBills(customerId: string): Promise<Bill[]> {
   const linesByBill = linesByBillId((lineRows ?? []) as BillItemRow[]);
 
   return rows.map((b) => mapBill(b, linesByBill.get(b.id) ?? []));
+}
+
+/** One customer's recent points movements, newest first. */
+export async function fetchLoyaltyLedger(
+  customerId: string,
+  limit = 10,
+): Promise<LoyaltyEntry[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("loyalty_ledger")
+    .select("id,kind,points,note,created_at")
+    .eq("customer_id", customerId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  return ((data ?? []) as {
+    id: string; kind: "earn" | "redeem" | "reversal";
+    points: number; note: string; created_at: string;
+  }[]).map((r) => ({
+    id: r.id, kind: r.kind, points: Number(r.points),
+    note: r.note, createdAt: r.created_at,
+  }));
 }
 
 /**
@@ -868,6 +933,11 @@ export const rpcGenerateBill = async (
     gstin: string;
     /** 2-digit state code; "" lets the server default it. */
     placeOfSupply: string;
+    /** "YYYY-MM-DD" on a NEW customer; ignored where a date is already stored. */
+    dob?: string;
+    anniversary?: string;
+    /** Points to burn. The server re-checks the balance, the floor and the grant. */
+    redeemPoints?: number;
   },
   lines: { itemId: string; qty: number }[],
   clientRef: string,
@@ -903,6 +973,13 @@ export const rpcSaveSettings = (p: {
   gst: string; currency: string; lowStockAlert: number;
   expiringSoonDays: number;
   gstStateCode: string; pricesIncludeGst: boolean;
+  loyaltyEnabled?: boolean;
+  pointsPerAmount?: number;
+  pointsAmountUnit?: number;
+  pointsPerRupee?: number;
+  minRedeemPoints?: number;
+  occasionDiscountPercent?: number;
+  occasionDiscountCap?: number;
 }) => rpc<void>("save_settings", { p });
 export const rpcSetStoreStatus = (open: boolean, by: string) =>
   rpc<void>("set_store_status", { p_open: open, p_by: by });

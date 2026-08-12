@@ -12,6 +12,10 @@ const bakery: Bakery = {
   currency: "₹",
   taxRate: 5,
   gstStateCode: "", pricesIncludeGst: true,
+  loyalty: {
+    enabled: false, pointsPerAmount: 1, pointsAmountUnit: 100, pointsPerRupee: 10,
+    minRedeemPoints: 100, occasionDiscountPercent: 10, occasionDiscountCap: 200,
+  },
   lowStockAlert: 5,
   expiringSoonDays: 3,
   isOpen: true,
@@ -46,6 +50,7 @@ const bill = (over: Partial<Bill> = {}): Bill => ({
   billerName: "Asha",
   date: "2026-07-27T12:45:00.000Z",
   status: "active",
+  occasionKind: null, occasionDiscount: 0, pointsRedeemed: 0, pointsRedeemValue: 0, pointsEarned: 0,
   ...over,
 });
 

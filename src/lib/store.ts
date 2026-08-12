@@ -76,6 +76,13 @@ export interface SettingsInput {
   pricesIncludeGst: boolean;
   lowStockAlert: number;
   expiringSoonDays: number;
+  loyaltyEnabled?: boolean;
+  pointsPerAmount?: number;
+  pointsAmountUnit?: number;
+  pointsPerRupee?: number;
+  minRedeemPoints?: number;
+  occasionDiscountPercent?: number;
+  occasionDiscountCap?: number;
 }
 
 interface StoreState {
@@ -162,6 +169,15 @@ const PLACEHOLDER_BAKERY: Bakery = {
   taxRate: 0,
   gstStateCode: "",
   pricesIncludeGst: true,
+  loyalty: {
+    enabled: false,
+    pointsPerAmount: 1,
+    pointsAmountUnit: 100,
+    pointsPerRupee: 10,
+    minRedeemPoints: 100,
+    occasionDiscountPercent: 10,
+    occasionDiscountCap: 200,
+  },
   lowStockAlert: 5,
   expiringSoonDays: 3,
   isOpen: true,

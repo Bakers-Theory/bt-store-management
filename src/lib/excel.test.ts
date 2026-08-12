@@ -17,6 +17,10 @@ const DEFAULT_BAKERY: Bakery = {
   currency: "₹",
   taxRate: 0,
   gstStateCode: "", pricesIncludeGst: true,
+  loyalty: {
+    enabled: false, pointsPerAmount: 1, pointsAmountUnit: 100, pointsPerRupee: 10,
+    minRedeemPoints: 100, occasionDiscountPercent: 10, occasionDiscountCap: 200,
+  },
   lowStockAlert: 5,
   expiringSoonDays: 3,
   isOpen: true,
@@ -37,6 +41,7 @@ const bill = (over: Partial<Bill>): Bill => ({
   discountType: "percent", discountAmount: 0, shortfall: 0, shortfallNote: "", billerName: "",
   invoiceType: "non_gst", invoiceNo: null, customerGstin: "", placeOfSupply: "",
   isInterstate: false, taxableValue: 0, cgst: 0, sgst: 0, igst: 0,
+  occasionKind: null, occasionDiscount: 0, pointsRedeemed: 0, pointsRedeemValue: 0, pointsEarned: 0,
   date: "2026-06-01T10:00:00.000Z", status: "active", ...over,
 });
 
@@ -114,6 +119,7 @@ describe("snapshot builders", () => {
       id: "c1", phone: "999", name: "Ann", firstSeen: "2026-01-01T00:00:00.000Z",
       visitCount: 3, totalSpend: 500, lastPurchase: null,
       gstin: "", stateCode: "", billingAddress: "", defaultInvoiceType: "non_gst",
+      dob: null, anniversary: null, pointsBalance: 0,
     }];
     const cRows = buildCustomersReport({ ...data, customers: custs }, nowD)[0].rows;
     expect(cRows[0]["Name"]).toBe("Ann");

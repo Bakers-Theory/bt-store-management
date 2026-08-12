@@ -29,6 +29,7 @@ const bill = (over: Partial<Bill> = {}): Bill => ({
   date: "2026-08-05T10:00:00.000Z", status: "active",
   invoiceType: "non_gst", invoiceNo: null, customerGstin: "", placeOfSupply: "",
   isInterstate: false, taxableValue: 0, cgst: 0, sgst: 0, igst: 0,
+  occasionKind: null, occasionDiscount: 0, pointsRedeemed: 0, pointsRedeemValue: 0, pointsEarned: 0,
   ...over,
 });
 
