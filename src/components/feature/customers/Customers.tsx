@@ -7,6 +7,7 @@ import { fetchCustomers } from "@/lib/supabase-data";
 import { initials, relativeDay } from "@/lib/format";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { CustomerModal } from "./CustomerModal";
+import { TodaysOccasions } from "./TodaysOccasions";
 import {
   CustomerFilters,
   DEFAULT_FILTERS,
@@ -117,6 +118,8 @@ export function Customers() {
   return (
     <>
       <CustomerFilters search={search} onSearch={setSearch} filters={filters} onFilters={setFilters} />
+
+      {loaded && !error && <TodaysOccasions customers={customers} />}
 
       {!loaded ? (
         <ListSkeleton />

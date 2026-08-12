@@ -208,6 +208,10 @@ describe("mapCustomer", () => {
       stateCode: "",
       billingAddress: "",
       defaultInvoiceType: "non_gst",
+      // No loyalty columns either — a customer cached before migration 0070.
+      dob: null,
+      anniversary: null,
+      pointsBalance: 0,
     });
   });
 

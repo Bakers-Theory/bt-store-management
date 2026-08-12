@@ -4,6 +4,11 @@ import { Croissant, Phone } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import type { Bill } from "@/lib/types";
 
+/** Rounds to 2 decimal places, avoiding float noise like 42.499999999999996. */
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 export function Receipt({ bill }: { bill: Bill }) {
   const b = useBakeryStore((s) => s.bakery);
   const dt = new Date(bill.date);
@@ -84,12 +89,31 @@ export function Receipt({ bill }: { bill: Bill }) {
       ))}
       <div className="receipt-divider" />
       <div className="receipt-row"><span>Subtotal</span><span>{b.currency}{bill.subtotal.toFixed(2)}</span></div>
-      {bill.discountAmount > 0 && (
-        <div className="receipt-row">
-          <span>Discount{bill.discountType === "percent" ? ` (${bill.discountPercent}%)` : ""}</span>
-          <span>−{b.currency}{bill.discountAmount.toFixed(2)}</span>
-        </div>
-      )}
+      {bill.discountAmount > 0 && (() => {
+        const manual = round2(bill.discountAmount - bill.occasionDiscount - bill.pointsRedeemValue);
+        return (
+          <>
+            {manual > 0 && (
+              <div className="receipt-row">
+                <span>Discount{bill.discountType === "percent" ? ` (${bill.discountPercent}%)` : ""}</span>
+                <span>−{b.currency}{manual.toFixed(2)}</span>
+              </div>
+            )}
+            {bill.occasionDiscount > 0 && (
+              <div className="receipt-row">
+                <span>{bill.occasionKind === "birthday" ? "Birthday offer" : "Anniversary offer"}</span>
+                <span>−{b.currency}{bill.occasionDiscount.toFixed(2)}</span>
+              </div>
+            )}
+            {bill.pointsRedeemValue > 0 && (
+              <div className="receipt-row">
+                <span>Points redeemed ({bill.pointsRedeemed})</span>
+                <span>−{b.currency}{bill.pointsRedeemValue.toFixed(2)}</span>
+              </div>
+            )}
+          </>
+        );
+      })()}
       {/* A GST bill prints as a TaxInvoice, never here, so this row only
           ever describes a legacy bill's store-wide tax. */}
       {bill.invoiceType === "non_gst" && bill.tax > 0 && (
@@ -104,6 +128,9 @@ export function Receipt({ bill }: { bill: Bill }) {
       </div>
       <div className="receipt-divider" />
       <div className="receipt-row"><span>Paid via:</span><span className="font-bold">{bill.paymentMethod}</span></div>
+      {bill.pointsEarned > 0 && (
+        <div className="receipt-row"><span>Points earned:</span><span className="font-bold">{bill.pointsEarned}</span></div>
+      )}
       <div className="receipt-divider" />
       <div className="receipt-center mt-1.5 text-[11px]">
         Thank you for your visit!

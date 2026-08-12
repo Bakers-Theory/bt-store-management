@@ -31,6 +31,7 @@ export function computeTotals(
   discountValue = 0,
   discountMode: "percent" | "flat" = "percent",
   consumableLines: BillConsumableLine[] = [],
+  extraDiscount = 0,
 ): BillTotals {
   // Rounded ONCE over the combined sum, matching generate_bill's
   // `round(v_sub + v_csub, 2)`. Rounding the consumable part separately first
@@ -39,10 +40,15 @@ export function computeTotals(
     lines.reduce((s, bi) => s + bi.qty * bi.price, 0) +
       chargedConsumableRaw(consumableLines),
   );
-  const rawDiscount =
+  // Two-track rounding, preserved from the original: `discount` is the rounded
+  // figure that gets reported, but `taxable` subtracts the UNROUNDED value.
+  // Rounding before the subtraction shifts a legacy non-GST total by a paisa
+  // even when extraDiscount is 0 — subtotal ₹1.20 at 1.25% goes ₹1.19 → ₹1.18.
+  const manualDiscount =
     discountMode === "flat"
-      ? Math.min(subtotal, Math.max(0, discountValue))
+      ? Math.max(0, discountValue)
       : (subtotal * discountValue) / 100;
+  const rawDiscount = Math.min(subtotal, manualDiscount + Math.max(0, extraDiscount));
   const discount = round2(rawDiscount);
   const taxable = round2(subtotal - rawDiscount);
   const tax = round2((taxable * taxRate) / 100);

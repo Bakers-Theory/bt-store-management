@@ -24,6 +24,7 @@ export type PermissionKey =
   | "bill.cancel"
   | "bill.delete"
   | "bill.history"
+  | "loyalty.redeem"
   // Inventory
   | "stock.view"
   | "stock.in"
@@ -36,6 +37,8 @@ export type PermissionKey =
   // Customers
   | "customers.view"
   | "customers.edit"
+  // Loyalty
+  | "loyalty.settings"
   // Reports
   | "reports.view"
   | "reports.export"
@@ -113,6 +116,8 @@ export interface Bakery {
   gstStateCode: string;
   /** Whether `Item.price` already contains GST. Defaults to true. */
   pricesIncludeGst: boolean;
+  /** The loyalty programme's configuration. `enabled` false means inert. */
+  loyalty: LoyaltySettings;
   lowStockAlert: number;
   expiringSoonDays: number;
   isOpen: boolean;
@@ -253,6 +258,23 @@ export interface Customer {
   billingAddress: string;
   /** Pre-fills the invoice-type toggle on the bill screen. */
   defaultInvoiceType: InvoiceType;
+  /** "YYYY-MM-DD", or null when not on record. Only month/day are compared. */
+  dob: string | null;
+  anniversary: string | null;
+  /**
+   * Cached sum of `loyalty_ledger`. May be negative when a cancelled bill
+   * clawed back points the customer had already spent.
+   */
+  pointsBalance: number;
+}
+
+/** One customer's points ledger entry, newest first. */
+export interface LoyaltyEntry {
+  id: string;
+  kind: "earn" | "redeem" | "reversal";
+  points: number;
+  note: string;
+  createdAt: string; // ISO
 }
 
 export interface Bill {
@@ -299,6 +321,14 @@ export interface Bill {
   shortfall: number;
   /** Optional reason the biller gave for the shortfall ("" when none). */
   shortfallNote: string;
+  /** Which occasion earned an automatic discount, or null. */
+  occasionKind: OccasionKind | null;
+  /** ₹ given for that occasion. Part of `discountAmount`. */
+  occasionDiscount: number;
+  pointsRedeemed: number;
+  /** ₹ those points bought. Also part of `discountAmount`. */
+  pointsRedeemValue: number;
+  pointsEarned: number;
   billerName: string; // name of the user who generated the bill ("" for legacy bills)
   date: string; // ISO
   status: BillStatus;
@@ -376,6 +406,32 @@ export interface StoredLayout {
   visible: DashboardWidgetSlot[];
   dismissed: DashboardWidgetSlot[];
 }
+
+/** Which occasion a customer's bill qualified for. */
+export type OccasionKind = "birthday" | "anniversary";
+
+/**
+ * The owner's loyalty configuration, mirrored by the `loyalty_*`,
+ * `points_*`, `min_redeem_points` and `occasion_*` columns on
+ * `store_settings`. `enabled` false means every function in `loyalty.ts`
+ * returns a zero — the programme is inert, not merely hidden.
+ */
+export interface LoyaltySettings {
+  enabled: boolean;
+  /** Points granted per `pointsAmountUnit` rupees spent. */
+  pointsPerAmount: number;
+  /** The rupee block that earns `pointsPerAmount`. Always > 0. */
+  pointsAmountUnit: number;
+  /** Points needed to buy ₹1 on redemption. Always > 0. */
+  pointsPerRupee: number;
+  /** Redemption below this many points is refused. */
+  minRedeemPoints: number;
+  /** Applies to birthday and anniversary alike, 0–100. */
+  occasionDiscountPercent: number;
+  /** ₹ ceiling on a single occasion discount. */
+  occasionDiscountCap: number;
+}
+
 export interface User {
   id: string;
   name: string;

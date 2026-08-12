@@ -75,6 +75,32 @@ describe("computeTotals — non-GST bills charge no tax", () => {
   });
 });
 
+describe("computeTotals with extraDiscount", () => {
+  const lines = [line(10, 100)];
+
+  it("adds the extra discount on top of the manual one", () => {
+    const r = computeTotals(lines, 0, 10, "percent", [], 150);
+    expect(r.discount).toBe(250);
+    expect(r.total).toBe(750);
+  });
+
+  it("clamps the combined figure to the subtotal", () => {
+    const r = computeTotals(lines, 0, 900, "flat", [], 500);
+    expect(r.discount).toBe(1000);
+    expect(r.total).toBe(0);
+  });
+
+  it("is a no-op when omitted, matching the pre-loyalty behaviour", () => {
+    // 1.25% of ₹1.20 is ₹0.015 — on the rounding cusp, which is where a
+    // round-before-subtract would shift the total by a paisa.
+    const cusp = [line(1, 1.2)];
+    expect(computeTotals(cusp, 0, 1.25, "percent")).toEqual(
+      computeTotals(cusp, 0, 1.25, "percent", [], 0),
+    );
+    expect(computeTotals(cusp, 0, 1.25, "percent").total).toBe(1.19);
+  });
+});
+
 describe("shortfallFor", () => {
   it("is the gap when the customer pays less than the total", () => {
     expect(shortfallFor(72, 70)).toBe(2);

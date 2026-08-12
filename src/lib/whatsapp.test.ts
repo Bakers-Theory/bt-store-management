@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { buildBillText, whatsAppTargets } from "./whatsapp";
-import type { Bakery, Bill, BillLine } from "./types";
+import { buildBillText, buildOfferText, whatsAppTargets } from "./whatsapp";
+import type { Bakery, Bill, BillLine, Customer, LoyaltySettings } from "./types";
 
 const bakery: Bakery = {
   name: "Baker's Theory",
@@ -12,6 +12,10 @@ const bakery: Bakery = {
   currency: "₹",
   taxRate: 5,
   gstStateCode: "", pricesIncludeGst: true,
+  loyalty: {
+    enabled: false, pointsPerAmount: 1, pointsAmountUnit: 100, pointsPerRupee: 10,
+    minRedeemPoints: 100, occasionDiscountPercent: 10, occasionDiscountCap: 200,
+  },
   lowStockAlert: 5,
   expiringSoonDays: 3,
   isOpen: true,
@@ -46,6 +50,7 @@ const bill = (over: Partial<Bill> = {}): Bill => ({
   billerName: "Asha",
   date: "2026-07-27T12:45:00.000Z",
   status: "active",
+  occasionKind: null, occasionDiscount: 0, pointsRedeemed: 0, pointsRedeemValue: 0, pointsEarned: 0,
   ...over,
 });
 
@@ -143,6 +148,27 @@ describe("buildBillText", () => {
   });
 });
 
+describe("buildBillText with loyalty", () => {
+  it("itemises the occasion discount and the points redeemed", () => {
+    const b = bill({
+      subtotal: 850, discountAmount: 177.5, discountPercent: 5, discountType: "percent",
+      occasionKind: "birthday", occasionDiscount: 85,
+      pointsRedeemed: 500, pointsRedeemValue: 50, pointsEarned: 6,
+      total: 672.5,
+    });
+    const text = buildBillText(b, bakery);
+    expect(text).toContain("Birthday offer");
+    expect(text).toContain("Points redeemed (500)");
+    expect(text).toContain("You earned 6 points");
+  });
+
+  it("prints nothing extra on a bill with no loyalty activity", () => {
+    const text = buildBillText(bill(), bakery);
+    expect(text).not.toContain("offer");
+    expect(text).not.toContain("points");
+  });
+});
+
 describe("whatsAppTargets", () => {
   const text = "hi there";
   const encoded = "hi%20there";
@@ -175,5 +201,56 @@ describe("whatsAppTargets", () => {
 
   it("strips separators from a formatted 10-digit number", () => {
     expect(whatsAppTargets(text, "91234-56780", true).primary).toBe(`https://wa.me/919123456780?text=${encoded}`);
+  });
+});
+
+const customer = (over: Partial<Customer> = {}): Customer => ({
+  id: "c1",
+  phone: "9123456780",
+  name: "Priya",
+  firstSeen: "2026-01-01T00:00:00.000Z",
+  visitCount: 1,
+  totalSpend: 0,
+  lastPurchase: null,
+  gstin: "",
+  stateCode: "",
+  billingAddress: "",
+  defaultInvoiceType: "non_gst",
+  dob: null,
+  anniversary: null,
+  pointsBalance: 0,
+  ...over,
+});
+
+describe("buildOfferText", () => {
+  const settings: LoyaltySettings = {
+    enabled: true, pointsPerAmount: 1, pointsAmountUnit: 100, pointsPerRupee: 10,
+    minRedeemPoints: 100, occasionDiscountPercent: 10, occasionDiscountCap: 200,
+  };
+
+  it("greets the customer by name and names the occasion", () => {
+    const text = buildOfferText(customer({ name: "Priya", pointsBalance: 0 }), bakery, "birthday", settings);
+    expect(text).toContain("Priya");
+    expect(text).toContain("Happy Birthday");
+    expect(text).toContain("10%");
+  });
+
+  it("names the anniversary instead when that is the occasion", () => {
+    const text = buildOfferText(customer({ name: "Priya", pointsBalance: 0 }), bakery, "anniversary", settings);
+    expect(text).toContain("Happy Anniversary");
+    expect(text).not.toContain("Happy Birthday");
+  });
+
+  it("mentions a point balance worth redeeming, and omits it when there is none", () => {
+    const withPoints = buildOfferText(customer({ name: "Priya", pointsBalance: 500 }), bakery, "birthday", settings);
+    expect(withPoints).toContain("500 points");
+    const without = buildOfferText(customer({ name: "Priya", pointsBalance: 0 }), bakery, "birthday", settings);
+    expect(without).not.toContain("points");
+  });
+
+  it("falls back to a generic greeting when no name is on record", () => {
+    const text = buildOfferText(customer({ name: "", pointsBalance: 0 }), bakery, "birthday", settings);
+    expect(text).toContain("Happy Birthday");
+    expect(text).not.toContain("undefined");
   });
 });

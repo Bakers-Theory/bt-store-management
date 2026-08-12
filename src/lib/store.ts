@@ -76,6 +76,13 @@ export interface SettingsInput {
   pricesIncludeGst: boolean;
   lowStockAlert: number;
   expiringSoonDays: number;
+  loyaltyEnabled?: boolean;
+  pointsPerAmount?: number;
+  pointsAmountUnit?: number;
+  pointsPerRupee?: number;
+  minRedeemPoints?: number;
+  occasionDiscountPercent?: number;
+  occasionDiscountCap?: number;
 }
 
 interface StoreState {
@@ -117,6 +124,11 @@ interface StoreState {
       gstin: string;
       /** 2-digit state code; "" lets the server default it. */
       placeOfSupply: string;
+      /** "YYYY-MM-DD" on a NEW customer; ignored where a date is already stored. */
+      dob?: string;
+      anniversary?: string;
+      /** Points to burn. The server re-checks the balance, the floor and the grant. */
+      redeemPoints?: number;
     },
     lines: BillLine[],
     paymentMethod: PaymentMethod,
@@ -162,6 +174,15 @@ const PLACEHOLDER_BAKERY: Bakery = {
   taxRate: 0,
   gstStateCode: "",
   pricesIncludeGst: true,
+  loyalty: {
+    enabled: false,
+    pointsPerAmount: 1,
+    pointsAmountUnit: 100,
+    pointsPerRupee: 10,
+    minRedeemPoints: 100,
+    occasionDiscountPercent: 10,
+    occasionDiscountCap: 200,
+  },
   lowStockAlert: 5,
   expiringSoonDays: 3,
   isOpen: true,

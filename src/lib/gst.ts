@@ -44,6 +44,14 @@ export interface GstOptions {
   interstate: boolean;
   discountValue: number;
   discountMode: "percent" | "flat";
+  /**
+   * Rupee reductions that are not the biller's manual discount — the occasion
+   * discount and points redemption (see `combinedDiscount` in loyalty.ts).
+   * Added to the manual figure BEFORE the subtotal clamp, so all three share
+   * one pro-rata allocation and the per-line GST split is untouched.
+   * Optional: absent means 0, which is exactly the pre-loyalty behaviour.
+   */
+  extraDiscount?: number;
 }
 
 export interface GstTotals {
@@ -145,10 +153,17 @@ export function computeGstTotals(lines: GstLine[], opts: GstOptions): GstTotals 
   // Flat clamps the ₹-off to the subtotal; percent clamps the rate to 0–100.
   // Both are rounded to the paisa here, matching generate_bill's
   // `least(v_sub, greatest(0, round(…, 2)))` exactly.
-  const rawDiscount =
+  const manualDiscount =
     opts.discountMode === "flat"
-      ? Math.min(subtotal, Math.max(0, round2(opts.discountValue)))
+      ? Math.max(0, round2(opts.discountValue))
       : round2((subtotal * Math.min(100, Math.max(0, opts.discountValue))) / 100);
+  // ADDED (loyalty): the clamp to `subtotal` now applies to the COMBINED
+  // figure, which is what lets a manual discount and an occasion discount
+  // stack without either silently shrinking the other.
+  const rawDiscount = Math.min(
+    subtotal,
+    round2(manualDiscount + Math.max(0, opts.extraDiscount ?? 0)),
+  );
   const shares = allocateDiscount(amounts, rawDiscount);
   const discount = round2(shares.reduce((s, d) => s + d, 0));
 

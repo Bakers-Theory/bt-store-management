@@ -1,17 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, Pencil, Receipt as ReceiptIcon } from "lucide-react";
+import { Loader2, Pencil, Receipt as ReceiptIcon, Send } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { ViewBillModal } from "@/components/feature/bill/ViewBillModal";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
-import { fetchCustomerBills, rpcUpdateCustomer } from "@/lib/supabase-data";
+import { fetchCustomerBills, fetchLoyaltyLedger, rpcUpdateCustomer } from "@/lib/supabase-data";
 import { formatDateFull, relativeDay } from "@/lib/format";
 import { hasPermission } from "@/lib/permissions";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { isValidGstin, stateCodeFromGstin } from "@/lib/gst";
-import type { Bill, Customer, InvoiceType } from "@/lib/types";
+import { occasionForToday, storeToday } from "@/lib/loyalty";
+import { shareOfferOnWhatsApp } from "@/lib/whatsapp";
+import type { Bill, Customer, InvoiceType, LoyaltyEntry } from "@/lib/types";
 
 export function CustomerModal({
   customer,
@@ -22,7 +24,9 @@ export function CustomerModal({
   onClose: () => void;
   onUpdated?: (customer: Customer) => void;
 }) {
-  const currency = useBakeryStore((s) => s.bakery.currency);
+  const bakery = useBakeryStore((s) => s.bakery);
+  const currency = bakery.currency;
+  const loyalty = bakery.loyalty;
   const toast = useUIStore((s) => s.toast);
   const [bills, setBills] = useState<Bill[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,6 +45,8 @@ export function CustomerModal({
   const [stateCode, setStateCode] = useState(customer.stateCode);
   const [billingAddress, setBillingAddress] = useState(customer.billingAddress);
   const [invoiceType, setInvoiceType] = useState<InvoiceType>(customer.defaultInvoiceType);
+  const [dob, setDob] = useState(customer.dob ?? "");
+  const [anniversary, setAnniversary] = useState(customer.anniversary ?? "");
   const [saving, setSaving] = useState(false);
 
   // Shown as the state-code placeholder: leaving the field blank adopts this.
@@ -53,6 +59,8 @@ export function CustomerModal({
     setStateCode(customer.stateCode);
     setBillingAddress(customer.billingAddress);
     setInvoiceType(customer.defaultInvoiceType);
+    setDob(customer.dob ?? "");
+    setAnniversary(customer.anniversary ?? "");
     setEditing(true);
   };
 
@@ -77,6 +85,11 @@ export function CustomerModal({
       stateCode: state,
       billingAddress: billingAddress.trim(),
       defaultInvoiceType: invoiceType,
+      // Omitted entirely with the programme off — update_customer treats an
+      // absent key as "leave the stored date alone" but an explicit null as
+      // "clear it", so sending null here would wipe a date that predates the
+      // programme being turned off.
+      ...(loyalty.enabled ? { dob: dob || null, anniversary: anniversary || null } : {}),
     };
     setSaving(true);
     try {
@@ -110,6 +123,24 @@ export function CustomerModal({
       alive = false;
     };
   }, [customer.id, retryToken]);
+
+  const [ledger, setLedger] = useState<LoyaltyEntry[]>([]);
+  useEffect(() => {
+    if (!loyalty.enabled) return;
+    let alive = true;
+    fetchLoyaltyLedger(customer.id)
+      .then((rows) => {
+        if (alive) setLedger(rows);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [customer.id, loyalty.enabled]);
+
+  const occasionKind = loyalty.enabled
+    ? occasionForToday(customer, storeToday(new Date(), Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"))
+    : null;
 
   return (
     <>
@@ -166,6 +197,30 @@ export function CustomerModal({
               className="w-full"
             />
 
+            {loyalty.enabled && (
+              <>
+                <label className="mb-1 mt-3 block text-[11px] font-bold text-ink-muted">
+                  Date of birth
+                </label>
+                <input
+                  type="date"
+                  value={dob}
+                  onChange={(e) => setDob(e.target.value)}
+                  className="w-full"
+                />
+
+                <label className="mb-1 mt-3 block text-[11px] font-bold text-ink-muted">
+                  Anniversary
+                </label>
+                <input
+                  type="date"
+                  value={anniversary}
+                  onChange={(e) => setAnniversary(e.target.value)}
+                  className="w-full"
+                />
+              </>
+            )}
+
             <span className="mb-1 mt-3 block text-[11px] font-bold text-ink-muted">
               Default invoice type
             </span>
@@ -216,15 +271,26 @@ export function CustomerModal({
               </button>
             </div>
           </div>
-        ) : canEdit ? (
-          <div className="mb-3 flex justify-end">
-            <button
-              type="button"
-              onClick={startEdit}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-warm-white px-3 py-1.5 text-[12.5px] font-bold text-ink-muted"
-            >
-              <Pencil size={13} /> Edit details
-            </button>
+        ) : canEdit || occasionKind ? (
+          <div className="mb-3 flex justify-end gap-2">
+            {occasionKind && (
+              <button
+                type="button"
+                onClick={() => shareOfferOnWhatsApp(customer, bakery, occasionKind, loyalty)}
+                className="btn-sm btn-secondary inline-flex items-center gap-1.5"
+              >
+                <Send size={13} /> Send offer
+              </button>
+            )}
+            {canEdit && (
+              <button
+                type="button"
+                onClick={startEdit}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-warm-white px-3 py-1.5 text-[12.5px] font-bold text-ink-muted"
+              >
+                <Pencil size={13} /> Edit details
+              </button>
+            )}
           </div>
         ) : null}
         <div className="mb-4 grid grid-cols-2 gap-2.5">
@@ -249,7 +315,48 @@ export function CustomerModal({
             <div className="text-[11px] font-semibold text-ink-muted">Phone</div>
             <div className="num mt-1 text-sm font-extrabold text-ink">{customer.phone}</div>
           </div>
+          {loyalty.enabled && (
+            <div className="rounded-[14px] border border-line bg-cream p-3 text-center">
+              <div className="text-[11px] font-semibold text-ink-muted">Points</div>
+              <div className="num mt-1 text-lg font-extrabold text-ink">{customer.pointsBalance}</div>
+            </div>
+          )}
         </div>
+
+        {loyalty.enabled && (
+          <>
+            <div className="mb-2 text-[12px] font-bold tracking-[.04em] text-ink-muted">
+              POINTS HISTORY
+            </div>
+            {ledger.length === 0 ? (
+              <div className="mb-4 py-4 text-center text-sm text-ink-muted">
+                No points activity yet
+              </div>
+            ) : (
+              <div className="mb-4 overflow-hidden rounded-[14px] border border-line">
+                {ledger.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="flex items-center gap-3 border-t border-line-soft px-3.5 py-2.5 text-[13px] first:border-t-0"
+                  >
+                    <span
+                      className={`num font-bold ${
+                        entry.points >= 0 ? "text-green-700" : "text-ink"
+                      }`}
+                    >
+                      {entry.points >= 0 ? "+" : ""}
+                      {entry.points}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-ink-light">{entry.note}</span>
+                    <span className="shrink-0 text-[11.5px] text-ink-light">
+                      {relativeDay(entry.createdAt)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
 
         <div className="mb-2 text-[12px] font-bold tracking-[.04em] text-ink-muted">PURCHASES</div>
 

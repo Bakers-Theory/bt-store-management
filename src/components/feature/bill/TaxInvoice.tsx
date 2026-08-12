@@ -5,6 +5,11 @@ import { amountInWords, hsnSummary } from "@/lib/gst";
 import type { Bill } from "@/lib/types";
 import { gstRowsForBill } from "./gst-rows";
 
+/** Rounds to 2 decimal places, avoiding float noise like 42.499999999999996. */
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 /**
  * A4 tax invoice — the GST-compliant counterpart to the thermal `Receipt`.
  *
@@ -179,15 +184,32 @@ export function TaxInvoice({ bill }: { bill: Bill }) {
         </tfoot>
       </table>
 
-      {bill.discountAmount > 0 && (
-        <div
-          className="ti-box"
-          style={{ borderTop: "none", padding: "6px 12px" }}
-        >
-          Discount applied before tax: −{money(bill.discountAmount)}
-          {bill.discountType === "percent" ? ` (${bill.discountPercent}%)` : ""}
-        </div>
-      )}
+      {bill.discountAmount > 0 && (() => {
+        const manual = round2(bill.discountAmount - bill.occasionDiscount - bill.pointsRedeemValue);
+        return (
+          <div
+            className="ti-box"
+            style={{ borderTop: "none", padding: "6px 12px" }}
+          >
+            {manual > 0 && (
+              <>
+                Discount applied before tax: −{money(manual)}
+                {bill.discountType === "percent" ? ` (${bill.discountPercent}%)` : ""}
+              </>
+            )}
+            {bill.occasionDiscount > 0 && (
+              <div>
+                {bill.occasionKind === "birthday" ? "Birthday offer" : "Anniversary offer"}: −{money(bill.occasionDiscount)}
+              </div>
+            )}
+            {bill.pointsRedeemValue > 0 && (
+              <div>
+                Points redeemed ({bill.pointsRedeemed}): −{money(bill.pointsRedeemValue)}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       <div style={{ marginTop: "10px" }}>
         <div className="ti-label" style={{ marginBottom: "4px" }}>
