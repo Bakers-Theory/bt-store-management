@@ -14,6 +14,7 @@ import {
   combinedDiscount,
   occasionDiscount,
   occasionForToday,
+  pointsEarned,
   redeemValue,
   storeToday,
 } from "@/lib/loyalty";
@@ -180,6 +181,16 @@ export function Bill() {
   const redeemPoints = Math.min(balance, Math.max(0, parseInt(redeemInput) || 0));
   const redeemAmt = redeemValue(redeemPoints, loyalty);
   const extraDiscount = occasionAmt + redeemAmt;
+  // Hoisted so both the "points not used" hint and the earn preview below can
+  // read the same, single computation of what actually gets burned after the
+  // server's redeem-then-occasion-then-manual cut-back — not the raw request.
+  const combined = combinedDiscount({
+    subtotal: subtotalPreview,
+    manual: manualDiscountAmt,
+    occasion: occasionAmt,
+    redeem: redeemAmt,
+    settings: loyalty,
+  });
 
   // Each date is asked for independently: a NEW customer has neither on
   // record, but a RETURNING one may be missing just one — the till is the
@@ -199,6 +210,21 @@ export function Bill() {
   const {
     subtotal, discount: discountAmt, taxable, cgst, sgst, igst, total,
   } = gstTotals;
+  // Earned on the FINAL total — after every discount, tax included — never
+  // the subtotal; mirrors generate_bill, which computes this on `v_bill.total`
+  // once the bill is certain to exist. `generate_bill` only ever runs this
+  // when the programme is on AND the bill has an identified customer (a
+  // non-empty phone), so the display gate below mirrors that, not just
+  // `enabled`.
+  const pointsToEarn = pointsEarned(total, loyalty);
+  const showPointsEarned =
+    loyalty.enabled && customer.phone.length === 10 && pointsToEarn > 0;
+  // The server appends the redeem ledger row (burning only what the cut-back
+  // actually spent, `combined.pointsRedeemed` — not the raw request) and THEN
+  // the earn row, both against the SAME prior balance, in that order within
+  // the one transaction. So the resulting balance is the prior balance minus
+  // what was actually redeemed, plus what this bill earns.
+  const balanceAfter = balance - combined.pointsRedeemed + pointsToEarn;
   const cartCount =
     lines.reduce((n, l) => n + l.qty, 0) +
     consumableLines.reduce((n, l) => n + l.qty, 0);
@@ -1237,22 +1263,12 @@ export function Bill() {
                         At least {loyalty.minRedeemPoints} points are needed to redeem.
                       </p>
                     )}
-                    {(() => {
-                      const c = combinedDiscount({
-                        subtotal: subtotalPreview,
-                        manual: manualDiscountAmt,
-                        occasion: occasionAmt,
-                        redeem: redeemAmt,
-                        settings: loyalty,
-                      });
-                      const unused = redeemAmt - c.redeem;
-                      return unused > 0 ? (
-                        <p className="mt-1 text-[11px] text-ink-muted">
-                          {currency}{unused.toFixed(2)} of points not used — the bill is already
-                          fully covered. Those points stay on the balance.
-                        </p>
-                      ) : null;
-                    })()}
+                    {redeemAmt - combined.redeem > 0 && (
+                      <p className="mt-1 text-[11px] text-ink-muted">
+                        {currency}{(redeemAmt - combined.redeem).toFixed(2)} of points not used —
+                        the bill is already fully covered. Those points stay on the balance.
+                      </p>
+                    )}
                   </div>
                 )}
                 {/* A non-GST bill charges no tax, so it shows no tax row at
@@ -1301,6 +1317,15 @@ export function Bill() {
                     {total.toFixed(2)}
                   </span>
                 </div>
+                {showPointsEarned && (
+                  <div className="flex justify-between py-0.5 text-[13px] font-semibold text-ink-muted">
+                    <span>Earns</span>
+                    <span className="num">
+                      {pointsToEarn} point{pointsToEarn === 1 ? "" : "s"}
+                      {returning && ` · balance ${balanceAfter}`}
+                    </span>
+                  </div>
+                )}
                 <div className="mt-3 flex items-center justify-between">
                   <span className="text-[13px] font-semibold text-ink-muted">Paid via</span>
                   <div className="flex gap-1.5 rounded-[10px] bg-cream-dark p-[3px]">
