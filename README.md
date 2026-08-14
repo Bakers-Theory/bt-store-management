@@ -34,7 +34,7 @@ Other scripts:
 
 ```bash
 npm run build && npm start   # production
-npm test                     # Vitest logic-layer suite
+npm test
 npm run typecheck
 npm run lint
 ```
