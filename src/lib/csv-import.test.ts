@@ -5,6 +5,7 @@ import {
   parseNumberCell,
   planAssetImport,
   planConsumableImport,
+  planItemImport,
   planMovementImport,
   templateCsv,
   toRecords,
@@ -12,6 +13,12 @@ import {
 } from "./csv-import";
 
 const parse = (text: string) => toRecords(parseCsv(text));
+
+/** Shared across the planners that resolve a Vendor cell. */
+const SUPPLIERS = [
+  { id: "s1", code: "SUP-0001", name: "Sharma Flour Mills" },
+  { id: "s2", code: "SUP-0002", name: "Nagpur Dairy" },
+];
 
 describe("parseCsv", () => {
   it("reads a plain file", () => {
@@ -114,7 +121,11 @@ describe("parseNumberCell", () => {
 });
 
 describe("planAssetImport", () => {
-  const ctx = { categories: ["Electronics", "Vehicles"], today: "2026-08-05" };
+  const ctx = {
+    categories: ["Electronics", "Vehicles"],
+    vendors: SUPPLIERS,
+    today: "2026-08-05",
+  };
   const head = "Name,Category,Location,Purchase date,Purchase price";
 
   it("accepts a good row", () => {
@@ -206,7 +217,7 @@ describe("planAssetImport", () => {
 });
 
 describe("planConsumableImport", () => {
-  const ctx = { categories: ["Packaging"], units: ["pcs", "kg"] };
+  const ctx = { categories: ["Packaging"], units: ["pcs", "kg"], vendors: SUPPLIERS };
   const head = "Name,Category,Unit,Minimum";
 
   it("accepts a good row and leaves optional columns null", () => {
@@ -267,6 +278,8 @@ describe("planConsumableImport", () => {
 describe("planMovementImport", () => {
   const ctx = {
     today: "2026-08-05",
+    vendors: SUPPLIERS,
+    holders: [{ id: "e1", code: "", name: "Asha" }],
     items: [
       { id: "c1", code: "CON-0001", name: "Cake boxes", unit: "pcs", currentStock: 10 },
       { id: "c2", code: "CON-0002", name: "Sugar", unit: "kg", currentStock: 0 },
@@ -350,6 +363,244 @@ describe("planMovementImport", () => {
   it("rejects a movement type it does not know", () => {
     const plan = planMovementImport(parse(`${head}\nCON-0001,vanish,1,2026-08-01\n`), ctx);
     expect(plan.errors[0].message).toContain('"vanish" is not a movement type');
+  });
+});
+
+describe("vendor and billing columns", () => {
+  const assetCtx = {
+    categories: ["Electronics"],
+    vendors: SUPPLIERS,
+    today: "2026-08-05",
+  };
+  const conCtx = { categories: ["Packaging"], units: ["pcs"], vendors: SUPPLIERS };
+  const movCtx = {
+    today: "2026-08-05",
+    vendors: SUPPLIERS,
+    holders: [{ id: "e1", code: "", name: "Asha" }],
+    items: [{ id: "c1", code: "CON-0001", name: "Cake boxes", unit: "pcs", currentStock: 10 }],
+  };
+
+  it("resolves an asset's vendor by name or by code", () => {
+    const head = "Name,Category,Location,Purchase date,Purchase price,Vendor";
+    const p = planAssetImport(
+      parse(
+        `${head}\nOven,Electronics,Kitchen,2026-01-01,50000,SUP-0002\n` +
+          `Mixer,Electronics,Kitchen,2026-01-01,9000,sharma flour mills\n` +
+          `Fan,Electronics,Kitchen,2026-01-01,2000,\n`,
+      ),
+      assetCtx,
+    );
+    expect(p.errors).toEqual([]);
+    expect(p.rows.map((r) => r.value.vendorId)).toEqual(["s2", "s1", null]);
+  });
+
+  it("refuses a vendor that matches no supplier rather than dropping it", () => {
+    const head = "Name,Category,Location,Purchase date,Purchase price,Vendor";
+    const p = planAssetImport(
+      parse(`${head}\nOven,Electronics,Kitchen,2026-01-01,500,Acme Ltd\n`),
+      assetCtx,
+    );
+    expect(p.rows).toEqual([]);
+    expect(p.errors[0].message).toContain('no supplier matches "Acme Ltd"');
+  });
+
+  it("carries a consumable's bill mode, HSN, GST rate and vendor", () => {
+    const head = "Name,Category,Unit,Minimum,Cost per unit,Bill mode,HSN,GST rate,Vendor";
+    const p = planConsumableImport(
+      parse(`${head}\nBoxes,Packaging,pcs,10,4,charge,4819,12,Nagpur Dairy\n`),
+      conCtx,
+    );
+    expect(p.errors).toEqual([]);
+    expect(p.rows[0].value).toMatchObject({
+      billMode: "charge",
+      hsn: "4819",
+      gstRate: 12,
+      vendorId: "s2",
+    });
+  });
+
+  it("defaults a consumable's billing columns to what the form defaults to", () => {
+    const p = planConsumableImport(
+      parse("Name,Category,Unit,Minimum\nBoxes,Packaging,pcs,10\n"),
+      conCtx,
+    );
+    expect(p.rows[0].value).toMatchObject({
+      billMode: "none",
+      hsn: "",
+      gstRate: 0,
+      vendorId: null,
+    });
+  });
+
+  it("refuses a bill mode it does not know, and a GST rate the app does not offer", () => {
+    const head = "Name,Category,Unit,Minimum,Cost per unit,Bill mode,HSN,GST rate";
+    expect(
+      planConsumableImport(parse(`${head}\nBoxes,Packaging,pcs,10,4,invoice\n`), conCtx).errors[0]
+        .message,
+    ).toBe('bill mode "invoice" is not one of none, charge, absorb');
+    expect(
+      planConsumableImport(parse(`${head}\nBoxes,Packaging,pcs,10,4,charge,4819,9\n`), conCtx)
+        .errors[0].message,
+    ).toBe("GST rate must be one of 0, 5, 12, 18, 28");
+  });
+
+  it("refuses to charge a consumable that has no cost per unit", () => {
+    const head = "Name,Category,Unit,Minimum,Cost per unit,Bill mode";
+    expect(
+      planConsumableImport(parse(`${head}\nBoxes,Packaging,pcs,10,,charge\n`), conCtx).errors[0]
+        .message,
+    ).toBe("set a cost per pcs before charging this item on a bill");
+    expect(
+      planConsumableImport(parse(`${head}\nBoxes,Packaging,pcs,10,0,charge\n`), conCtx).errors[0]
+        .message,
+    ).toContain("before charging this item on a bill");
+    // absorb prices nothing on a bill, so it needs no cost.
+    expect(
+      planConsumableImport(parse(`${head}\nBoxes,Packaging,pcs,10,,absorb\n`), conCtx).errors,
+    ).toEqual([]);
+  });
+
+  it("carries a movement's vendor and issued-to, each on its own movement type", () => {
+    const head = "Item,Type,Qty,Date,Unit cost,Vendor,Issued to";
+    const p = planMovementImport(
+      parse(
+        `${head}\nCON-0001,purchase,5,2026-08-01,4,SUP-0001,\n` +
+          `CON-0001,issue,2,2026-08-02,,,Asha\n`,
+      ),
+      movCtx,
+    );
+    expect(p.errors).toEqual([]);
+    expect(p.rows.map((r) => [r.value.vendorId, r.value.issuedTo])).toEqual([
+      ["s1", null],
+      [null, "e1"],
+    ]);
+  });
+
+  it("refuses a vendor on an issue, an issued-to on a purchase, and an unknown holder", () => {
+    const head = "Item,Type,Qty,Date,Unit cost,Vendor,Issued to";
+    expect(
+      planMovementImport(parse(`${head}\nCON-0001,issue,2,2026-08-01,,SUP-0001,\n`), movCtx)
+        .errors[0].message,
+    ).toBe("a vendor belongs on a purchase");
+    expect(
+      planMovementImport(parse(`${head}\nCON-0001,purchase,2,2026-08-01,4,,Asha\n`), movCtx)
+        .errors[0].message,
+    ).toBe("an issued-to name belongs on an issue");
+    expect(
+      planMovementImport(parse(`${head}\nCON-0001,issue,2,2026-08-01,,,Ravi\n`), movCtx).errors[0]
+        .message,
+    ).toBe('nobody on the staff list is called "Ravi"');
+  });
+});
+
+describe("planItemImport", () => {
+  const ctx = {
+    categories: ["Bakery", "Dairy"],
+    units: ["kg", "pcs"],
+    existingNames: ["Butter"],
+    today: "2026-08-05",
+  };
+  const head = "Name,Category,Unit,Cost price,Sell price,Opening qty,HSN,GST rate,Tracks expiry,Expiry date,Emoji";
+  const plan = (body: string) => planItemImport(parse(`${head}\n${body}`), ctx);
+
+  it("reads a full row", () => {
+    const p = plan("Croissant,Bakery,pcs,20,45,12,1905,5,yes,2026-09-01,🥐\n");
+    expect(p.errors).toEqual([]);
+    expect(p.rows[0].value).toEqual({
+      name: "Croissant",
+      emoji: "🥐",
+      imageUrl: null,
+      category: "Bakery",
+      unit: "pcs",
+      price: 45,
+      costPrice: 20,
+      qty: 12,
+      tracksExpiry: true,
+      expiryDate: "2026-09-01",
+      hsn: "1905",
+      gstRate: 5,
+    });
+  });
+
+  it("fills the optional columns with the Add Item form's defaults", () => {
+    const p = plan("Baguette,Bakery,pcs,,,,,,,,\n");
+    expect(p.errors).toEqual([]);
+    expect(p.rows[0].value).toMatchObject({
+      emoji: "📦",
+      price: 0,
+      costPrice: 0,
+      qty: 0,
+      gstRate: 0,
+      hsn: "",
+      tracksExpiry: true,
+      expiryDate: null,
+    });
+  });
+
+  it("requires a name, and a category and unit that already exist", () => {
+    expect(plan(",Bakery,pcs\n").errors[0].message).toBe("no name");
+    expect(plan("Cake,Sweets,pcs\n").errors[0].message).toContain(
+      'category "Sweets" does not exist',
+    );
+    expect(plan("Cake,Bakery,dozen\n").errors[0].message).toContain(
+      'unit "dozen" is not on the units list',
+    );
+    expect(plan("Cake,Bakery,\n").errors[0].message).toBe("no unit");
+  });
+
+  it("refuses a name that is already in Stock rather than merging into it", () => {
+    expect(plan("butter,Dairy,kg\n").errors[0].message).toContain("already in Stock");
+  });
+
+  it("refuses the same name twice in one file", () => {
+    const p = plan("Cake,Bakery,pcs\nCAKE,Bakery,pcs\n");
+    expect(p.rows).toHaveLength(1);
+    expect(p.errors[0]).toEqual({ line: 3, message: '"CAKE" appears twice in this file' });
+  });
+
+  it("refuses unreadable or negative numbers", () => {
+    expect(plan("Cake,Bakery,pcs,abc\n").errors[0].message).toBe(
+      "a price or quantity column is not a number",
+    );
+    expect(plan("Cake,Bakery,pcs,-1\n").errors[0].message).toBe("a price is negative");
+    expect(plan("Cake,Bakery,pcs,1,2,-3\n").errors[0].message).toBe(
+      "opening quantity is negative",
+    );
+  });
+
+  it("only accepts a GST rate the app offers", () => {
+    expect(plan("Cake,Bakery,pcs,1,2,3,,7\n").errors[0].message).toBe(
+      "GST rate must be one of 0, 5, 12, 18, 28",
+    );
+    expect(plan("Cake,Bakery,pcs,1,2,3,,18\n").rows[0].value.gstRate).toBe(18);
+  });
+
+  it("reads tracks expiry as yes/no and refuses anything else", () => {
+    expect(plan("Cake,Bakery,pcs,,,,,,no\n").rows[0].value.tracksExpiry).toBe(false);
+    expect(plan("Cake,Bakery,pcs,,,,,,maybe\n").errors[0].message).toBe(
+      "tracks expiry must be yes or no",
+    );
+  });
+
+  it("refuses an expiry that is not a date, has passed, or contradicts tracks expiry", () => {
+    expect(plan("Cake,Bakery,pcs,,,,,,,soon\n").errors[0].message).toContain(
+      "expiry date is not a date",
+    );
+    expect(plan("Cake,Bakery,pcs,,,,,,,2026-08-04\n").errors[0].message).toBe(
+      "expiry date has already passed",
+    );
+    expect(plan("Cake,Bakery,pcs,,,,,,no,2026-09-01\n").errors[0].message).toContain(
+      "tracks expiry is no",
+    );
+  });
+
+  it("accepts the headers a spreadsheet is likelier to carry", () => {
+    const p = planItemImport(
+      parse("Product name,Category,UOM,Cost,MRP,Qty,HSN code,GST%\nJam,Dairy,kg,80,140,4,2007,12\n"),
+      ctx,
+    );
+    expect(p.errors).toEqual([]);
+    expect(p.rows[0].value).toMatchObject({ name: "Jam", price: 140, costPrice: 80, qty: 4, gstRate: 12 });
   });
 });
 

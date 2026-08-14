@@ -856,6 +856,8 @@ export interface ItemInputDb {
   price: number; costPrice: number; qty: number;
   tracksExpiry: boolean; expiryDate: string | null;
   hsn: string; gstRate: number;
+  /** create_item only (0071): the source stamped on the opening batch. */
+  supplierId?: string | null;
 }
 
 // The item-scoped RPCs below return the affected items_v row (rather than
@@ -1800,6 +1802,19 @@ export async function rpcSavePurchaseInvoice(
 
 export async function rpcPostPurchaseInvoice(id: string): Promise<PurchaseInvoice> {
   return mapInvoice(await rpc<InvoiceRow>("post_purchase_invoice", { p_id: id }), []);
+}
+
+/**
+ * Save-and-post in one call, for the forms that create products and record the
+ * delivery in the same breath. The pair is deliberately not collapsed
+ * server-side: a draft that fails to post is still a draft someone can fix on
+ * the Purchases page, which is a better outcome than losing what they typed.
+ */
+export async function rpcPostItemPurchase(
+  draft: InvoiceDraftInput,
+): Promise<PurchaseInvoice> {
+  const saved = await rpcSavePurchaseInvoice(draft);
+  return rpcPostPurchaseInvoice(saved.id);
 }
 
 /**

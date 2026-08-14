@@ -60,6 +60,13 @@ export interface ItemInput {
   qty: number;
   tracksExpiry: boolean;
   expiryDate: string | null;
+  /**
+   * Whose delivery the OPENING stock was, stamped on the batch create_item
+   * records (0071). Only meaningful with a qty, and only honoured for someone
+   * with suppliers.edit. Absent means the origin was never recorded, which is
+   * what stock added from the Stock page is.
+   */
+  supplierId?: string | null;
   /** HSN or SAC. Required before this item can go on a GST invoice. */
   hsn: string;
   /** 0–28. */

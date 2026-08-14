@@ -1,29 +1,48 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Check, Download, FileUp, Loader2, Upload } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
+import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { isoDateLocal } from "@/lib/excel";
+import { hasPermission } from "@/lib/permissions";
+import { useCurrentUser } from "@/components/system/AuthProvider";
+import {
+  emptyItemPurchaseDraft,
+  itemPurchaseError,
+  linesFrom,
+  withoutOpeningQty,
+  type OpeningStock,
+} from "@/lib/item-purchase";
+import { RecordAsPurchaseFields } from "@/components/feature/suppliers/RecordAsPurchaseFields";
+import type { Supplier } from "@/lib/types";
 import {
   ASSET_CSV_HEADERS,
   CONSUMABLE_CSV_HEADERS,
+  ITEM_CSV_HEADERS,
   MOVEMENT_CSV_HEADERS,
   parseCsv,
   planAssetImport,
   planConsumableImport,
+  planItemImport,
   planMovementImport,
   templateCsv,
   toRecords,
+  type NamedRef,
   type RowError,
 } from "@/lib/csv-import";
 import {
+  fetchAssetHolders,
+  fetchSuppliers,
+  rpcLinkSupplierItem,
+  rpcPostItemPurchase,
   rpcRecordStockMovements,
   rpcSaveAsset,
   rpcSaveConsumable,
 } from "@/lib/supabase-data";
 
-export type ImportMode = "assets" | "consumables" | "movements";
+export type ImportMode = "assets" | "consumables" | "movements" | "items";
 
 const COPY: Record<
   ImportMode,
@@ -35,7 +54,8 @@ const COPY: Record<
     template: "assets-template.csv",
     blurb:
       "Name, Category, Location, Purchase date and Purchase price are required. " +
-      "Categories must already exist in Settings.",
+      "Categories must already exist in Settings, and Vendor is a supplier's name " +
+      "or code.",
   },
   consumables: {
     title: "Import consumables",
@@ -43,7 +63,18 @@ const COPY: Record<
     template: "consumables-template.csv",
     blurb:
       "Name, Category, Unit and Minimum are required. Categories and units must " +
-      "already exist in Settings.",
+      "already exist in Settings. Bill mode is none, charge or absorb — charging " +
+      "needs a cost per unit, and GST rate must be 0, 5, 12, 18 or 28. Vendor is " +
+      "a supplier's name or code.",
+  },
+  items: {
+    title: "Import products",
+    headers: ITEM_CSV_HEADERS,
+    template: "products-template.csv",
+    blurb:
+      "Name, Category and Unit are required — categories and units must already " +
+      "exist in Settings. Everything else is optional: GST rate must be 0, 5, 12, " +
+      "18 or 28, and Tracks expiry is yes or no.",
   },
   movements: {
     title: "Import stock movements",
@@ -51,13 +82,16 @@ const COPY: Record<
     template: "stock-movements-template.csv",
     blurb:
       "Item can be a code or a name. Type is purchase, issue, return, adjustment, " +
-      "wastage, expired or damaged — the write-off types need a reason.",
+      "wastage, expired or damaged — the write-off types need a reason. Unit cost " +
+      "and Vendor belong on a purchase, Issued to on an issue.",
   },
 };
 
 interface Outcome {
   imported: number;
   failures: RowError[];
+  /** "items" mode: what became of the purchase, when one was being filed. */
+  purchase?: { ok: boolean; message: string };
 }
 
 /**
@@ -93,11 +127,21 @@ export function BulkImportModal({
       unit: string;
       currentStock: number;
     }[];
+    /** "items" mode only: names already in Stock, which a row may not clash with. */
+    existingItemNames?: string[];
+    /**
+     * "items" mode only: when set, every product imported is linked to this
+     * supplier, and the delivery can be filed as one purchase from them.
+     */
+    linkToSupplier?: Supplier;
   };
   onClose: () => void;
   onDone: () => void;
 }) {
   const toast = useUIStore((s) => s.toast);
+  const saveItem = useBakeryStore((s) => s.saveItem);
+  const reloadStore = useBakeryStore((s) => s.load);
+  const user = useCurrentUser();
   const fileRef = useRef<HTMLInputElement>(null);
   const copy = COPY[mode];
   const today = isoDateLocal(new Date());
@@ -106,24 +150,82 @@ export function BulkImportModal({
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
 
-  const parsed = text.trim() === "" ? null : toRecords(parseCsv(text));
+  const purchaseSupplier = context.linkToSupplier;
+  const offerPurchase =
+    mode === "items" &&
+    !!purchaseSupplier &&
+    hasPermission(user, "purchases.create") &&
+    hasPermission(user, "suppliers.view");
+  const [purchase, setPurchase] = useState(() => emptyItemPurchaseDraft(today));
+  const [purchaseErr, setPurchaseErr] = useState<string | null>(null);
+
+  // A Vendor / Issued to cell names a supplier or a person, so those lists have
+  // to be here to turn a name into an id. Fetched by the modal rather than asked
+  // of every caller, which is also what the forms these mirror do. Until they
+  // arrive a named vendor cannot be matched, so the Import button waits below.
+  const [vendors, setVendors] = useState<NamedRef[] | null>(null);
+  const [holders, setHolders] = useState<NamedRef[] | null>(null);
+  // Only "items" needs neither list: its products link to the one supplier the
+  // caller passed, and only a movement can name a person.
+  const needsVendors = mode !== "items";
+  const needsHolders = mode === "movements";
+
+  useEffect(() => {
+    let alive = true;
+    if (needsVendors) {
+      void fetchSuppliers()
+        .then((s) => alive && setVendors(s.map((v) => ({ id: v.id, code: v.code, name: v.name }))))
+        .catch(() => alive && setVendors([]));
+    }
+    if (needsHolders) {
+      void fetchAssetHolders()
+        .then((h) => alive && setHolders(h.map((p) => ({ id: p.id, code: "", name: p.name }))))
+        .catch(() => alive && setHolders([]));
+    }
+    return () => {
+      alive = false;
+    };
+  }, [needsVendors, needsHolders]);
+
+  const refsReady =
+    (!needsVendors || vendors !== null) && (!needsHolders || holders !== null);
+  const parsed = text.trim() === "" || !refsReady ? null : toRecords(parseCsv(text));
 
   // Each mode's plan is built with its own row type rather than one union — the
   // import step below needs real types, not casts, to call the right RPC.
   const assetPlan =
     parsed && mode === "assets"
-      ? planAssetImport(parsed, { categories: context.categories, today })
+      ? planAssetImport(parsed, {
+          categories: context.categories,
+          vendors: vendors ?? [],
+          today,
+        })
       : null;
   const consumablePlan =
     parsed && mode === "consumables"
       ? planConsumableImport(parsed, {
           categories: context.categories,
           units: context.units ?? [],
+          vendors: vendors ?? [],
         })
       : null;
   const movementPlan =
     parsed && mode === "movements"
-      ? planMovementImport(parsed, { items: context.items ?? [], today })
+      ? planMovementImport(parsed, {
+          items: context.items ?? [],
+          vendors: vendors ?? [],
+          holders: holders ?? [],
+          today,
+        })
+      : null;
+  const itemPlan =
+    parsed && mode === "items"
+      ? planItemImport(parsed, {
+          categories: context.categories,
+          units: context.units ?? [],
+          existingNames: context.existingItemNames ?? [],
+          today,
+        })
       : null;
 
   const plan: { rowCount: number; errors: RowError[] } | null = !parsed
@@ -131,7 +233,7 @@ export function BulkImportModal({
     : parsed.records.length === 0
       ? { rowCount: 0, errors: [{ line: 1, message: "no rows below the header" }] }
       : (() => {
-          const p = assetPlan ?? consumablePlan ?? movementPlan;
+          const p = assetPlan ?? consumablePlan ?? movementPlan ?? itemPlan;
           return { rowCount: p?.rows.length ?? 0, errors: p?.errors ?? [] };
         })();
 
@@ -156,6 +258,19 @@ export function BulkImportModal({
 
   const runImport = async () => {
     if (!plan || plan.errors.length > 0 || plan.rowCount === 0) return;
+    // One invoice for the whole file: it is one delivery with one invoice number,
+    // and (supplier_id, invoice_no) is unique (0037:76) — so re-running the same
+    // file fails on the duplicate rather than posting the purchase twice.
+    const posting =
+      offerPurchase && !!purchaseSupplier && purchase.record && (itemPlan?.rows.length ?? 0) > 0;
+    if (posting && purchaseSupplier) {
+      const problem = itemPurchaseError(purchase, purchaseSupplier.supplierType, today);
+      if (problem) {
+        setPurchaseErr(problem);
+        return;
+      }
+    }
+    setPurchaseErr(null);
     setBusy(true);
     setOutcome(null);
     try {
@@ -169,12 +284,53 @@ export function BulkImportModal({
         // line number.
         const failures: RowError[] = [];
         let imported = 0;
+        // Filled by the item rows as they are created, so the invoice below can
+        // reference products that did not exist when the file was read.
+        const opening: OpeningStock[] = [];
+        const supplierId = purchaseSupplier?.id;
         const rows: { line: number; run: () => Promise<unknown> }[] = assetPlan
           ? assetPlan.rows.map((r) => ({ line: r.line, run: () => rpcSaveAsset(r.value) }))
-          : (consumablePlan?.rows ?? []).map((r) => ({
-              line: r.line,
-              run: () => rpcSaveConsumable(r.value),
-            }));
+          : itemPlan
+            ? itemPlan.rows.map((r) => ({
+                line: r.line,
+                // saveItem rather than the RPC directly, so the products appear in
+                // Stock without a reload. The link is part of the row's work: a
+                // product imported for a supplier and not linked to it is only
+                // half of what was asked for, so a link failure fails the row —
+                // and says the product was created, since it was.
+                run: async () => {
+                  const input = {
+                    ...r.value,
+                    // Any opening stock came from this supplier, so the batch says
+                    // so rather than reading "Unknown source" (0071). When an
+                    // invoice is posting, that invoice stamps the batch instead.
+                    supplierId: supplierId ?? null,
+                  };
+                  const saved = await saveItem(posting ? withoutOpeningQty(input) : input);
+                  if (!saved.itemId) return;
+                  if (posting) {
+                    opening.push({
+                      itemId: saved.itemId,
+                      qty: r.value.qty,
+                      costPrice: r.value.costPrice,
+                      gstRate: r.value.gstRate,
+                      expiryDate: r.value.expiryDate,
+                    });
+                  }
+                  if (!supplierId) return;
+                  try {
+                    await rpcLinkSupplierItem(supplierId, saved.itemId);
+                  } catch {
+                    throw new Error(
+                      `"${r.value.name}" was created but could not be linked to this supplier`,
+                    );
+                  }
+                },
+              }))
+            : (consumablePlan?.rows ?? []).map((r) => ({
+                line: r.line,
+                run: () => rpcSaveConsumable(r.value),
+              }));
 
         for (const row of rows) {
           try {
@@ -187,7 +343,46 @@ export function BulkImportModal({
             });
           }
         }
-        setOutcome({ imported, failures });
+
+        // The invoice goes in last, covering every product that actually made it
+        // in — a row the server refused has nothing to invoice. Its stock arrives
+        // with the posting, so a failure here means those products exist with no
+        // stock, which is what the message has to say.
+        let purchase_: Outcome["purchase"];
+        if (posting && purchaseSupplier) {
+          const lines = linesFrom(opening);
+          if (lines.length === 0) {
+            purchase_ = {
+              ok: false,
+              message: "No purchase was filed — none of the imported products had a quantity.",
+            };
+          } else {
+            try {
+              const inv = await rpcPostItemPurchase({
+                supplierId: purchaseSupplier.id,
+                invoiceNo: purchase.invoiceNo.trim(),
+                purchaseDate: purchase.purchaseDate,
+                notes: "",
+                lines,
+              });
+              // Posting set cost_price and brought every batch in, so the cached
+              // items are now behind the server.
+              await reloadStore();
+              purchase_ = {
+                ok: true,
+                message: `Filed ${inv.internalRef ?? inv.invoiceNo} against ${purchaseSupplier.name} — ${lines.length} line${lines.length === 1 ? "" : "s"}, stock included.`,
+              };
+            } catch (e) {
+              purchase_ = {
+                ok: false,
+                message:
+                  (e instanceof Error ? e.message : "the server refused the invoice") +
+                  ` — the ${lines.length} product${lines.length === 1 ? " was" : "s were"} created, but with no stock, since the invoice is what brings it in. File it on the Purchases page.`,
+              };
+            }
+          }
+        }
+        setOutcome({ imported, failures, purchase: purchase_ });
       }
       onDone();
     } catch (e) {
@@ -239,6 +434,19 @@ export function BulkImportModal({
           />
         </div>
 
+        {offerPurchase && purchaseSupplier && !outcome && (
+          <RecordAsPurchaseFields
+            supplier={purchaseSupplier}
+            draft={purchase}
+            onChange={(next) => {
+              setPurchase(next);
+              setPurchaseErr(null);
+            }}
+            error={purchaseErr}
+            disabled={busy}
+          />
+        )}
+
         {plan && !outcome && (
           <div className="space-y-2">
             <p className="text-[12.5px] font-bold text-ink">
@@ -279,6 +487,15 @@ export function BulkImportModal({
               <Check size={14} className="text-success" />
               {outcome.imported} imported
             </p>
+            {outcome.purchase && (
+              <p
+                className={`rounded-[11px] px-2.5 py-2 text-[11.5px] ${
+                  outcome.purchase.ok ? "bg-cream text-ink" : "bg-red-50 text-red-800"
+                }`}
+              >
+                {outcome.purchase.message}
+              </p>
+            )}
             {outcome.failures.length > 0 && (
               <>
                 <p className="text-[12px] font-bold text-red-700">
@@ -294,6 +511,12 @@ export function BulkImportModal({
               </>
             )}
           </div>
+        )}
+
+        {text.trim() !== "" && !refsReady && (
+          <p className="flex items-center gap-1.5 text-[12px] font-semibold text-ink-muted">
+            <Loader2 size={13} className="animate-spin" /> Loading the supplier list…
+          </p>
         )}
 
         <button

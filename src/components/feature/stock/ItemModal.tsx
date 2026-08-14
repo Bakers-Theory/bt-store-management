@@ -13,7 +13,16 @@ import dynamic from "next/dynamic";
 import { expiryStatus, type ExpiryStatus } from "@/lib/expiry";
 import { hasPermission } from "@/lib/permissions";
 import { useCurrentUser } from "@/components/system/AuthProvider";
-import type { Batch } from "@/lib/types";
+import { isoDateLocal } from "@/lib/excel";
+import {
+  emptyItemPurchaseDraft,
+  itemPurchaseError,
+  linesFrom,
+  withoutOpeningQty,
+} from "@/lib/item-purchase";
+import { rpcPostItemPurchase } from "@/lib/supabase-data";
+import { RecordAsPurchaseFields } from "@/components/feature/suppliers/RecordAsPurchaseFields";
+import type { Batch, Supplier } from "@/lib/types";
 
 // The cropper pulls in react-easy-crop, only needed once a user picks an image
 // to crop. Load it on demand so it stays out of the Stock/Dashboard bundles.
@@ -37,6 +46,7 @@ export function ItemModal({
   itemId,
   onClose,
   onSaved,
+  supplier,
 }: {
   itemId: string | null; // null = add new
   onClose: () => void;
@@ -44,10 +54,18 @@ export function ItemModal({
   // opener act on the product it just created — null when the server didn't
   // hand one back, in which case there is nothing to act on.
   onSaved?: (savedItemId: string | null) => void;
+  // Whose delivery the opening stock is, when the opener knows — the Products
+  // tab of a supplier does. Two things follow from it: the id is forwarded to
+  // create_item, which stamps it on the opening batch (0071), and the purchase
+  // block below is offered, which needs the supplier's TYPE to know whether to
+  // ask for an invoice number. Absent (the Stock page) neither happens, and the
+  // modal behaves exactly as it always has.
+  supplier?: Supplier;
 }) {
   const items = useBakeryStore((s) => s.items);
   const currency = useBakeryStore((s) => s.bakery.currency);
   const saveItem = useBakeryStore((s) => s.saveItem);
+  const reloadStore = useBakeryStore((s) => s.load);
   const setItemImage = useBakeryStore((s) => s.setItemImage);
   const toast = useUIStore((s) => s.toast);
   const cats = useBakeryStore((s) => s.lists.categories);
@@ -58,6 +76,10 @@ export function ItemModal({
   // is hidden and update_item leaves the stored cost untouched.
   const canCost = hasPermission(user, "items.cost");
   const canExpiry = hasPermission(user, "stock.expiry");
+  // Posting needs both, and save_purchase_invoice raises on the second one
+  // rather than returning a row the caller cannot read (0037:204).
+  const canPurchase =
+    hasPermission(user, "purchases.create") && hasPermission(user, "suppliers.view");
 
   const editing = itemId ? items.find((i) => i.id === itemId) : undefined;
 
@@ -78,6 +100,12 @@ export function ItemModal({
   const [qty, setQty] = useState(editing ? String(editing.qty) : "");
   const [nameErr, setNameErr] = useState("");
   const [saving, setSaving] = useState(false);
+  const today = isoDateLocal(new Date());
+  // Only offered while CREATING from a supplier's tab: there is no opening stock
+  // to buy when editing, and update_item posts nothing either way.
+  const offerPurchase = !itemId && !!supplier && canPurchase;
+  const [purchase, setPurchase] = useState(() => emptyItemPurchaseDraft(today));
+  const [purchaseErr, setPurchaseErr] = useState<string | null>(null);
   const writeOffBatch = useBakeryStore((s) => s.writeOffBatch);
   const updateBatchExpiry = useBakeryStore((s) => s.updateBatchExpiry);
   const expiringSoonDays = useBakeryStore((s) => s.bakery.expiringSoonDays);
@@ -179,25 +207,88 @@ export function ItemModal({
       setNameErr("Item name is required");
       return;
     }
+    const openingQty = parseFloat(qty) || 0;
+    const cost = parseFloat(costPrice) || 0;
+    const expiry = tracksExpiry && expiryDate ? expiryDate : null;
+    // An invoice needs goods on it, so the box only bites when there is opening
+    // stock to buy. Ticked with a qty of zero records the product and no purchase.
+    const posting = offerPurchase && purchase.record && openingQty > 0;
+    if (posting && supplier) {
+      const problem = itemPurchaseError(purchase, supplier.supplierType, today);
+      if (problem) {
+        setPurchaseErr(problem);
+        return;
+      }
+    }
+    setPurchaseErr(null);
     setSaving(true);
     try {
-      const r = await saveItem(
-        {
-          name: trimmed,
-          emoji,
-          imageUrl,
-          category,
-          unit,
-          price: parseFloat(price) || 0,
-          costPrice: parseFloat(costPrice) || 0,
-          hsn: hsn.trim(),
-          gstRate: parseFloat(gstRate) || 0,
-          qty: parseFloat(qty) || 0,
-          tracksExpiry,
-          expiryDate: tracksExpiry && expiryDate ? expiryDate : null,
-        },
-        itemId ?? undefined,
-      );
+      const input = {
+        name: trimmed,
+        emoji,
+        imageUrl,
+        category,
+        unit,
+        price: parseFloat(price) || 0,
+        costPrice: cost,
+        hsn: hsn.trim(),
+        gstRate: parseFloat(gstRate) || 0,
+        qty: openingQty,
+        tracksExpiry,
+        expiryDate: expiry,
+        // Ignored by update_item — only a NEW batch can carry a source.
+        supplierId: supplier?.id ?? null,
+      };
+      // Posting brings the stock in itself, so the create must not: see
+      // withoutOpeningQty. The item has to exist first either way — an invoice
+      // line references it.
+      const r = await saveItem(posting ? withoutOpeningQty(input) : input, itemId ?? undefined);
+      if (posting && supplier && r.itemId) {
+        try {
+          await rpcPostItemPurchase({
+            supplierId: supplier.id,
+            invoiceNo: purchase.invoiceNo.trim(),
+            purchaseDate: purchase.purchaseDate,
+            notes: "",
+            lines: linesFrom([
+              {
+                itemId: r.itemId,
+                qty: openingQty,
+                costPrice: cost,
+                gstRate: parseFloat(gstRate) || 0,
+                expiryDate: expiry,
+              },
+            ]),
+          });
+          // Posting refreshed cost_price and brought the batch in, so the cached
+          // row is now behind the server.
+          await reloadStore();
+          toast(
+            r.kind === "merged"
+              ? // The create folded into an existing product; the invoice then
+                // bought more of it, which is a purchase either way.
+                `"${r.name}" already exists — the purchase was filed against ${supplier.name} and added to its stock`
+              : `Item added and the purchase filed against ${supplier.name}`,
+            "success",
+          );
+          onSaved?.(r.itemId);
+          onClose();
+          return;
+        } catch (e) {
+          // The product exists; only the purchase failed. Say exactly that — the
+          // stock is NOT in, because the invoice that would have brought it in
+          // never posted.
+          toast(
+            e instanceof Error
+              ? `"${trimmed}" was created, but the purchase was not filed: ${e.message}`
+              : `"${trimmed}" was created, but the purchase was not filed`,
+            "error",
+          );
+          onSaved?.(r.itemId);
+          onClose();
+          return;
+        }
+      }
       if (r.kind === "merged")
         toast(`"${r.name}" already exists — added ${r.qty} ${r.unit} to its stock`, "success");
       else toast(r.kind === "updated" ? "Item updated" : "Item added", "success");
@@ -422,6 +513,28 @@ export function ItemModal({
             onChange={(e) => setQty(e.target.value)}
           />
         </div>
+      )}
+
+      {/* Directly under Initial Stock, because that quantity is what the invoice
+          would be for — with none, the block says so rather than posting a
+          purchase of nothing. */}
+      {offerPurchase && supplier && (
+        <RecordAsPurchaseFields
+          supplier={supplier}
+          draft={purchase}
+          onChange={(next) => {
+            setPurchase(next);
+            setPurchaseErr(null);
+          }}
+          error={purchaseErr}
+          disabled={saving}
+        />
+      )}
+      {offerPurchase && purchase.record && !(parseFloat(qty) > 0) && (
+        <p className="mb-3.5 -mt-2 text-[11.5px] font-semibold text-ink-muted">
+          Enter an initial stock above for the purchase to be filed — there is nothing
+          to invoice without it.
+        </p>
       )}
 
       {/* Shown for non-expiry items too: since 0040 a batch is one supplier's

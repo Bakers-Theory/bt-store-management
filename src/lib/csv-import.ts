@@ -16,9 +16,17 @@
  *      lists, and an import is not the place to invent one — a typo would create
  *      "Packging" forever.
  */
-import type { AssetCondition, AssetInput, ConsumableInput, MovementType } from "./types";
-import { MOVEMENT_TYPES, reasonRequired } from "./consumable";
+import type {
+  AssetCondition,
+  AssetInput,
+  BillMode,
+  ConsumableInput,
+  MovementType,
+} from "./types";
+import type { ItemInput } from "./store";
+import { BILL_MODES, MOVEMENT_TYPES, reasonRequired } from "./consumable";
 import { ASSET_CONDITIONS } from "./asset";
+import { GST_RATES } from "./constants";
 
 // ─── Parsing ────────────────────────────────────────────────────────────────
 
@@ -163,16 +171,56 @@ export function parseNumberCell(raw: string): number | null | "invalid" {
   return Number.isFinite(n) ? n : "invalid";
 }
 
+/**
+ * Something a row names instead of picking from a dropdown — a supplier, or the
+ * person stock was issued to. Both forms are on screen in the app, so both are
+ * accepted: the code someone would quote off a bill, or the name they know.
+ * `code` is empty for records that have none, such as employees.
+ */
+export interface NamedRef {
+  id: string;
+  code: string;
+  name: string;
+}
+
+const refIndex = (refs: NamedRef[]): Map<string, NamedRef> => {
+  const byKey = new Map<string, NamedRef>();
+  for (const v of refs) {
+    // Codes go in first: a code is unique, so it must not be shadowed by a name
+    // that happens to normalise to the same string.
+    if (v.code) byKey.set(normalise(v.code), v);
+  }
+  for (const v of refs) {
+    const key = normalise(v.name);
+    if (key && !byKey.has(key)) byKey.set(key, v);
+  }
+  return byKey;
+};
+
+/**
+ * Resolves such a cell to an id. Blank means "not recorded", which is what these
+ * dropdowns default to; a value that matches nothing is REFUSED rather than
+ * dropped, because a silently unlinked supplier looks identical to one that was
+ * never entered.
+ */
+function resolveRefCell(raw: string, index: Map<string, NamedRef>): string | null | "unknown" {
+  const v = raw.trim();
+  if (v === "") return null;
+  return index.get(normalise(v))?.id ?? "unknown";
+}
+
 // ─── Assets ─────────────────────────────────────────────────────────────────
 
 export const ASSET_CSV_HEADERS = [
   "Name", "Category", "Brand", "Model", "Serial", "Purchase date",
-  "Purchase price", "Location", "Department", "Condition",
+  "Purchase price", "Vendor", "Location", "Department", "Condition",
   "Warranty start", "Warranty expiry", "Notes",
 ];
 
 export interface AssetImportContext {
   categories: string[];
+  /** Every supplier, so a row can name the one it was bought from. */
+  vendors: NamedRef[];
   /** Store-calendar today, so a future purchase date is caught before the RPC. */
   today: string;
 }
@@ -186,6 +234,7 @@ export function planAssetImport(
   // A duplicate serial inside the file itself would pass row-by-row validation
   // and then fail on the second insert, so it is caught here.
   const seenSerials = new Set<string>();
+  const vendors = refIndex(ctx.vendors);
 
   for (const r of parsed.records) {
     const fail = (message: string) => errors.push({ line: r.line, message });
@@ -199,6 +248,8 @@ export function planAssetImport(
     const wStart = parseDateCell(r.get("warranty start", "warranty from"));
     const wEnd = parseDateCell(r.get("warranty expiry", "warranty until", "warranty end"));
     const conditionRaw = r.get("condition").toLowerCase();
+    const vendorRaw = r.get("vendor", "supplier", "bought from");
+    const vendorId = resolveRefCell(vendorRaw, vendors);
 
     if (name === "") {
       fail("no name");
@@ -240,6 +291,10 @@ export function planAssetImport(
       fail(`condition "${conditionRaw}" is not one of new, good, fair, poor`);
       continue;
     }
+    if (vendorId === "unknown") {
+      fail(`no supplier matches "${vendorRaw}" — use its name or code, e.g. SUP-0001`);
+      continue;
+    }
     if (r.get("warranty expiry", "warranty until", "warranty end") !== "" && wEnd === null) {
       fail("warranty expiry is not a date");
       continue;
@@ -271,7 +326,7 @@ export function planAssetImport(
         serialNumber: serial,
         purchaseDate: bought,
         purchasePrice: price,
-        vendorId: null,
+        vendorId,
         warrantyStart: wStart,
         warrantyExpiry: wEnd,
         location,
@@ -291,12 +346,15 @@ export function planAssetImport(
 
 export const CONSUMABLE_CSV_HEADERS = [
   "Name", "Category", "Unit", "Minimum", "Maximum", "Reorder level",
-  "Reorder qty", "Cost per unit", "Expiry", "Storage", "Notes",
+  "Reorder qty", "Cost per unit", "Bill mode", "HSN", "GST rate",
+  "Vendor", "Expiry", "Storage", "Notes",
 ];
 
 export interface ConsumableImportContext {
   categories: string[];
   units: string[];
+  /** Every supplier, so a row can name the one it is usually bought from. */
+  vendors: NamedRef[];
 }
 
 export function planConsumableImport(
@@ -307,6 +365,7 @@ export function planConsumableImport(
   const errors: RowError[] = [];
   // The table's uniqueness is (name, unit), so the file is checked on that pair.
   const seen = new Set<string>();
+  const vendors = refIndex(ctx.vendors);
 
   for (const r of parsed.records) {
     const fail = (message: string) => errors.push({ line: r.line, message });
@@ -321,6 +380,12 @@ export function planConsumableImport(
     const cost = parseNumberCell(r.get("cost per unit", "cost", "unit cost"));
     const expiryRaw = r.get("expiry", "expires", "expiry date");
     const expiry = parseDateCell(expiryRaw);
+    const billRaw = r.get("bill mode", "billing", "at the billing counter").toLowerCase();
+    const hsn = r.get("hsn", "hsn code", "sac", "hsnsac");
+    const gstRaw = r.get("gst rate", "gst", "gst%", "tax rate");
+    const gst = parseNumberCell(gstRaw);
+    const vendorRaw = r.get("vendor", "supplier", "usually bought from", "bought from");
+    const vendorId = resolveRefCell(vendorRaw, vendors);
 
     if (name === "") {
       fail("no name");
@@ -371,6 +436,25 @@ export function planConsumableImport(
       fail("expiry is not a date");
       continue;
     }
+    if (billRaw !== "" && !BILL_MODES.includes(billRaw as BillMode)) {
+      fail(`bill mode "${billRaw}" is not one of ${BILL_MODES.join(", ")}`);
+      continue;
+    }
+    const billMode = (billRaw as BillMode) || "none";
+    // Mirrors the form and save_consumable (0067): a charged line is priced from
+    // the cost, so charging without one puts a zero-value line on a bill.
+    if (billMode === "charge" && !((cost ?? 0) > 0)) {
+      fail(`set a cost per ${unit} before charging this item on a bill`);
+      continue;
+    }
+    if (gst === "invalid" || (gst !== null && !GST_RATES.includes(gst as never))) {
+      fail(`GST rate must be one of ${GST_RATES.join(", ")}`);
+      continue;
+    }
+    if (vendorId === "unknown") {
+      fail(`no supplier matches "${vendorRaw}" — use its name or code, e.g. SUP-0001`);
+      continue;
+    }
 
     const key = `${name.toLowerCase()}|${unit}`;
     if (seen.has(key)) {
@@ -385,12 +469,10 @@ export function planConsumableImport(
         name,
         category,
         unit,
-        vendorId: null,
-        // An imported consumable is never billable until someone marks it, so
-        // it needs no HSN either — the GST fields only bite on a charged line.
-        billMode: "none",
-        hsn: "",
-        gstRate: 0,
+        vendorId,
+        billMode,
+        hsn,
+        gstRate: gst ?? 0,
         minStock: min,
         maxStock: max,
         reorderLevel: reorder,
@@ -406,10 +488,160 @@ export function planConsumableImport(
   return { rows, errors };
 }
 
+// ─── Stock items (products) ─────────────────────────────────────────────────
+
+export const ITEM_CSV_HEADERS = [
+  "Name", "Category", "Unit", "Cost price", "Sell price", "Opening qty",
+  "HSN", "GST rate", "Tracks expiry", "Expiry date", "Emoji",
+];
+
+export interface ItemImportContext {
+  categories: string[];
+  units: string[];
+  /** Names already in Stock, so a row that would merge is flagged, not silently folded in. */
+  existingNames: string[];
+  /** Store-calendar today, so an expiry already in the past is caught before the RPC. */
+  today: string;
+}
+
+/**
+ * A yes/no cell. Blank means "not stated", which the caller turns into the same
+ * default the Add Item form uses; anything unrecognised is refused rather than
+ * read as false — "N/A" is not a no.
+ */
+function parseBoolCell(raw: string): boolean | null | "invalid" {
+  const v = raw.trim().toLowerCase();
+  if (v === "") return null;
+  if (["yes", "y", "true", "1"].includes(v)) return true;
+  if (["no", "n", "false", "0"].includes(v)) return false;
+  return "invalid";
+}
+
+/**
+ * Every field the Add Item form offers, minus the product image — a picture has
+ * no CSV representation, so imported items keep their emoji and get an image
+ * later in Stock.
+ *
+ * `create_item` merges a row whose name already exists into that item's stock.
+ * That is right for a single deliberate save and wrong for a file, where it
+ * would look like an import that lost products, so a clashing name is an error
+ * here instead.
+ */
+export function planItemImport(
+  parsed: ParsedCsv,
+  ctx: ItemImportContext,
+): ImportPlan<ItemInput> {
+  const rows: { line: number; value: ItemInput }[] = [];
+  const errors: RowError[] = [];
+  const existing = new Set(ctx.existingNames.map((n) => n.trim().toLowerCase()));
+  const seen = new Set<string>();
+
+  for (const r of parsed.records) {
+    const fail = (message: string) => errors.push({ line: r.line, message });
+
+    const name = r.get("name", "item", "item name", "product", "product name");
+    const category = r.get("category");
+    const unit = r.get("unit", "uom", "counted in");
+    const cost = parseNumberCell(r.get("cost price", "cost", "purchase price", "unit cost"));
+    const price = parseNumberCell(r.get("sell price", "price", "mrp", "selling price"));
+    const qty = parseNumberCell(r.get("opening qty", "qty", "quantity", "stock"));
+    const hsn = r.get("hsn", "hsn code", "sac", "hsnsac");
+    const gstRaw = r.get("gst rate", "gst", "gst%", "tax rate");
+    const gst = parseNumberCell(gstRaw);
+    const tracks = parseBoolCell(r.get("tracks expiry", "track expiry", "expiry tracked"));
+    const expiryRaw = r.get("expiry date", "expiry", "expires", "best before");
+    const expiry = parseDateCell(expiryRaw);
+
+    if (name === "") {
+      fail("no name");
+      continue;
+    }
+    if (!ctx.categories.includes(category)) {
+      fail(
+        category === ""
+          ? "no category"
+          : `category "${category}" does not exist — add it in Settings first`,
+      );
+      continue;
+    }
+    if (!ctx.units.includes(unit)) {
+      fail(unit === "" ? "no unit" : `unit "${unit}" is not on the units list`);
+      continue;
+    }
+    if (cost === "invalid" || price === "invalid" || qty === "invalid") {
+      fail("a price or quantity column is not a number");
+      continue;
+    }
+    if ((cost ?? 0) < 0 || (price ?? 0) < 0) {
+      fail("a price is negative");
+      continue;
+    }
+    if ((qty ?? 0) < 0) {
+      fail("opening quantity is negative");
+      continue;
+    }
+    if (gst === "invalid" || (gst !== null && !GST_RATES.includes(gst as never))) {
+      fail(`GST rate must be one of ${GST_RATES.join(", ")}`);
+      continue;
+    }
+    if (tracks === "invalid") {
+      fail("tracks expiry must be yes or no");
+      continue;
+    }
+    if (expiryRaw !== "" && expiry === null) {
+      fail("expiry date is not a date (use YYYY-MM-DD or DD-MM-YYYY)");
+      continue;
+    }
+    if (expiry !== null && expiry < ctx.today) {
+      fail("expiry date has already passed");
+      continue;
+    }
+    // An expiry date on an item that does not track expiry would be dropped on
+    // save, so the contradiction is reported rather than half-honoured.
+    if (expiry !== null && tracks === false) {
+      fail("an expiry date was given but tracks expiry is no");
+      continue;
+    }
+
+    const key = name.trim().toLowerCase();
+    if (seen.has(key)) {
+      fail(`"${name}" appears twice in this file`);
+      continue;
+    }
+    if (existing.has(key)) {
+      fail(`"${name}" is already in Stock — edit it there, or rename this row`);
+      continue;
+    }
+    seen.add(key);
+
+    const tracksExpiry = tracks ?? true; // the Add Item form's default
+    rows.push({
+      line: r.line,
+      value: {
+        name: name.trim(),
+        emoji: r.get("emoji", "icon") || "📦",
+        imageUrl: null,
+        category,
+        unit,
+        price: price ?? 0,
+        costPrice: cost ?? 0,
+        qty: qty ?? 0,
+        tracksExpiry,
+        expiryDate: tracksExpiry ? expiry : null,
+        hsn,
+        gstRate: gst ?? 0,
+      },
+    });
+  }
+
+  return { rows, errors };
+}
+
 // ─── Bulk stock movements (§7's bulk stock update) ──────────────────────────
 
 export const MOVEMENT_CSV_HEADERS = [
-  "Item", "Type", "Qty", "Date", "Unit cost", "Reason", "Remarks",
+  "Item", "Type", "Qty", "Date", "Unit cost", "Vendor", "Issued to",
+  "Reason", "Remarks",
 ];
 
 export interface MovementImportRow {
@@ -418,6 +650,8 @@ export interface MovementImportRow {
   qty: number;
   onDate: string;
   unitCost: number | null;
+  vendorId: string | null;
+  issuedTo: string | null;
   reason: string;
   remarks: string;
 }
@@ -425,6 +659,10 @@ export interface MovementImportRow {
 export interface MovementImportContext {
   /** Every live item, so a row can name either its code or its name. */
   items: { id: string; code: string; name: string; unit: string; currentStock: number }[];
+  /** Every supplier, for the vendor a purchase came from. */
+  vendors: NamedRef[];
+  /** Everyone stock can be issued to. */
+  holders: NamedRef[];
   today: string;
 }
 
@@ -446,6 +684,8 @@ export function planMovementImport(
     byKey.set(normalise(i.name), i);
   }
   const running = new Map(ctx.items.map((i) => [i.id, i.currentStock]));
+  const vendors = refIndex(ctx.vendors);
+  const holders = refIndex(ctx.holders);
 
   for (const r of parsed.records) {
     const fail = (message: string) => errors.push({ line: r.line, message });
@@ -457,6 +697,10 @@ export function planMovementImport(
     const onDate = parseDateCell(dateRaw) ?? (dateRaw === "" ? ctx.today : null);
     const costCell = parseNumberCell(r.get("unit cost", "cost", "rate"));
     const reason = r.get("reason");
+    const vendorRaw = r.get("vendor", "supplier", "bought from");
+    const vendorId = resolveRefCell(vendorRaw, vendors);
+    const holderRaw = r.get("issued to", "issuedto", "given to", "holder");
+    const issuedTo = resolveRefCell(holderRaw, holders);
 
     const item = byKey.get(normalise(itemRaw));
     if (!item) {
@@ -505,6 +749,24 @@ export function planMovementImport(
       fail("unit cost is negative");
       continue;
     }
+    // Both mirror the form, which only offers each field on its own movement type
+    // and sends null on the rest. Accepting them silently would drop them.
+    if (vendorId !== null && type !== "purchase") {
+      fail("a vendor belongs on a purchase");
+      continue;
+    }
+    if (vendorId === "unknown") {
+      fail(`no supplier matches "${vendorRaw}" — use its name or code, e.g. SUP-0001`);
+      continue;
+    }
+    if (issuedTo !== null && type !== "issue") {
+      fail("an issued-to name belongs on an issue");
+      continue;
+    }
+    if (issuedTo === "unknown") {
+      fail(`nobody on the staff list is called "${holderRaw}"`);
+      continue;
+    }
 
     const signed =
       type === "purchase" || type === "return"
@@ -529,6 +791,8 @@ export function planMovementImport(
         qty: qtyCell,
         onDate,
         unitCost: costCell,
+        vendorId,
+        issuedTo,
         reason,
         remarks: r.get("remarks", "note", "notes"),
       },

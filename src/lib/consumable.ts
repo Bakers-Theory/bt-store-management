@@ -1,4 +1,5 @@
 import type {
+  BillMode,
   ConsumableAlertKind,
   MovementType,
   StockStatus,
@@ -13,6 +14,9 @@ import type {
  * these to refuse an impossible entry before the round trip, and to show what
  * the stock will be once the entry is saved.
  */
+
+/** What the billing counter does with this item. */
+export const BILL_MODES: BillMode[] = ["none", "charge", "absorb"];
 
 export const MOVEMENT_TYPES: MovementType[] = [
   "purchase",
