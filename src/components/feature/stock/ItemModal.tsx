@@ -36,9 +36,14 @@ function batchSource(b: Batch): string {
 export function ItemModal({
   itemId,
   onClose,
+  onSaved,
 }: {
   itemId: string | null; // null = add new
   onClose: () => void;
+  // Fires with the row the save landed on, before the modal closes. Lets an
+  // opener act on the product it just created — null when the server didn't
+  // hand one back, in which case there is nothing to act on.
+  onSaved?: (savedItemId: string | null) => void;
 }) {
   const items = useBakeryStore((s) => s.items);
   const currency = useBakeryStore((s) => s.bakery.currency);
@@ -196,6 +201,7 @@ export function ItemModal({
       if (r.kind === "merged")
         toast(`"${r.name}" already exists — added ${r.qty} ${r.unit} to its stock`, "success");
       else toast(r.kind === "updated" ? "Item updated" : "Item added", "success");
+      onSaved?.(r.itemId);
       onClose();
     } catch (e) {
       toast(e instanceof Error ? e.message : "Could not save item", "error");
