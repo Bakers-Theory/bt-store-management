@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link2, Loader2, Plus, X } from "lucide-react";
+import { Link2, Loader2, Plus, Upload, X } from "lucide-react";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
@@ -14,6 +14,7 @@ import {
 import { ItemThumb } from "@/components/ui/ItemThumb";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ItemModal } from "@/components/feature/stock/ItemModal";
+import { BulkImportModal } from "@/components/feature/BulkImportModal";
 import type { Supplier, SupplierProduct } from "@/lib/types";
 
 export function SupplierProductsTab({ supplier }: { supplier: Supplier }) {
@@ -21,6 +22,8 @@ export function SupplierProductsTab({ supplier }: { supplier: Supplier }) {
   const toast = useUIStore((s) => s.toast);
   const currency = useBakeryStore((s) => s.bakery.currency);
   const items = useBakeryStore((s) => s.items);
+  const categories = useBakeryStore((s) => s.lists.categories);
+  const units = useBakeryStore((s) => s.lists.units);
   const canEdit = hasPermission(user, "suppliers.edit");
   const canCost = hasPermission(user, "suppliers.financial");
   const canCreateItem = hasPermission(user, "items.create");
@@ -31,6 +34,7 @@ export function SupplierProductsTab({ supplier }: { supplier: Supplier }) {
   const [picking, setPicking] = useState("");
   const [busy, setBusy] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const reload = useCallback(() => setToken((t) => t + 1), []);
 
@@ -140,14 +144,42 @@ export function SupplierProductsTab({ supplier }: { supplier: Supplier }) {
               <Plus size={15} /> New product
             </button>
           )}
+          {/* A supplier's first delivery is usually a list, not one product. The
+              same CSV import Consumables uses creates every row and links it
+              here in one pass. */}
+          {canCreateItem && (
+            <button
+              type="button"
+              onClick={() => setImporting(true)}
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-warm-white px-4 py-2.5 text-sm font-bold text-ink-muted disabled:opacity-60"
+            >
+              <Upload size={15} /> Import
+            </button>
+          )}
         </div>
       )}
 
       {creating && (
         <ItemModal
           itemId={null}
+          supplier={supplier}
           onSaved={linkNew}
           onClose={() => setCreating(false)}
+        />
+      )}
+
+      {importing && (
+        <BulkImportModal
+          mode="items"
+          context={{
+            categories,
+            units,
+            existingItemNames: items.map((i) => i.name),
+            linkToSupplier: supplier,
+          }}
+          onDone={reload}
+          onClose={() => setImporting(false)}
         />
       )}
 
