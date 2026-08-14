@@ -28,10 +28,13 @@ import {
 } from "./supabase-data";
 
 // ─── Action result types (unchanged contract) ─────────────────────────────
+// itemId is the row the save landed on — the new item, the edited one, or the
+// existing one a merge folded into. Callers that need to act on the product
+// afterwards (linking it to a supplier, say) have no other way to find it.
 export type SaveItemResult =
-  | { kind: "added" }
-  | { kind: "updated" }
-  | { kind: "merged"; name: string; qty: number; unit: string };
+  | { kind: "added"; itemId: string | null }
+  | { kind: "updated"; itemId: string }
+  | { kind: "merged"; itemId: string | null; name: string; qty: number; unit: string };
 
 export interface StockResult {
   ok: boolean;
@@ -279,14 +282,18 @@ export const useBakeryStore = create<StoreState>()(
     saveItem: async (input, id) => {
       if (id) {
         patchItem(await rpcUpdateItem(id, input));
-        return { kind: "updated" };
+        return { kind: "updated", itemId: id };
       }
       const r = await rpcCreateItem(input);
       if (r.item) patchItem(r.item);
       if (r.kind === "merged") {
-        return { kind: "merged", name: r.name ?? input.name, qty: r.qty ?? input.qty, unit: r.unit ?? input.unit };
+        return {
+          kind: "merged",
+          itemId: r.item?.id ?? null,
+          name: r.name ?? input.name, qty: r.qty ?? input.qty, unit: r.unit ?? input.unit,
+        };
       }
-      return { kind: "added" };
+      return { kind: "added", itemId: r.item?.id ?? null };
     },
 
     setItemImage: async (id, url) => {

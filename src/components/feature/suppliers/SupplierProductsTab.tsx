@@ -13,6 +13,7 @@ import {
 } from "@/lib/supabase-data";
 import { ItemThumb } from "@/components/ui/ItemThumb";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { ItemModal } from "@/components/feature/stock/ItemModal";
 import type { Supplier, SupplierProduct } from "@/lib/types";
 
 export function SupplierProductsTab({ supplier }: { supplier: Supplier }) {
@@ -22,12 +23,14 @@ export function SupplierProductsTab({ supplier }: { supplier: Supplier }) {
   const items = useBakeryStore((s) => s.items);
   const canEdit = hasPermission(user, "suppliers.edit");
   const canCost = hasPermission(user, "suppliers.financial");
+  const canCreateItem = hasPermission(user, "items.create");
 
   const [rows, setRows] = useState<SupplierProduct[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [token, setToken] = useState(0);
   const [picking, setPicking] = useState("");
   const [busy, setBusy] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   const reload = useCallback(() => setToken((t) => t + 1), []);
 
@@ -63,6 +66,25 @@ export function SupplierProductsTab({ supplier }: { supplier: Supplier }) {
     }
   };
 
+  // A brand-new product is linked here rather than in the modal: ItemModal
+  // knows nothing about suppliers, and a merge means we link the item the save
+  // folded into, which is the one the user meant either way.
+  const linkNew = async (newItemId: string | null) => {
+    if (!newItemId) return;
+    setBusy(true);
+    try {
+      await rpcLinkSupplierItem(supplier.id, newItemId);
+      reload();
+    } catch (e) {
+      toast(
+        e instanceof Error ? e.message : `Product saved, but couldn't link it to ${supplier.name}`,
+        "error",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const unlink = async (row: SupplierProduct) => {
     setBusy(true);
     try {
@@ -83,7 +105,7 @@ export function SupplierProductsTab({ supplier }: { supplier: Supplier }) {
   return (
     <>
       {canEdit && supplier.status === "active" && (
-        <div className="mb-3.5 flex gap-2">
+        <div className="mb-3.5 flex flex-wrap gap-2">
           <select
             aria-label="Product to link"
             className="min-w-0 flex-1 rounded-[11px] border border-line bg-cream px-[13px] py-[11px] text-sm outline-none focus:border-brown"
@@ -105,7 +127,28 @@ export function SupplierProductsTab({ supplier }: { supplier: Supplier }) {
           >
             {busy ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />} Link
           </button>
+          {/* The dropdown only offers products that already exist. Anything new
+              this supplier brings would otherwise mean leaving for Stock and
+              coming back. */}
+          {canCreateItem && (
+            <button
+              type="button"
+              onClick={() => setCreating(true)}
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-warm-white px-4 py-2.5 text-sm font-bold text-ink-muted disabled:opacity-60"
+            >
+              <Plus size={15} /> New product
+            </button>
+          )}
         </div>
+      )}
+
+      {creating && (
+        <ItemModal
+          itemId={null}
+          onSaved={linkNew}
+          onClose={() => setCreating(false)}
+        />
       )}
 
       {rows.length === 0 ? (
