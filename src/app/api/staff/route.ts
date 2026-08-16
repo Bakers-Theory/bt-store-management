@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { createClient } from "@/utils/supabase/server";
 import { createAdminClient } from "@/utils/supabase/admin";
 import { userIdToEmail } from "@/lib/auth";
+import { requireOwner } from "./owner";
 import { isPermissionKey, permissionLabel } from "@/lib/permissions";
 import type { PermissionKey } from "@/lib/types";
 
@@ -156,7 +157,49 @@ export async function PATCH(req: Request) {
   return NextResponse.json({ ok: true });
 }
 
-// There is no delete. Removing a staff member deletes their profile row, and
-// attendance, employee_salary, salary_payment and staff_advance all cascade off
-// it — their work would go with them. `POST /api/staff/archive` switches the
-// account off instead and keeps every record intact (migration 0074).
+/**
+ * Delete an archived staff member for good.
+ *
+ * The normal way out is `POST /api/staff/archive`, which keeps everything. This
+ * is the second, deliberate step behind it, so it refuses anyone who is not
+ * archived already — and, like archiving, it is the Owner's alone.
+ *
+ * Deleting the auth user cascades to the profile, and from there to the
+ * employment record only: attendance, salary setup, salary payments and
+ * advances. Bills, cash entries, stock movements, purchases, expenses and asset
+ * custody all reference the profile with ON DELETE SET NULL and survive
+ * untouched — they simply stop naming who keyed them in. See 0075.
+ */
+export async function DELETE(req: Request) {
+  const actorId = await requireOwner();
+  if (!actorId) return forbidden();
+  const { id } = (await req.json()) as { id: string };
+  if (!id) return bad("Missing user id.");
+
+  const admin = createAdminClient();
+  const { data: prof } = await admin
+    .from("profiles")
+    .select("role,name,archived_at")
+    .eq("id", id)
+    .single();
+  if (!prof) return bad("Staff member not found.");
+  if (prof.role === "Owner") return bad("The Owner account cannot be deleted.");
+  if (!prof.archived_at) {
+    return bad("Archive this staff member first, then delete.");
+  }
+
+  // Logged before the delete, not after: the note has to be written while the
+  // name is still there to write down.
+  await admin.from("activity_log").insert({
+    type: "staff_remove",
+    actor: actorId,
+    notes:
+      `Deleted ${prof.name} — attendance, salary and advances removed; ` +
+      `bills and cash history kept`,
+  });
+
+  const { error } = await admin.auth.admin.deleteUser(id);
+  if (error) return bad(error.message);
+
+  return NextResponse.json({ ok: true });
+}

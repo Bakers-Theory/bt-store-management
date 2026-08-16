@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Archive, ArchiveRestore, Loader2, Pencil, Plus } from "lucide-react";
+import { Archive, ArchiveRestore, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { fetchStaff } from "@/lib/supabase-data";
 import { useAuth } from "@/components/system/AuthProvider";
 import { useUIStore } from "@/lib/ui-store";
@@ -44,7 +44,9 @@ export function UserManagement() {
   const [error, setError] = useState(false);
   const [retryToken, setRetryToken] = useState(0);
   const [modal, setModal] = useState<{ user: User | null } | null>(null);
-  const [confirmUser, setConfirmUser] = useState<User | null>(null);
+  const [confirm, setConfirm] = useState<
+    { user: User; action: "archive" | "delete" } | null
+  >(null);
   const [busy, setBusy] = useState<Set<string>>(new Set());
 
   const setBusyId = (id: string, on: boolean) =>
@@ -93,7 +95,7 @@ export function UserManagement() {
    * archived member simply cannot sign in and holds no permissions.
    */
   const setArchived = async (u: User, archived: boolean) => {
-    setConfirmUser(null);
+    setConfirm(null);
     setBusyId(u.id, true);
     try {
       const res = await fetch("/api/staff/archive", {
@@ -107,6 +109,31 @@ export function UserManagement() {
         return;
       }
       toast(archived ? "Staff archived" : "Staff unarchived", "success");
+      reload();
+    } finally {
+      setBusyId(u.id, false);
+    }
+  };
+
+  /**
+   * Erase an archived staff member. Their attendance, salary and advances go
+   * with them; every bill, cash entry and stock movement stays.
+   */
+  const remove = async (u: User) => {
+    setConfirm(null);
+    setBusyId(u.id, true);
+    try {
+      const res = await fetch("/api/staff", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: u.id }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        toast(body.error ?? "Could not delete user", "error");
+        return;
+      }
+      toast("Staff deleted", "success");
       reload();
     } finally {
       setBusyId(u.id, false);
@@ -188,7 +215,9 @@ export function UserManagement() {
                   archived ? "bg-brown" : "bg-danger"
                 }`}
                 onClick={() =>
-                  archived ? setArchived(u, false) : setConfirmUser(u)
+                  archived
+                    ? setArchived(u, false)
+                    : setConfirm({ user: u, action: "archive" })
                 }
                 disabled={busy.has(u.id)}
                 aria-label={`${archived ? "Unarchive" : "Archive"} ${u.name}`}
@@ -201,6 +230,18 @@ export function UserManagement() {
                   <Archive size={14} />
                 )}
                 {/* {archived ? "Unarchive" : "Archive"} */}
+              </button>
+            )}
+            {/* Delete is the step behind archiving, so it only appears once the
+                account is already switched off. */}
+            {isOwner && archived && (
+              <button
+                className="inline-flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg border border-danger bg-warm-white text-danger disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={() => setConfirm({ user: u, action: "delete" })}
+                disabled={busy.has(u.id)}
+                aria-label={`Delete ${u.name}`}
+              >
+                <Trash2 size={14} />
               </button>
             )}
           </div>
@@ -273,26 +314,56 @@ export function UserManagement() {
         />
       )}
 
-      {confirmUser && (
-        <Modal title="Archive staff" onClose={() => setConfirmUser(null)}>
-          <p className="text-sm text-ink-muted">
-            Archive <span className="font-bold text-ink">{confirmUser.name}</span>? They
-            will no longer be able to sign in. Everything they recorded — bills,
-            cash entries, attendance, salary and advances — stays exactly as it
-            is, and you can unarchive them at any time.
-          </p>
+      {confirm && (
+        <Modal
+          title={confirm.action === "archive" ? "Archive staff" : "Delete staff"}
+          onClose={() => setConfirm(null)}
+        >
+          {confirm.action === "archive" ? (
+            <p className="text-sm text-ink-muted">
+              Archive <span className="font-bold text-ink">{confirm.user.name}</span>?
+              They will no longer be able to sign in. Everything they recorded —
+              bills, cash entries, attendance, salary and advances — stays exactly
+              as it is, and you can unarchive them at any time.
+            </p>
+          ) : (
+            <div className="space-y-2.5 text-sm text-ink-muted">
+              <p>
+                Delete <span className="font-bold text-ink">{confirm.user.name}</span>{" "}
+                permanently? This cannot be undone.
+              </p>
+              <p>
+                <span className="font-bold text-danger">Removed:</span> their
+                attendance records, salary setup, salary payments and advances.
+              </p>
+              <p>
+                <span className="font-bold text-ink">Kept:</span> every bill, cash
+                book entry, stock movement, purchase, expense and asset record
+                they touched — those stay, without their name on them.
+              </p>
+            </div>
+          )}
           <div className="mt-5 flex gap-2.5">
-            <button
-              className="btn-secondary flex-1"
-              onClick={() => setConfirmUser(null)}
-            >
+            <button className="btn-secondary flex-1" onClick={() => setConfirm(null)}>
               Cancel
             </button>
             <button
               className="btn-danger flex flex-1 items-center justify-center gap-2"
-              onClick={() => setArchived(confirmUser, true)}
+              onClick={() =>
+                confirm.action === "archive"
+                  ? setArchived(confirm.user, true)
+                  : remove(confirm.user)
+              }
             >
-              <Archive size={16} /> Archive
+              {confirm.action === "archive" ? (
+                <>
+                  <Archive size={16} /> Archive
+                </>
+              ) : (
+                <>
+                  <Trash2 size={16} /> Delete
+                </>
+              )}
             </button>
           </div>
         </Modal>

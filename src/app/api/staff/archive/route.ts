@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { createClient } from "@/utils/supabase/server";
 import { createAdminClient } from "@/utils/supabase/admin";
+import { requireOwner } from "../owner";
 
 /**
  * Archive / un-archive a staff member.
@@ -14,20 +13,6 @@ import { createAdminClient } from "@/utils/supabase/admin";
  * Owner-only, not `staff.manage`: locking a colleague out is the one staff
  * action a delegated manager should not be able to take.
  */
-async function requireOwner(): Promise<string | null> {
-  const cookieStore = await cookies();
-  const supabase = createClient(cookieStore);
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
-  const { data } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-  return data?.role === "Owner" ? user.id : null;
-}
 
 /**
  * Supabase has no "ban forever", so a ban is dated a century out. The value is
