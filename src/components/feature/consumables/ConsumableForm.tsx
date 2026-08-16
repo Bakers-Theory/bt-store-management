@@ -70,14 +70,18 @@ export function ConsumableForm({
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [saving, setSaving] = useState(false);
 
-  // Only offered while CREATING from a supplier's tab: an existing consumable's
-  // stock is its ledger, and there is no opening quantity to buy. Posting needs
-  // both keys — save_purchase_invoice raises on the second one (0037).
+  // Whoever the item is being bought from: the supplier whose tab this was
+  // opened from, or the one picked in "Usually bought from" — on the Consumables
+  // page that dropdown is the only thing that names a supplier.
+  const purchaseSupplier = vendor ?? suppliers.find((s) => s.id === vendorId);
+  // Only offered while CREATING: an existing consumable's stock is its ledger,
+  // and there is no opening quantity to buy. Posting needs both supplier keys —
+  // save_purchase_invoice raises on the second one (0037).
   const user = useCurrentUser();
   const today = isoDateLocal(new Date());
   const offerPurchase =
     !item &&
-    !!vendor &&
+    !!purchaseSupplier &&
     hasPermission(user, "purchases.create") &&
     hasPermission(user, "suppliers.view") &&
     hasPermission(user, "consumables.issue");
@@ -129,8 +133,8 @@ export function ConsumableForm({
     // Ticked with no quantity records the consumable and no purchase: there is
     // nothing to buy, and an invoice for no goods is not a purchase.
     const posting = offerPurchase && purchase.record && opening > 0;
-    if (posting && vendor) {
-      const problem = itemPurchaseError(purchase, vendor.supplierType, today);
+    if (posting && purchaseSupplier) {
+      const problem = itemPurchaseError(purchase, purchaseSupplier.supplierType, today);
       if (problem) {
         setPurchaseErr(problem);
         return;
@@ -162,10 +166,10 @@ export function ConsumableForm({
       // purchase movement, so the consumable is saved with nothing on the shelf
       // and the invoice puts it there. If it fails, the consumable still exists
       // — say exactly that rather than a bare "could not save".
-      if (posting && vendor && id) {
+      if (posting && purchaseSupplier && id) {
         try {
           await rpcPostItemPurchase({
-            supplierId: vendor.id,
+            supplierId: purchaseSupplier.id,
             invoiceNo: purchase.invoiceNo.trim(),
             purchaseDate: purchase.purchaseDate,
             notes: "",
@@ -178,7 +182,7 @@ export function ConsumableForm({
               },
             ]),
           });
-          toast(`Item added and the purchase filed against ${vendor.name}`, "success");
+          toast(`Item added and the purchase filed against ${purchaseSupplier.name}`, "success");
         } catch (e) {
           toast(
             e instanceof Error
@@ -465,7 +469,7 @@ export function ConsumableForm({
           </div>
         </div>
 
-        {offerPurchase && vendor && (
+        {offerPurchase && purchaseSupplier && (
           <>
             <div>
               <label className={labelCls} htmlFor="cn-open">
@@ -490,7 +494,7 @@ export function ConsumableForm({
               </p>
             </div>
             <RecordAsPurchaseFields
-              supplier={vendor}
+              supplier={purchaseSupplier}
               draft={purchase}
               onChange={(next) => {
                 setPurchase(next);
@@ -516,7 +520,10 @@ export function ConsumableForm({
         </button>
         {!item && !offerPurchase && (
           <p className="text-center text-[11px] text-ink-muted">
-            It starts at zero. Record a purchase to put stock on the shelf.
+            It starts at zero.{" "}
+            {purchaseSupplier
+              ? "Record a purchase to put stock on the shelf."
+              : "Name who you buy it from above to file this delivery as a purchase."}
           </p>
         )}
       </div>

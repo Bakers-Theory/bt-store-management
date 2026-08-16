@@ -153,41 +153,48 @@ export function BulkImportModal({
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
 
-  const purchaseSupplier = context.linkToSupplier;
+  // A Vendor / Issued to cell names a supplier or a person, so those lists have
+  // to be here to turn a name into an id. Fetched by the modal rather than asked
+  // of every caller, which is also what the forms these mirror do. Until they
+  // arrive a named vendor cannot be matched, so the Import button waits below.
+  const [suppliers, setSuppliers] = useState<Supplier[] | null>(null);
+  const [holders, setHolders] = useState<NamedRef[] | null>(null);
+  // A supplier-scoped import needs neither list: everything belongs to the one
+  // supplier the caller passed, and only a movement can name a person.
+  const needsVendors = mode !== "items" && !context.linkToSupplier;
+  const needsHolders = mode === "movements";
+
+  const canPurchase =
+    hasPermission(user, "purchases.create") && hasPermission(user, "suppliers.view");
+  // Off a supplier's page there is nobody to invoice until the operator says who
+  // the delivery came from, so the Consumables import asks. Picking one also
+  // makes them the vendor of every row — a file is one delivery.
+  const [pickedSupplierId, setPickedSupplierId] = useState("");
+  const purchaseSupplier =
+    context.linkToSupplier ?? (suppliers ?? []).find((s) => s.id === pickedSupplierId);
+
   const offerPurchase =
-    mode === "items" &&
-    !!purchaseSupplier &&
-    hasPermission(user, "purchases.create") &&
-    hasPermission(user, "suppliers.view");
+    mode === "items" && !!purchaseSupplier && canPurchase;
   // Consumables are bought on the same invoice a product is (migration 0072),
   // so this is the same offer with the same fields. Posting brings the stock in
   // as a purchase movement, which is the only way consumable stock exists.
   const offerConsumablePurchase =
     mode === "consumables" &&
     !!purchaseSupplier &&
-    hasPermission(user, "purchases.create") &&
-    hasPermission(user, "suppliers.view") &&
+    canPurchase &&
     hasPermission(user, "consumables.issue");
   const [purchase, setPurchase] = useState(() => emptyItemPurchaseDraft(today));
   const [purchaseErr, setPurchaseErr] = useState<string | null>(null);
 
-  // A Vendor / Issued to cell names a supplier or a person, so those lists have
-  // to be here to turn a name into an id. Fetched by the modal rather than asked
-  // of every caller, which is also what the forms these mirror do. Until they
-  // arrive a named vendor cannot be matched, so the Import button waits below.
-  const [vendors, setVendors] = useState<NamedRef[] | null>(null);
-  const [holders, setHolders] = useState<NamedRef[] | null>(null);
-  // A supplier-scoped import needs neither list: everything belongs to the one
-  // supplier the caller passed, and only a movement can name a person.
-  const needsVendors = mode !== "items" && !purchaseSupplier;
-  const needsHolders = mode === "movements";
+  const vendors: NamedRef[] | null =
+    suppliers === null ? null : suppliers.map((v) => ({ id: v.id, code: v.code, name: v.name }));
 
   useEffect(() => {
     let alive = true;
     if (needsVendors) {
       void fetchSuppliers()
-        .then((s) => alive && setVendors(s.map((v) => ({ id: v.id, code: v.code, name: v.name }))))
-        .catch(() => alive && setVendors([]));
+        .then((s) => alive && setSuppliers(s))
+        .catch(() => alive && setSuppliers([]));
     }
     if (needsHolders) {
       void fetchAssetHolders()
@@ -473,7 +480,7 @@ export function BulkImportModal({
           {mode === "consumables" &&
             (purchaseSupplier
               ? ` Every row is filed under ${purchaseSupplier.name}, so the Vendor column is ignored. Opening qty is what arrived, and goes on the invoice below.`
-              : " Opening qty is only recorded when importing from a supplier's page, so leave it out here.")}
+              : " Opening qty only counts once you name who the delivery came from below — without that there is nothing to file it against.")}
         </p>
 
         <div className="flex flex-wrap gap-2">
@@ -510,6 +517,39 @@ export function BulkImportModal({
             className="w-full rounded-[11px] border border-line bg-warm-white px-3 py-2.5 font-mono text-[12px] text-ink"
           />
         </div>
+
+        {/* The Consumables page has no supplier of its own, so filing the
+            delivery as a purchase starts by naming who it came from. */}
+        {mode === "consumables" &&
+          !context.linkToSupplier &&
+          canPurchase &&
+          hasPermission(user, "consumables.issue") &&
+          !outcome && (
+            <div>
+              <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]" htmlFor="bi-from">
+                Bought from (optional)
+              </label>
+              <select
+                id="bi-from"
+                value={pickedSupplierId}
+                disabled={busy}
+                onChange={(e) => {
+                  setPickedSupplierId(e.target.value);
+                  setPurchaseErr(null);
+                }}
+                className="w-full rounded-[11px] border border-line bg-warm-white px-3 py-2.5 text-[13.5px] text-ink outline-none focus:border-brown"
+              >
+                <option value="">Not a delivery — just set these items up</option>
+                {(suppliers ?? [])
+                  .filter((s) => s.status === "active")
+                  .map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} · {s.code}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          )}
 
         {(offerPurchase || offerConsumablePurchase) && purchaseSupplier && !outcome && (
           <RecordAsPurchaseFields
