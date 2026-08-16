@@ -142,6 +142,13 @@ export function ConsumableDetail({
             <p className="text-2xl font-extrabold tabular-nums text-ink">
               {qtyLabel(item.currentStock)}
               <span className="ml-1 text-sm font-bold text-ink-muted">{item.unit}</span>
+              {/* Pieces out of an opened pack are stock too, and they are not
+                  in the ledger sum above (migration 0073). */}
+              {item.looseQty > 0 && (
+                <span className="ml-1 text-sm font-bold text-ink-muted">
+                  + {qtyLabel(item.looseQty)} pcs
+                </span>
+              )}
             </p>
             <span className="rounded bg-[#f3e6d2] px-2 py-0.5 text-[11px] font-bold text-[#8a6a3c]">
               {stockStatusLabel(item.stockStatus)}

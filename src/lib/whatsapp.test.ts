@@ -25,7 +25,7 @@ const bakery: Bakery = {
 
 const line = (name: string, qty: number, price: number): BillLine => ({
   itemId: "x", name, emoji: "🥐", imageUrl: null, unit: "pcs", qty, price, costPrice: 0,
-  hsn: "", gstRate: 0, taxableValue: 0, cgst: 0, sgst: 0, igst: 0,
+  sellMode: "pack", packSize: null, hsn: "", gstRate: 0, taxableValue: 0, cgst: 0, sgst: 0, igst: 0,
 });
 
 const bill = (over: Partial<Bill> = {}): Bill => ({

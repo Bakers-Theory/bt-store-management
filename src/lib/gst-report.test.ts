@@ -8,14 +8,14 @@ const ALL = { from: null, to: null };
 
 const line = (over: Partial<BillLine> = {}): BillLine => ({
   itemId: "i1", name: "Cake", emoji: "🍰", imageUrl: null, unit: "pcs",
-  qty: 1, price: 118, costPrice: 40,
+  qty: 1, price: 118, costPrice: 40, sellMode: "pack", packSize: null,
   hsn: "1905", gstRate: 18, taxableValue: 100, cgst: 9, sgst: 9, igst: 0,
   ...over,
 });
 
 const consumable = (over: Partial<BillConsumable> = {}): BillConsumable => ({
   id: "bc1", consumableId: "c1", name: "Carry bag", unit: "pcs",
-  qty: 1, unitCost: 11.8, charged: true,
+  qty: 1, unitCost: 11.8, charged: true, sellMode: "pack", packSize: null,
   hsn: "4819", gstRate: 18, taxableValue: 10, cgst: 0.9, sgst: 0.9, igst: 0,
   ...over,
 });

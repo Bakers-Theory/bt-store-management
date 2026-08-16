@@ -117,6 +117,8 @@ export function movementTypeLabel(t: MovementType): string {
       return "Issue";
     case "return":
       return "Return";
+    case "open":
+      return "Pack opened";
     case "adjustment":
       return "Adjustment";
     case "wastage":

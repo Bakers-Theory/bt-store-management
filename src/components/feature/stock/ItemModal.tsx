@@ -8,6 +8,7 @@ import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { fetchItemBatches } from "@/lib/supabase-data";
 import { GST_RATES } from "@/lib/constants";
+import { piecePrice } from "@/lib/pack";
 import { compressImage, uploadProductImage, deleteProductImage, MAX_UPLOAD_BYTES } from "@/lib/image";
 import dynamic from "next/dynamic";
 import { expiryStatus, type ExpiryStatus } from "@/lib/expiry";
@@ -104,6 +105,12 @@ export function ItemModal({
   const [hsn, setHsn] = useState(editing?.hsn ?? "");
   const [gstRate, setGstRate] = useState(editing ? String(editing.gstRate) : "0");
   const [qty, setQty] = useState(editing ? String(editing.qty) : "");
+  // Migration 0073. Off by default, so nothing about an existing product
+  // changes until someone deliberately ticks the box.
+  const [soldInPacks, setSoldInPacks] = useState(editing?.packSize != null);
+  const [packSize, setPackSize] = useState(
+    editing?.packSize != null ? String(editing.packSize) : "",
+  );
   const [nameErr, setNameErr] = useState("");
   const [saving, setSaving] = useState(false);
   const today = isoDateLocal(new Date());
@@ -193,6 +200,11 @@ export function ItemModal({
         )
       : undefined;
 
+  // Null unless the box is ticked AND a real pack size was typed, which is
+  // exactly what the server stores.
+  const packSizeValue =
+    soldInPacks && parseFloat(packSize) > 1 ? parseFloat(packSize) : null;
+
   const canSave = editing
     ? name.trim().length > 0 &&
       (emoji !== editing.emoji ||
@@ -204,6 +216,7 @@ export function ItemModal({
         costPrice !== String(editing.costPrice) ||
         hsn !== editing.hsn ||
         gstRate !== String(editing.gstRate) ||
+        packSizeValue !== editing.packSize ||
         price !== String(editing.price))
     : name.trim().length > 0;
 
@@ -211,6 +224,10 @@ export function ItemModal({
     const trimmed = name.trim();
     if (!trimmed) {
       setNameErr("Item name is required");
+      return;
+    }
+    if (soldInPacks && !(parseFloat(packSize) > 1)) {
+      toast("A pack has to hold more than one piece", "error");
       return;
     }
     const openingQty = noOpeningStock ? 0 : parseFloat(qty) || 0;
@@ -240,6 +257,7 @@ export function ItemModal({
         hsn: hsn.trim(),
         gstRate: parseFloat(gstRate) || 0,
         qty: openingQty,
+        packSize: packSizeValue,
         tracksExpiry,
         expiryDate: expiry,
         // Ignored by update_item — only a NEW batch can carry a source.
@@ -466,6 +484,44 @@ export function ItemModal({
       <p className="mb-3.5 text-[11.5px] text-ink-light">
         A GST invoice needs an HSN on every line. 0% is fine; blank is not.
       </p>
+
+      {/* Migration 0073. Stock stays counted in packs; only the billing screen
+          gains the option to sell one piece out of an opened pack. */}
+      <div className="mb-3.5 rounded-[11px] border border-line bg-cream px-3 py-2.5">
+        <div className="flex items-center justify-between">
+          <label htmlFor="soldInPacks" className="text-[13px] font-semibold text-ink">
+            Sold in packs
+          </label>
+          <input
+            id="soldInPacks"
+            type="checkbox"
+            checked={soldInPacks}
+            onChange={(e) => setSoldInPacks(e.target.checked)}
+            className="h-5 w-5 accent-brown"
+          />
+        </div>
+        {soldInPacks && (
+          <div className="mt-2.5">
+            <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">
+              Pieces per {unit || "pack"}
+            </label>
+            <input
+              type="number"
+              placeholder="e.g. 100"
+              min="2"
+              step="1"
+              value={packSize}
+              onChange={(e) => setPackSize(e.target.value)}
+            />
+            <p className="mt-1.5 text-[11.5px] text-ink-light">
+              Stock is still counted in {unit || "packs"}. A single piece bills at{" "}
+              {currency}
+              {piecePrice(parseFloat(price) || 0, packSizeValue).toFixed(2)}, and a
+              pack opens itself when the loose pieces run out.
+            </p>
+          </div>
+        )}
+      </div>
 
       <div className="mb-3.5 flex items-center justify-between rounded-[11px] border border-line bg-cream px-3 py-2.5">
         <label htmlFor="tracksExpiry" className="text-[13px] font-semibold text-ink">

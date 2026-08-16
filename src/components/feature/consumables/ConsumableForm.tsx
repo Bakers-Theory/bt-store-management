@@ -61,6 +61,11 @@ export function ConsumableForm({
   const [costPerUnit, setCostPerUnit] = useState(
     item?.costPerUnit === null || !item ? "" : String(item.costPerUnit),
   );
+  // Migration 0073. Off by default, so an existing consumable is unaffected.
+  const [soldInPacks, setSoldInPacks] = useState(item?.packSize != null);
+  const [packSize, setPackSize] = useState(
+    item?.packSize != null ? String(item.packSize) : "",
+  );
   const [billMode, setBillMode] = useState<BillMode>(item?.billMode ?? "none");
   const [hsn, setHsn] = useState(item?.hsn ?? "");
   const [gstRate, setGstRate] = useState(item ? String(item.gstRate) : "0");
@@ -125,7 +130,13 @@ export function ConsumableForm({
                     // server refuses it too (save_consumable, 0067).
                     billMode === "charge" && !((optional(costPerUnit) ?? 0) > 0)
                     ? `Set a cost per ${unit || "unit"} before charging this item on a bill`
-                    : null;
+                    : soldInPacks && !((optional(packSize) ?? 0) > 1)
+                      ? "A pack has to hold more than one piece"
+                      : // Loose pieces with no pack behind them are stock nothing
+                        // can price or put back; the server refuses it too.
+                        !soldInPacks && (item?.looseQty ?? 0) > 0
+                        ? `There are still ${item?.looseQty} loose pieces on hand — sell or write them off before turning packs off`
+                        : null;
 
   const submit = async () => {
     if (error) return;
@@ -148,6 +159,7 @@ export function ConsumableForm({
         name: name.trim(),
         category,
         unit,
+        packSize: soldInPacks ? optional(packSize) : null,
         vendorId: vendorId || null,
         billMode,
         hsn: hsn.trim(),
@@ -262,6 +274,45 @@ export function ConsumableForm({
               </p>
             )}
           </div>
+        </div>
+
+        {/* Migration 0073. Stock stays counted in the unit above; this only adds
+            the option to issue or bill one piece out of an opened pack. */}
+        <div className="rounded-[11px] border border-line bg-cream px-3 py-2.5">
+          <div className="flex items-center justify-between">
+            <label htmlFor="cn-packs" className="text-[13px] font-semibold text-ink">
+              Sold in packs
+            </label>
+            <input
+              id="cn-packs"
+              type="checkbox"
+              checked={soldInPacks}
+              onChange={(e) => setSoldInPacks(e.target.checked)}
+              className="h-5 w-5 accent-brown"
+            />
+          </div>
+          {soldInPacks && (
+            <div className="mt-2.5">
+              <label className={labelCls} htmlFor="cn-pack-size">
+                Pieces per {unit || "pack"}
+              </label>
+              <input
+                id="cn-pack-size"
+                type="number"
+                min="2"
+                step="1"
+                inputMode="numeric"
+                placeholder="e.g. 100"
+                value={packSize}
+                onChange={(e) => setPackSize(e.target.value)}
+                className={inputCls}
+              />
+              <p className="mt-1 text-[11px] text-ink-muted">
+                Stock is still counted in {unit || "packs"}. A pack opens itself
+                when the loose pieces run out.
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-2.5">

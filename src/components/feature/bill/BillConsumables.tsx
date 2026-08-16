@@ -2,8 +2,9 @@
 
 import { Package } from "lucide-react";
 import { absorbedConsumableCost, consumableLineError } from "@/lib/bill-consumable";
+import { isPacked, piecesAvailable, stockLabel } from "@/lib/pack";
 import type { BillableConsumable } from "@/lib/supabase-data";
-import type { BillConsumableLine } from "@/lib/types";
+import type { BillConsumableLine, SellMode } from "@/lib/types";
 
 /**
  * The consumables a biller may add to a bill.
@@ -30,9 +31,11 @@ export function ConsumablePicker({
   const q = search.toLowerCase();
   // Nothing on the shelf cannot be issued, so it is not offered — the same rule
   // filteredItems applies to products with no fresh stock.
+  // A shelf holding no whole packs but some loose pieces still has stock to
+  // issue, so the test is on pieces available, not on the pack count alone.
   const shown = available.filter(
     (c) =>
-      c.currentStock > 0 &&
+      piecesAvailable(c.currentStock, c.looseQty, c.packSize) > 0 &&
       (c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q)),
   );
 
@@ -89,7 +92,7 @@ export function ConsumablePicker({
               <span className="text-[11.5px] font-semibold text-ink-muted"> / {c.unit}</span>
             </div>
             <div className="num text-[11.5px] font-semibold text-ink-muted">
-              {c.currentStock} {c.unit} on hand
+              {stockLabel(c.currentStock, c.looseQty, c.packSize, c.unit)} on hand
             </div>
             <span className="w-fit rounded-full bg-cream-dark px-2 py-0.5 text-[10.5px] font-bold text-ink-muted">
               {c.billMode === "charge" ? "Charged" : "Absorbed"}
@@ -106,17 +109,27 @@ export function ConsumableCartGroup({
   available,
   onSetQty,
   onToggleCharged,
+  onSetSellMode,
   currency,
 }: {
   lines: BillConsumableLine[];
   available: BillableConsumable[];
   onSetQty: (consumableId: string, qty: number) => void;
   onToggleCharged: (consumableId: string) => void;
+  onSetSellMode: (consumableId: string, mode: SellMode) => void;
   currency: string;
 }) {
   if (lines.length === 0) return null;
 
-  const stockOf = (id: string) => available.find((a) => a.id === id)?.currentStock ?? 0;
+  const masterOf = (id: string) => available.find((a) => a.id === id);
+  /** The cap for a line, in the unit that line is sold in (migration 0073). */
+  const stockOf = (l: BillConsumableLine) => {
+    const c = masterOf(l.consumableId);
+    if (!c) return 0;
+    return l.sellMode === "piece"
+      ? piecesAvailable(c.currentStock, c.looseQty, c.packSize)
+      : c.currentStock;
+  };
   const absorbed = absorbedConsumableCost(lines);
 
   return (
@@ -125,7 +138,8 @@ export function ConsumableCartGroup({
         Consumables
       </div>
       {lines.map((l) => {
-        const err = consumableLineError(l, stockOf(l.consumableId));
+        const err = consumableLineError(l, stockOf(l));
+        const packSize = masterOf(l.consumableId)?.packSize ?? null;
         return (
           <div key={l.consumableId} className="rounded-xl px-2.5 py-[9px]">
             <div className="flex items-center gap-2.5">
@@ -149,7 +163,7 @@ export function ConsumableCartGroup({
                 </span>
                 <button
                   onClick={() => onSetQty(l.consumableId, l.qty + 1)}
-                  disabled={l.qty >= stockOf(l.consumableId)}
+                  disabled={l.qty >= stockOf(l)}
                   aria-label={`Add one ${l.name}`}
                   className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-base font-extrabold text-brown disabled:cursor-not-allowed disabled:opacity-40"
                 >
@@ -187,6 +201,33 @@ export function ConsumableCartGroup({
                   </button>
                 ))}
               </span>
+              {/* Only for stock bought in packs (migration 0073). */}
+              {isPacked(packSize) && (
+                <span className="inline-flex overflow-hidden rounded-[7px] border border-line">
+                  {(["pack", "piece"] as SellMode[]).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => onSetSellMode(l.consumableId, m)}
+                      aria-pressed={l.sellMode === m}
+                      aria-label={
+                        m === "pack"
+                          ? `Issue ${l.name} by the ${masterOf(l.consumableId)?.unit ?? "pack"}`
+                          : `Issue ${l.name} by the piece`
+                      }
+                      className={`px-2 py-1 text-[11.5px] font-bold ${
+                        l.sellMode === m
+                          ? "bg-brown text-warm-white"
+                          : "bg-warm-white text-ink-muted"
+                      }`}
+                    >
+                      {m === "pack"
+                        ? masterOf(l.consumableId)?.unit ?? "pack"
+                        : "piece"}
+                    </button>
+                  ))}
+                </span>
+              )}
               {err && (
                 <span className="text-[11.5px] font-semibold text-danger">{err}</span>
               )}

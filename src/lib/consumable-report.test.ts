@@ -18,6 +18,8 @@ const item = (over: Partial<Consumable> = {}): Consumable => ({
   name: "Cake boxes",
   category: "Packaging",
   unit: "pcs",
+  packSize: null,
+  looseQty: 0,
   vendorId: null,
   vendorName: "BoxCo",
   minStock: 100,

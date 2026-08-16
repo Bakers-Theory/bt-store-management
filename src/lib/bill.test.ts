@@ -4,7 +4,7 @@ import type { BillLine } from "./types";
 
 const line = (qty: number, price: number): BillLine => ({
   itemId: "x", name: "x", emoji: "📦", imageUrl: null, unit: "pcs", qty, price, costPrice: 0,
-  hsn: "", gstRate: 0, taxableValue: 0, cgst: 0, sgst: 0, igst: 0,
+  sellMode: "pack", packSize: null, hsn: "", gstRate: 0, taxableValue: 0, cgst: 0, sgst: 0, igst: 0,
 });
 
 describe("computeTotals", () => {
@@ -30,7 +30,7 @@ describe("computeTotals", () => {
   it("adds charged consumables to the subtotal", () => {
     const bag = {
       consumableId: "c1", name: "Carry bag", unit: "pcs",
-      qty: 2, unitCost: 5, charged: true, hsn: "", gstRate: 0,
+      qty: 2, unitCost: 5, charged: true, sellMode: "pack" as const, packSize: null, hsn: "", gstRate: 0,
     };
     expect(computeTotals([line(1, 100)], 0, 0, "percent", [bag])).toEqual({
       subtotal: 110, discount: 0, tax: 0, total: 110,
@@ -40,7 +40,7 @@ describe("computeTotals", () => {
   it("ignores absorbed consumables entirely", () => {
     const wrap = {
       consumableId: "c2", name: "Foil wrap", unit: "pcs",
-      qty: 2, unitCost: 5, charged: false, hsn: "", gstRate: 0,
+      qty: 2, unitCost: 5, charged: false, sellMode: "pack" as const, packSize: null, hsn: "", gstRate: 0,
     };
     expect(computeTotals([line(1, 100)], 0, 0, "percent", [wrap])).toEqual({
       subtotal: 100, discount: 0, tax: 0, total: 100,
@@ -50,7 +50,7 @@ describe("computeTotals", () => {
   it("taxes and discounts a charged consumable like an item line", () => {
     const bag = {
       consumableId: "c1", name: "Carry bag", unit: "pcs",
-      qty: 1, unitCost: 10, charged: true, hsn: "", gstRate: 0,
+      qty: 1, unitCost: 10, charged: true, sellMode: "pack" as const, packSize: null, hsn: "", gstRate: 0,
     };
     // subtotal 110, 10% off -> 99 taxable, 5% tax -> 4.95, total 103.95.
     expect(computeTotals([line(1, 100)], 5, 10, "percent", [bag])).toEqual({
