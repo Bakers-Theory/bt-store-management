@@ -138,7 +138,19 @@ export interface Item {
   hsn: string;
   /** 0–28. A 0% rate is legal; a blank HSN is not. */
   gstRate: number;
+  /** Stock in PACKS when `packSize` is set, otherwise in `unit` (migration 0073). */
   qty: number;
+  /**
+   * Pieces per pack, or null for anything sold whole. Above 1 by constraint — a
+   * pack of one is just the item.
+   */
+  packSize: number | null;
+  /**
+   * Pieces broken out of an opened pack. Deliberately expiry-less: it is one
+   * counter, not a batch, so an opened piece no longer carries the date it came
+   * in with.
+   */
+  looseQty: number;
   tracksExpiry: boolean;
   earliestExpiry: string | null; // "YYYY-MM-DD" of soonest in-stock batch, or null
   // In-stock batches (qty > 0), soonest-expiry-first. Includes expired batches;
@@ -174,10 +186,20 @@ export interface BillLine {
   name: string;
   emoji: string;
   imageUrl: string | null; // snapshot of the item's image at bill time
+  /** "pcs" on a piece line, the item's own unit on a pack line. */
   unit: string;
   qty: number;
+  /** Per `unit`: the pack price, or the derived piece price. */
   price: number;
   costPrice: number;
+  /**
+   * Which way this line was sold, and how big the pack was at the time
+   * (migration 0073). Snapshotted, like `unit` and `price`, so a reprint states
+   * what happened rather than what the master record says today. Every line
+   * raised before that migration reads back as "pack".
+   */
+  sellMode: SellMode;
+  packSize: number | null;
   /**
    * The GST block, snapshotted from the item at bill time — never joined. An
    * invoice is a statement about a moment and must not change when a master
@@ -191,6 +213,13 @@ export interface BillLine {
   sgst: number;
   igst: number;
 }
+
+/**
+ * How one line is sold: as the whole unit it is stocked in, or as a single
+ * piece out of an opened pack (migration 0073). "pack" is the default and the
+ * only value anything raised before that migration can have.
+ */
+export type SellMode = "pack" | "piece";
 
 export type BillStatus = "active" | "cancelled";
 
@@ -211,9 +240,12 @@ export interface BillConsumableLine {
   name: string;
   unit: string;
   qty: number;
-  /** `consumable.cost_per_unit`; 0 when the operator has not set one. */
+  /** `consumable.cost_per_unit`, or its per-piece split; 0 when unset. */
   unitCost: number;
   charged: boolean;
+  /** As on `BillLine` — migration 0073. */
+  sellMode: SellMode;
+  packSize: number | null;
   /**
    * Carried so the cart can preview GST on a charged line. A CHARGED line on a
    * tax invoice is a supply like any other and needs a real HSN; an absorbed
@@ -233,6 +265,9 @@ export interface BillConsumable {
   qty: number;
   unitCost: number;
   charged: boolean;
+  /** As on `BillLine` — migration 0073. */
+  sellMode: SellMode;
+  packSize: number | null;
   /** Snapshotted like `BillLine`'s. All zero on an absorbed line. */
   hsn: string;
   gstRate: number;
@@ -1319,6 +1354,12 @@ export type MovementType =
   | "purchase"
   | "issue"
   | "return"
+  /**
+   * A whole pack broken open into loose pieces (migration 0073). The pack
+   * leaves the ledger; the pieces land on `Consumable.looseQty`, which the
+   * ledger does not track. Written by the system, never chosen in a form.
+   */
+  | "open"
   | "adjustment"
   | "wastage"
   | "expired"
@@ -1336,6 +1377,10 @@ export interface Consumable {
   category: string;
   /** From the shared `unit` list. Frozen once the item has movements. */
   unit: string;
+  /** Pieces per pack, or null for anything issued whole (migration 0073). */
+  packSize: number | null;
+  /** Pieces broken out of an opened pack. Not in the ledger, and expiry-less. */
+  looseQty: number;
   vendorId: string | null;
   vendorName: string;
   minStock: number;
@@ -1441,6 +1486,8 @@ export interface ConsumableInput {
   name: string;
   category: string;
   unit: string;
+  /** Pieces per pack; null (or absent) leaves the item sold whole. */
+  packSize?: number | null;
   vendorId: string | null;
   minStock: number;
   maxStock: number | null;
@@ -1459,6 +1506,12 @@ export interface StockMovementInput {
   consumableId: string;
   movementType: MovementType;
   qty: number;
+  /**
+   * Whether `qty` counts packs or pieces (migration 0073). Only an issue or a
+   * return may be in pieces: a purchase arrives in packs, and an adjustment or
+   * write-off is a statement about the packs on the shelf. Defaults to "pack".
+   */
+  sellMode?: SellMode;
   onDate: string;
   /** Purchases only. */
   unitCost?: number | null;

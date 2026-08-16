@@ -61,7 +61,9 @@ export function Receipt({ bill }: { bill: Bill }) {
       <div className="receipt-divider" />
       {bill.items.map((bi, idx) => (
         <div key={idx} className="mb-1 text-[11px]">
-          <div>{bi.name}</div>
+          {/* The unit only earns its space when the line is not the whole
+              stocked unit — otherwise "3 x ₹2" already says everything. */}
+          <div>{bi.name}{bi.sellMode === "piece" ? ` (${bi.unit})` : ""}</div>
           <div className="receipt-row">
             <span />
             <span>
@@ -76,7 +78,7 @@ export function Receipt({ bill }: { bill: Bill }) {
       .filter((bc) => bc.charged)
       .map((bc) => (
         <div key={bc.id} className="mb-1 text-[11px]">
-          <div>{bc.name}</div>
+          <div>{bc.name}{bc.sellMode === "piece" ? ` (${bc.unit})` : ""}</div>
           <div className="receipt-row">
             <span />
             <span>

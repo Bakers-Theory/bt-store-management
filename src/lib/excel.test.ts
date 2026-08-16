@@ -30,12 +30,12 @@ const DEFAULT_BAKERY: Bakery = {
 
 const item: Item = {
   id: "i1", name: "Bread", emoji: "🍞", imageUrl: null, category: "Breads", unit: "pcs",
-  price: 40, costPrice: 20, hsn: "", gstRate: 0, qty: 5, tracksExpiry: true, earliestExpiry: null, batches: [],
+  price: 40, costPrice: 20, hsn: "", gstRate: 0, qty: 5, packSize: null, looseQty: 0, tracksExpiry: true, earliestExpiry: null, batches: [],
 };
 
 const bill = (over: Partial<Bill>): Bill => ({
   id: "b", billNo: 1001, customerName: "", customerPhone: "",
-  items: [{ itemId: "i1", name: "Bread", emoji: "🍞", imageUrl: null, unit: "pcs", qty: 2, price: 40, costPrice: 20, hsn: "", gstRate: 0, taxableValue: 0, cgst: 0, sgst: 0, igst: 0, }],
+  items: [{ itemId: "i1", name: "Bread", emoji: "🍞", imageUrl: null, unit: "pcs", qty: 2, price: 40, costPrice: 20, sellMode: "pack", packSize: null, hsn: "", gstRate: 0, taxableValue: 0, cgst: 0, sgst: 0, igst: 0, }],
   consumables: [],
   subtotal: 80, tax: 0, total: 80, taxRate: 0, paymentMethod: "Cash", discountPercent: 0,
   discountType: "percent", discountAmount: 0, shortfall: 0, shortfallNote: "", billerName: "",

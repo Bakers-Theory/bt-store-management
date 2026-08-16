@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@/utils/supabase/client";
-import type { Asset, AssetAssignment, AssetCondition, AssetDocument, AssetEvent, AssetEventKind, AssetFilters, AssetInput, AssetMaintenance, AssetStats, AssetStatus, Attendance, AttendanceStatus, AttendanceSummary, AdvanceBalance, Bakery, Batch, Bill, BillConsumable, BillLine, BillMode, BillStatus, CashAccount, CashCategory, CashDay, CashDayStatus, CashDaySummary, CashDirection, CashEntry, CashEntryFilters, CashEntryStatus, CashPaymentMode, CashSourceType, CashbookSummary, Consumable, ConsumableAlert, ConsumableAlertKind, ConsumableFilters, ConsumableInput, ConsumableStats, Customer, Employee, EmployeeSalary, Expense, ExpenseBankMode, ExpenseEvent, ExpenseEventKind, ExpenseFilters, ExpenseInput, ExpenseMode, ExpenseStatus, InvoiceType, Item, LinkedExpenseInput, Log, LoyaltyEntry, MaintenanceKind, MaintenanceStatus, MovementType, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, StaffAdvance, StockMovement, StockMovementFilters, StockMovementInput, StockStatus, StoreLists, StoredLayout, Supplier, SupplierProduct, SupplierStatus, InvoiceStatus, PurchaseInvoice, PurchaseInvoiceLine, PurchaseMode, PurchaseReturn, PurchaseReturnLine, SupplierPayment, SupplierSummary, User } from "./types";
+import type { Asset, AssetAssignment, AssetCondition, AssetDocument, AssetEvent, AssetEventKind, AssetFilters, AssetInput, AssetMaintenance, AssetStats, AssetStatus, Attendance, AttendanceStatus, AttendanceSummary, AdvanceBalance, Bakery, Batch, Bill, BillConsumable, BillLine, BillMode, BillStatus, CashAccount, CashCategory, CashDay, CashDayStatus, CashDaySummary, CashDirection, CashEntry, CashEntryFilters, CashEntryStatus, CashPaymentMode, CashSourceType, CashbookSummary, Consumable, ConsumableAlert, ConsumableAlertKind, ConsumableFilters, ConsumableInput, ConsumableStats, Customer, Employee, EmployeeSalary, Expense, ExpenseBankMode, ExpenseEvent, ExpenseEventKind, ExpenseFilters, ExpenseInput, ExpenseMode, ExpenseStatus, InvoiceType, Item, LinkedExpenseInput, Log, LoyaltyEntry, MaintenanceKind, MaintenanceStatus, MovementType, PaymentMethod, PayrollRow, SalaryMode, SalaryPayment, SellMode, StaffAdvance, StockMovement, StockMovementFilters, StockMovementInput, StockStatus, StoreLists, StoredLayout, Supplier, SupplierProduct, SupplierStatus, InvoiceStatus, PurchaseInvoice, PurchaseInvoiceLine, PurchaseMode, PurchaseReturn, PurchaseReturnLine, SupplierPayment, SupplierSummary, User } from "./types";
 import type { SupplierInput } from "./supplier";
 import { isPurchaseMode, type DraftLine } from "./purchase";
 import { isAttendanceStatus } from "./attendance";
@@ -30,6 +30,9 @@ interface ItemRow {
   // a row cached in the client from before the migration has nothing here.
   hsn?: string;
   gst_rate?: number | string;
+  // Migration 0073 — optional for the same reason.
+  pack_size?: number | string | null;
+  loose_qty?: number | string;
 }
 interface BillRow {
   id: string;
@@ -86,6 +89,9 @@ interface BillItemRow {
   cgst?: number | string;
   sgst?: number | string;
   igst?: number | string;
+  // Migration 0073 — optional, see ItemRow.
+  sell_mode?: string;
+  pack_size?: number | string | null;
 }
 interface LogRow {
   id: string;
@@ -173,6 +179,10 @@ export const mapItem = (r: ItemRow): Item => ({
   hsn: r.hsn ?? "",
   gstRate: Number(r.gst_rate ?? 0),
   qty: r.qty,
+  // Migration 0073. A row cached from before it has neither, which reads back
+  // as "not sold in packs" — exactly what it was.
+  packSize: r.pack_size === null || r.pack_size === undefined ? null : Number(r.pack_size),
+  looseQty: Number(r.loose_qty ?? 0),
   tracksExpiry: r.tracks_expiry,
   earliestExpiry: r.earliest_expiry,
   batches: (r.batches ?? []).map((b) => ({ qty: Number(b.qty), expiryDate: b.expiryDate })),
@@ -187,6 +197,9 @@ const mapLine = (r: BillItemRow): BillLine => ({
   qty: r.qty,
   price: r.price,
   costPrice: 0, // cost is never fetched into the client; analytics uses item cost
+  // Migration 0073: a line raised before it was sold whole, which is "pack".
+  sellMode: r.sell_mode === "piece" ? "piece" : "pack",
+  packSize: r.pack_size === null || r.pack_size === undefined ? null : Number(r.pack_size),
   // Number(): a numeric arrives as a string over the wire, and a line from
   // before migration 0068 has no column at all.
   hsn: r.hsn ?? "",
@@ -212,6 +225,9 @@ export interface BillConsumableRow {
   cgst?: number | string;
   sgst?: number | string;
   igst?: number | string;
+  // Migration 0073 — optional, see ItemRow.
+  sell_mode?: string;
+  pack_size?: number | string | null;
 }
 
 export const mapBillConsumable = (r: BillConsumableRow): BillConsumable => ({
@@ -222,6 +238,8 @@ export const mapBillConsumable = (r: BillConsumableRow): BillConsumable => ({
   qty: Number(r.qty),
   unitCost: Number(r.unit_cost),
   charged: r.charged,
+  sellMode: r.sell_mode === "piece" ? "piece" : "pack",
+  packSize: r.pack_size === null || r.pack_size === undefined ? null : Number(r.pack_size),
   hsn: r.hsn ?? "",
   gstRate: Number(r.gst_rate ?? 0),
   taxableValue: Number(r.taxable_value ?? 0),
@@ -856,6 +874,8 @@ export interface ItemInputDb {
   price: number; costPrice: number; qty: number;
   tracksExpiry: boolean; expiryDate: string | null;
   hsn: string; gstRate: number;
+  /** Migration 0073. "" (not 0) turns pack mode off — nullif on the server. */
+  packSize: number | "";
   /** create_item only (0071): the source stamped on the opening batch. */
   supplierId?: string | null;
 }
@@ -941,10 +961,13 @@ export const rpcGenerateBill = async (
     /** Points to burn. The server re-checks the balance, the floor and the grant. */
     redeemPoints?: number;
   },
-  lines: { itemId: string; qty: number }[],
+  /** `sellMode` decides whether `qty` is packs or pieces, and how it is priced. */
+  lines: { itemId: string; qty: number; sellMode: SellMode }[],
   clientRef: string,
   /** Charged ones are already inside the server's subtotal; absorbed ones post out. */
-  consumables: { consumableId: string; qty: number; charged: boolean }[] = [],
+  consumables: {
+    consumableId: string; qty: number; charged: boolean; sellMode: SellMode;
+  }[] = [],
 ): Promise<Bill> => {
   // Timezone drives which batches count as expired server-side — must match the
   // client's day-granularity expiryStatus (same convention as dashboard_stats).
@@ -3450,6 +3473,9 @@ export interface ConsumableRow {
   bill_mode: string | null;
   hsn: string | null;
   gst_rate: string | number | null;
+  // Migration 0073 — optional, see ItemRow.
+  pack_size?: string | number | null;
+  loose_qty?: string | number;
   expiry_date: string | null;
   storage_location: string | null;
   notes: string | null;
@@ -3477,6 +3503,8 @@ export function mapConsumable(r: ConsumableRow): Consumable {
     name: r.name,
     category: r.category,
     unit: r.unit,
+    packSize: r.pack_size === null || r.pack_size === undefined ? null : Number(r.pack_size),
+    looseQty: Number(r.loose_qty ?? 0),
     vendorId: r.vendor_id,
     vendorName: r.vendor_name ?? "",
     minStock: Number(r.min_stock),
@@ -3722,6 +3750,7 @@ export async function rpcSaveConsumable(p: ConsumableInput): Promise<string> {
       name: p.name,
       category: p.category,
       unit: p.unit,
+      packSize: p.packSize ?? "",
       vendorId: p.vendorId ?? "",
       minStock: p.minStock,
       maxStock: p.maxStock ?? "",
@@ -3753,7 +3782,12 @@ export interface BillableConsumable {
   billMode: BillMode;
   /** 0 when the operator has not set one; a charged line then cannot be added. */
   costPerUnit: number;
+  /** The ledger sum, in PACKS where `packSize` is set (migration 0073). */
   currentStock: number;
+  /** Pieces per pack, or null. Null hides the pack/piece toggle on the line. */
+  packSize: number | null;
+  /** Pieces already broken out, so the cart can cap a piece quantity. */
+  looseQty: number;
   /** Needed so the cart can preview GST on a charged line (migration 0068). */
   hsn: string;
   gstRate: number;
@@ -3769,6 +3803,8 @@ interface BillableConsumableRow {
   current_stock: string | number;
   hsn?: string;
   gst_rate?: number | string;
+  pack_size?: string | number | null;
+  loose_qty?: string | number;
 }
 
 export async function fetchBillableConsumables(): Promise<BillableConsumable[]> {
@@ -3781,6 +3817,8 @@ export async function fetchBillableConsumables(): Promise<BillableConsumable[]> 
     billMode: r.bill_mode as BillMode,
     costPerUnit: Number(r.cost_per_unit),
     currentStock: Number(r.current_stock),
+    packSize: r.pack_size === null || r.pack_size === undefined ? null : Number(r.pack_size),
+    looseQty: Number(r.loose_qty ?? 0),
     hsn: r.hsn ?? "",
     gstRate: Number(r.gst_rate ?? 0),
   }));
@@ -3803,6 +3841,7 @@ const movementArgs = (m: StockMovementInput) => ({
   consumableId: m.consumableId,
   movementType: m.movementType,
   qty: m.qty,
+  sellMode: m.sellMode ?? "pack",
   onDate: m.onDate,
   unitCost: m.unitCost ?? "",
   vendorId: m.vendorId ?? "",

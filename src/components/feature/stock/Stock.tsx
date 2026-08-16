@@ -6,6 +6,7 @@ import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import { expiryStatus } from "@/lib/expiry";
+import { stockLabel } from "@/lib/pack";
 import { hasPermission } from "@/lib/permissions";
 import { Modal } from "@/components/ui/Modal";
 import { ItemThumb } from "@/components/ui/ItemThumb";
@@ -343,7 +344,7 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
                     {item.price.toFixed(2)}
                   </div>
                   <div className="num text-right text-[13.5px] font-bold">
-                    {item.qty} {item.unit}
+                    {stockLabel(item.qty, item.looseQty, item.packSize, item.unit)}
                   </div>
                   <div className="text-right">
                     <span className={`inline-block rounded-full px-[11px] py-1 text-[11.5px] font-bold ${st.cls}`}>
@@ -396,7 +397,7 @@ export function Stock({ initialTab = "all" }: { initialTab?: Tab }) {
                     </div>
                     <div className="num text-xs font-semibold text-ink-muted">
                       {currency}
-                      {item.price.toFixed(2)} · {item.qty} {item.unit}
+                      {item.price.toFixed(2)} · {stockLabel(item.qty, item.looseQty, item.packSize, item.unit)}
                     </div>
                   </div>
                   <span className={`shrink-0 rounded-full px-[11px] py-1 text-[11.5px] font-bold ${st.cls}`}>

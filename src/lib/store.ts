@@ -71,6 +71,12 @@ export interface ItemInput {
   hsn: string;
   /** 0–28. */
   gstRate: number;
+  /**
+   * Pieces per pack (migration 0073). Absent or null leaves the item sold whole,
+   * which is what every existing product is — so a caller that predates the
+   * feature, such as the CSV import, changes nothing by omitting it.
+   */
+  packSize?: number | null;
 }
 
 export interface SettingsInput {
@@ -287,11 +293,14 @@ export const useBakeryStore = create<StoreState>()(
 
     // ─── Items ─────────────────────────────────────────────────────────────
     saveItem: async (input, id) => {
+      // "" (not 0, not undefined) is how the RPC is told to clear pack mode —
+      // it reads the key through nullif (migration 0073).
+      const p = { ...input, packSize: input.packSize ?? ("" as const) };
       if (id) {
-        patchItem(await rpcUpdateItem(id, input));
+        patchItem(await rpcUpdateItem(id, p));
         return { kind: "updated", itemId: id };
       }
-      const r = await rpcCreateItem(input);
+      const r = await rpcCreateItem(p);
       if (r.item) patchItem(r.item);
       if (r.kind === "merged") {
         return {
@@ -369,10 +378,11 @@ export const useBakeryStore = create<StoreState>()(
           discount: discount.value, discountType: discount.mode,
           ...(shortfall ? { received: shortfall.received, shortfallNote: shortfall.note } : {}),
         },
-        lines.map((l) => ({ itemId: l.itemId, qty: l.qty })),
+        lines.map((l) => ({ itemId: l.itemId, qty: l.qty, sellMode: l.sellMode })),
         clientRef,
         (consumableLines ?? []).map((c) => ({
           consumableId: c.consumableId, qty: c.qty, charged: c.charged,
+          sellMode: c.sellMode,
         })),
       );
       await refreshItems();

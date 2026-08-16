@@ -19,6 +19,7 @@ import {
   storeToday,
 } from "@/lib/loyalty";
 import { expiryStatus } from "@/lib/expiry";
+import { isPacked, piecePrice, piecesAvailable, unitFor } from "@/lib/pack";
 import { formatDate } from "@/lib/format";
 import { fetchBillableConsumables, fetchCustomerByPhone } from "@/lib/supabase-data";
 import type { BillableConsumable } from "@/lib/supabase-data";
@@ -28,7 +29,7 @@ import { tabCls } from "@/components/ui/tabClass";
 import { Receipt } from "./Receipt";
 import { TaxInvoice } from "./TaxInvoice";
 import { ConsumableCartGroup, ConsumablePicker } from "./BillConsumables";
-import type { Bill as BillType, BillConsumableLine, BillLine, Customer, InvoiceType, Item, PaymentMethod } from "@/lib/types";
+import type { Bill as BillType, BillConsumableLine, BillLine, Customer, InvoiceType, Item, PaymentMethod, SellMode } from "@/lib/types";
 
 // Sellable stock for an item: expired batches are never sold (bill generation
 // consumes fresh batches only), so the bill page ignores them. Returns the
@@ -315,6 +316,21 @@ export function Bill() {
     return map;
   }, [items, expiringSoonDays]);
 
+  const itemById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
+
+  /**
+   * The cap for one cart line, in the unit that line is sold in. A pack line is
+   * capped at the fresh packs on the shelf; a piece line may also draw on the
+   * pieces already loose, and on every piece still inside a fresh pack — the
+   * server opens one on the way out (migration 0073).
+   */
+  const maxFor = (itemId: string, mode: SellMode): number => {
+    const packs = freshQtyById.get(itemId) ?? 0;
+    if (mode !== "piece") return packs;
+    const item = itemById.get(itemId);
+    return piecesAvailable(packs, item?.looseQty ?? 0, item?.packSize ?? null);
+  };
+
   // Best-effort: pull the latest store status so a biller sees an accurate
   // Open/Closed state. Bill creation is enforced server-side regardless.
   useEffect(() => {
@@ -376,9 +392,12 @@ export function Bill() {
   }, [customer.phone]);
 
   const addToCart = (item: Item) => {
-    const max = freshQtyById.get(item.id) ?? 0;
+    // A new line always starts as a pack; the toggle on the line switches it.
+    const existing = lines.find((bi) => bi.itemId === item.id);
+    const mode: SellMode = existing?.sellMode ?? "pack";
+    const max = maxFor(item.id, mode);
     if ((cartQtyById.get(item.id) ?? 0) >= max) {
-      toast(`Only ${max} ${item.unit} of ${item.name} in stock`, "error");
+      toast(`Only ${max} ${unitFor(mode, item.unit)} of ${item.name} in stock`, "error");
       return;
     }
     setLines((prev) => {
@@ -399,6 +418,8 @@ export function Bill() {
           qty: 1,
           price: item.price,
           costPrice: item.costPrice || 0,
+          sellMode: "pack" as SellMode,
+          packSize: item.packSize,
           hsn: item.hsn,
           gstRate: item.gstRate,
           // Placeholders: the real figures come back from the server on the
@@ -413,9 +434,14 @@ export function Bill() {
   };
 
   const addConsumable = (c: BillableConsumable) => {
-    const inCart = consumableLines.find((l) => l.consumableId === c.id)?.qty ?? 0;
-    if (inCart >= c.currentStock) {
-      toast(`Only ${c.currentStock} ${c.unit} of ${c.name} on hand`, "error");
+    const line = consumableLines.find((l) => l.consumableId === c.id);
+    const mode: SellMode = line?.sellMode ?? "pack";
+    const max =
+      mode === "piece"
+        ? piecesAvailable(c.currentStock, c.looseQty, c.packSize)
+        : c.currentStock;
+    if ((line?.qty ?? 0) >= max) {
+      toast(`Only ${max} ${unitFor(mode, c.unit)} of ${c.name} on hand`, "error");
       return;
     }
     setConsumableLines((prev) => {
@@ -434,11 +460,33 @@ export function Bill() {
           qty: 1,
           unitCost: c.costPerUnit,
           charged: defaultChargedFor(c.billMode),
+          sellMode: "pack" as SellMode,
+          packSize: c.packSize,
           hsn: c.hsn,
           gstRate: c.gstRate,
         },
       ];
     });
+  };
+
+  /** The consumable twin of `setSellMode`, with the same quantity reset. */
+  const setConsumableSellMode = (id: string, mode: SellMode) => {
+    const c = available.find((a) => a.id === id);
+    if (!c || !isPacked(c.packSize)) return;
+    setConsumableLines((prev) =>
+      prev.map((l) =>
+        l.consumableId === id && l.sellMode !== mode
+          ? {
+              ...l,
+              sellMode: mode,
+              qty: 1,
+              unit: unitFor(mode, c.unit),
+              unitCost:
+                mode === "piece" ? piecePrice(c.costPerUnit, c.packSize) : c.costPerUnit,
+            }
+          : l,
+      ),
+    );
   };
 
   const setConsumableQty = (id: string, qty: number) =>
@@ -464,12 +512,42 @@ export function Bill() {
   const inc = (idx: number) => {
     const line = lines[idx];
     if (!line) return;
-    const max = freshQtyById.get(line.itemId) ?? 0;
+    const max = maxFor(line.itemId, line.sellMode);
     if (line.qty >= max) {
       toast(`Only ${max} ${line.unit} of ${line.name} in stock`, "error");
       return;
     }
     setLines((prev) => prev.map((bi, i) => (i === idx ? { ...bi, qty: bi.qty + 1 } : bi)));
+  };
+
+  /**
+   * Flip one line between the whole pack and a single piece. The quantity
+   * resets to 1 rather than carrying over — 5 packs and 5 pieces are not the
+   * same order, and silently reinterpreting the number is how a counter sells
+   * five hundred pencils.
+   */
+  const setSellMode = (idx: number, mode: SellMode) => {
+    const line = lines[idx];
+    if (!line || line.sellMode === mode) return;
+    const item = itemById.get(line.itemId);
+    if (!item || !isPacked(item.packSize)) return;
+    setLines((prev) =>
+      prev.map((bi, i) =>
+        i === idx
+          ? {
+              ...bi,
+              sellMode: mode,
+              qty: 1,
+              unit: unitFor(mode, item.unit),
+              price: mode === "piece" ? piecePrice(item.price, item.packSize) : item.price,
+              costPrice:
+                mode === "piece"
+                  ? piecePrice(item.costPrice || 0, item.packSize)
+                  : item.costPrice || 0,
+            }
+          : bi,
+      ),
+    );
   };
 
   const dec = (idx: number) =>
@@ -1142,8 +1220,28 @@ export function Bill() {
                       <div className="truncate text-[13px] font-bold">{bi.name}</div>
                       <div className="num text-[11.5px] text-ink-light">
                         {currency}
-                        {bi.price.toFixed(2)} each
+                        {bi.price.toFixed(2)} per {bi.unit}
                       </div>
+                      {/* Only for stock bought in packs; everything else has one
+                          way to be sold and needs no choice (migration 0073). */}
+                      {isPacked(itemById.get(bi.itemId)?.packSize ?? null) && (
+                        <div className="mt-1 inline-flex rounded-[7px] bg-cream-dark p-[2px]">
+                          {(["pack", "piece"] as SellMode[]).map((m) => (
+                            <button
+                              key={m}
+                              onClick={() => setSellMode(idx, m)}
+                              aria-pressed={bi.sellMode === m}
+                              className={`cursor-pointer rounded-[5px] border-none px-2 py-[3px] text-[10.5px] font-bold capitalize ${
+                                bi.sellMode === m
+                                  ? "bg-warm-white text-brown"
+                                  : "bg-transparent text-ink-light"
+                              }`}
+                            >
+                              {m === "pack" ? itemById.get(bi.itemId)?.unit ?? "pack" : "piece"}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-1.5 rounded-[9px] bg-cream-dark p-[3px]">
                       <button
@@ -1158,7 +1256,7 @@ export function Bill() {
                       </span>
                       <button
                         onClick={() => inc(idx)}
-                        disabled={bi.qty >= (freshQtyById.get(bi.itemId) ?? 0)}
+                        disabled={bi.qty >= maxFor(bi.itemId, bi.sellMode)}
                         aria-label={`Add one ${bi.name}`}
                         className="flex h-11 w-11 cursor-pointer items-center justify-center rounded-[7px] border-none bg-warm-white text-base font-extrabold text-brown disabled:cursor-not-allowed disabled:opacity-40"
                       >
@@ -1178,6 +1276,7 @@ export function Bill() {
                 available={available}
                 onSetQty={setConsumableQty}
                 onToggleCharged={toggleConsumableCharged}
+                onSetSellMode={setConsumableSellMode}
                 currency={currency}
               />
 

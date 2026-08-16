@@ -20,6 +20,8 @@ const line = (
   qty,
   unitCost,
   charged,
+  sellMode: "pack",
+  packSize: null,
   hsn: "",
   gstRate: 0,
   ...over,
