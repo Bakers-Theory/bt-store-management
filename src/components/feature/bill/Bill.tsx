@@ -1428,7 +1428,7 @@ export function Bill() {
                 <div className="mt-3 flex items-center justify-between">
                   <span className="text-[13px] font-semibold text-ink-muted">Paid via</span>
                   <div className="flex gap-1.5 rounded-[10px] bg-cream-dark p-[3px]">
-                    {(["Cash", "UPI"] as const).map((m) => (
+                    {(["UPI", "Cash"] as const).map((m) => (
                       <button
                         key={m}
                         type="button"
