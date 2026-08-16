@@ -1669,7 +1669,8 @@ interface InvoiceRow {
 interface InvoiceLineRow {
   id: string;
   invoice_id: string;
-  item_id: string;
+  item_id: string | null;
+  consumable_id: string | null;
   item_name: string;
   qty: number | string;
   expiry: string | null;
@@ -1689,6 +1690,7 @@ function mapInvoiceLine(r: InvoiceLineRow): PurchaseInvoiceLine {
   return {
     id: r.id,
     itemId: r.item_id,
+    consumableId: r.consumable_id ?? null,
     itemName: r.item_name,
     qty: Number(r.qty),
     unitCost: money(r.unit_cost),
@@ -1790,6 +1792,7 @@ export async function rpcSavePurchaseInvoice(
       notes: draft.notes,
       lines: draft.lines.map((l) => ({
         itemId: l.itemId,
+        consumableId: l.consumableId ?? "",
         qty: l.qty,
         unitCost: l.unitCost,
         gstRate: l.gstRate,

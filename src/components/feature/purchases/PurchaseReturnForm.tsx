@@ -85,12 +85,19 @@ export function PurchaseReturnForm({
 
   const money = (n: number) => `${currency || "₹"}${n.toFixed(2)}`;
 
+  // Migration 0072 note 6: a consumable line has no credit note yet, so it is
+  // left off entirely rather than shown with a box that refuses on submit.
+  const lines = useMemo(
+    () => (invoice?.lines ?? []).filter((l) => !l.consumableId),
+    [invoice],
+  );
+
   const entered = useMemo(
     () =>
-      (invoice?.lines ?? [])
+      lines
         .map((l) => ({ line: l, qty: parseFloat(qtys[l.id] ?? "") || 0 }))
         .filter((e) => e.qty > 0),
-    [invoice, qtys],
+    [lines, qtys],
   );
 
   const total = entered.reduce((s, e) => s + lineTotal(e.qty, e.line.unitCost), 0);
@@ -162,7 +169,7 @@ export function PurchaseReturnForm({
       ) : (
         <>
           <div className="mb-3.5 overflow-hidden rounded-xl border border-line">
-            {invoice.lines.map((l) => {
+            {lines.map((l) => {
               const left = returnableQty(l.qty, l.returnedQty);
               const qty = parseFloat(qtys[l.id] ?? "") || 0;
               const bad = qty > 0 && !isReturnQtyValid(qty, l.qty, l.returnedQty);
@@ -191,9 +198,21 @@ export function PurchaseReturnForm({
               );
             })}
           </div>
-          {invoice.lines.every((l) => returnableQty(l.qty, l.returnedQty) <= 0) && (
+          {lines.length === 0 ? (
             <p className="mb-3.5 -mt-2 text-[12px] font-semibold text-ink-muted">
-              Every item on this invoice has already been returned in full.
+              This invoice only bought consumables, which cannot be returned yet — cancel
+              it, or write the stock off in Consumables.
+            </p>
+          ) : (
+            lines.every((l) => returnableQty(l.qty, l.returnedQty) <= 0) && (
+              <p className="mb-3.5 -mt-2 text-[12px] font-semibold text-ink-muted">
+                Every item on this invoice has already been returned in full.
+              </p>
+            )
+          )}
+          {lines.length > 0 && lines.length < invoice.lines.length && (
+            <p className="mb-3.5 -mt-2 text-[12px] font-semibold text-ink-muted">
+              The consumable lines on this invoice are not listed — they cannot be returned yet.
             </p>
           )}
         </>

@@ -7,11 +7,12 @@ import { useCurrentUser } from "@/components/system/AuthProvider";
 import { hasPermission } from "@/lib/permissions";
 import { SupplierProfileTab } from "./SupplierProfileTab";
 import { SupplierProductsTab } from "./SupplierProductsTab";
+import { SupplierConsumablesTab } from "./SupplierConsumablesTab";
 import { SupplierSummaryTab } from "./SupplierSummaryTab";
 import { SupplierTransactionsTab } from "./SupplierTransactionsTab";
 import type { Supplier } from "@/lib/types";
 
-type Tab = "profile" | "products" | "transactions" | "summary";
+type Tab = "profile" | "products" | "consumables" | "transactions" | "summary";
 
 export function SupplierDetail({
   supplier,
@@ -25,6 +26,7 @@ export function SupplierDetail({
   const user = useCurrentUser();
   // Defence in depth on top of RLS, which is the real gate.
   const canFinancial = hasPermission(user, "suppliers.financial");
+  const canConsumables = hasPermission(user, "consumables.view");
   const [tab, setTab] = useState<Tab>("profile");
 
   return (
@@ -36,6 +38,11 @@ export function SupplierDetail({
         <button className={tabCls(tab === "products")} onClick={() => setTab("products")}>
           Products
         </button>
+        {canConsumables && (
+          <button className={tabCls(tab === "consumables")} onClick={() => setTab("consumables")}>
+            Consumables
+          </button>
+        )}
         <button className={tabCls(tab === "transactions")} onClick={() => setTab("transactions")}>
           Transactions
         </button>
@@ -50,6 +57,12 @@ export function SupplierDetail({
         <SupplierProfileTab supplier={supplier} onChanged={onChanged} />
       ) : tab === "products" ? (
         <SupplierProductsTab supplier={supplier} />
+      ) : tab === "consumables" ? (
+        canConsumables ? (
+          <SupplierConsumablesTab supplier={supplier} />
+        ) : (
+          <SupplierProfileTab supplier={supplier} onChanged={onChanged} />
+        )
       ) : tab === "transactions" ? (
         <SupplierTransactionsTab supplier={supplier} />
       ) : canFinancial ? (

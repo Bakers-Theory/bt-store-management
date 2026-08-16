@@ -33,7 +33,7 @@ const invoice = (over: Partial<PurchaseInvoice> = {}): PurchaseInvoice => ({
   createdAt: "2026-07-10T10:00:00Z",
   lines: [
     {
-      id: "l1", itemId: "i1", itemName: "Flour", qty: 10, unitCost: 25,
+      id: "l1", itemId: "i1", consumableId: null, itemName: "Flour", qty: 10, unitCost: 25,
       gstRate: 5, lineTotal: 250, expiry: null, returnedQty: 0,
     },
   ],
@@ -57,7 +57,7 @@ const inHouseInvoice = (): PurchaseInvoice =>
     total: 60,
     lines: [
       {
-        id: "l2", itemId: "i2", itemName: "Croissant dough", qty: 5, unitCost: 12,
+        id: "l2", itemId: "i2", consumableId: null, itemName: "Croissant dough", qty: 5, unitCost: 12,
         gstRate: 0, lineTotal: 60, expiry: null, returnedQty: 0,
       },
     ],

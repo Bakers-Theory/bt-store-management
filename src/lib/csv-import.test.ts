@@ -273,6 +273,32 @@ describe("planConsumableImport", () => {
     expect(plan.errors).toEqual([]);
     expect(plan.rows).toHaveLength(2);
   });
+
+  it("reads an opening quantity, and defaults it to nothing", () => {
+    const plan = planConsumableImport(
+      parse(`${head},Opening qty\nBoxes,Packaging,pcs,100,250\nCups,Packaging,pcs,50,\n`),
+      ctx,
+    );
+    expect(plan.errors).toEqual([]);
+    expect(plan.rows.map((r) => r.value.openingQty)).toEqual([250, 0]);
+  });
+
+  it("refuses a negative opening quantity", () => {
+    const plan = planConsumableImport(
+      parse(`${head},Opening qty\nBoxes,Packaging,pcs,100,-5\n`),
+      ctx,
+    );
+    expect(plan.errors[0].message).toBe("opening quantity is negative");
+  });
+
+  it("files every row under the forced vendor, ignoring the Vendor column", () => {
+    const plan = planConsumableImport(
+      parse(`${head},Vendor\nBoxes,Packaging,pcs,100,Nobody At All\n`),
+      { ...ctx, forceVendorId: "s2" },
+    );
+    expect(plan.errors).toEqual([]);
+    expect(plan.rows[0].value.vendorId).toBe("s2");
+  });
 });
 
 describe("planMovementImport", () => {

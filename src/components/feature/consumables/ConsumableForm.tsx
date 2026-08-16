@@ -5,8 +5,17 @@ import { Loader2 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
-import { fetchSuppliers, rpcSaveConsumable } from "@/lib/supabase-data";
+import { fetchSuppliers, rpcPostItemPurchase, rpcSaveConsumable } from "@/lib/supabase-data";
 import { GST_RATES } from "@/lib/constants";
+import { hasPermission } from "@/lib/permissions";
+import { useCurrentUser } from "@/components/system/AuthProvider";
+import { isoDateLocal } from "@/lib/excel";
+import {
+  consumableLinesFrom,
+  emptyItemPurchaseDraft,
+  itemPurchaseError,
+} from "@/lib/item-purchase";
+import { RecordAsPurchaseFields } from "@/components/feature/suppliers/RecordAsPurchaseFields";
 import type { BillMode, Consumable, Supplier } from "@/lib/types";
 
 const labelCls = "mb-1.5 block text-xs font-bold text-[#8a6a3c]";
@@ -23,10 +32,13 @@ const optional = (v: string): number | null => (v.trim() === "" ? null : Number(
  */
 export function ConsumableForm({
   item,
+  vendor,
   onClose,
   onSaved,
 }: {
   item: Consumable | null;
+  /** Preselected vendor, when the form is opened from that supplier's page. */
+  vendor?: Supplier;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -37,7 +49,7 @@ export function ConsumableForm({
   const [name, setName] = useState(item?.name ?? "");
   const [category, setCategory] = useState(item?.category ?? "");
   const [unit, setUnit] = useState(item?.unit ?? "");
-  const [vendorId, setVendorId] = useState(item?.vendorId ?? "");
+  const [vendorId, setVendorId] = useState(item?.vendorId ?? vendor?.id ?? "");
   const [minStock, setMinStock] = useState(item ? String(item.minStock) : "");
   const [maxStock, setMaxStock] = useState(item?.maxStock === null || !item ? "" : String(item.maxStock));
   const [reorderLevel, setReorderLevel] = useState(
@@ -57,6 +69,21 @@ export function ConsumableForm({
   const [notes, setNotes] = useState(item?.notes ?? "");
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [saving, setSaving] = useState(false);
+
+  // Only offered while CREATING from a supplier's tab: an existing consumable's
+  // stock is its ledger, and there is no opening quantity to buy. Posting needs
+  // both keys — save_purchase_invoice raises on the second one (0037).
+  const user = useCurrentUser();
+  const today = isoDateLocal(new Date());
+  const offerPurchase =
+    !item &&
+    !!vendor &&
+    hasPermission(user, "purchases.create") &&
+    hasPermission(user, "suppliers.view") &&
+    hasPermission(user, "consumables.issue");
+  const [openingQty, setOpeningQty] = useState("");
+  const [purchase, setPurchase] = useState(() => emptyItemPurchaseDraft(today));
+  const [purchaseErr, setPurchaseErr] = useState<string | null>(null);
 
   useEffect(() => {
     fetchSuppliers()
@@ -98,9 +125,21 @@ export function ConsumableForm({
 
   const submit = async () => {
     if (error) return;
+    const opening = parseFloat(openingQty) || 0;
+    // Ticked with no quantity records the consumable and no purchase: there is
+    // nothing to buy, and an invoice for no goods is not a purchase.
+    const posting = offerPurchase && purchase.record && opening > 0;
+    if (posting && vendor) {
+      const problem = itemPurchaseError(purchase, vendor.supplierType, today);
+      if (problem) {
+        setPurchaseErr(problem);
+        return;
+      }
+    }
+    setPurchaseErr(null);
     setSaving(true);
     try {
-      await rpcSaveConsumable({
+      const id = await rpcSaveConsumable({
         id: item?.id,
         name: name.trim(),
         category,
@@ -118,6 +157,40 @@ export function ConsumableForm({
         storageLocation: storageLocation.trim(),
         notes: notes.trim(),
       });
+
+      // The invoice is what brings the stock in (0072): posting it files the
+      // purchase movement, so the consumable is saved with nothing on the shelf
+      // and the invoice puts it there. If it fails, the consumable still exists
+      // — say exactly that rather than a bare "could not save".
+      if (posting && vendor && id) {
+        try {
+          await rpcPostItemPurchase({
+            supplierId: vendor.id,
+            invoiceNo: purchase.invoiceNo.trim(),
+            purchaseDate: purchase.purchaseDate,
+            notes: "",
+            lines: consumableLinesFrom([
+              {
+                consumableId: id,
+                qty: opening,
+                costPerUnit: optional(costPerUnit),
+                gstRate: parseFloat(gstRate) || 0,
+              },
+            ]),
+          });
+          toast(`Item added and the purchase filed against ${vendor.name}`, "success");
+        } catch (e) {
+          toast(
+            e instanceof Error
+              ? `"${name.trim()}" was created, but the purchase was not filed: ${e.message}`
+              : `"${name.trim()}" was created, but the purchase was not filed`,
+            "error",
+          );
+        }
+        onSaved();
+        return;
+      }
+
       toast(item ? "Item updated" : "Item added", "success");
       onSaved();
     } catch (e) {
@@ -392,6 +465,43 @@ export function ConsumableForm({
           </div>
         </div>
 
+        {offerPurchase && vendor && (
+          <>
+            <div>
+              <label className={labelCls} htmlFor="cn-open">
+                How much arrived (optional)
+              </label>
+              <input
+                id="cn-open"
+                type="number"
+                min="0"
+                step="0.001"
+                inputMode="decimal"
+                value={openingQty}
+                onChange={(e) => {
+                  setOpeningQty(e.target.value);
+                  setPurchaseErr(null);
+                }}
+                placeholder="0"
+                className={inputCls}
+              />
+              <p className="mt-1 text-[11px] text-ink-muted">
+                Leave it empty to set the item up without any stock.
+              </p>
+            </div>
+            <RecordAsPurchaseFields
+              supplier={vendor}
+              draft={purchase}
+              onChange={(next) => {
+                setPurchase(next);
+                setPurchaseErr(null);
+              }}
+              error={purchaseErr}
+              disabled={saving}
+            />
+          </>
+        )}
+
         {error && name !== "" && (
           <p className="text-[11px] font-semibold text-red-700">{error}</p>
         )}
@@ -404,7 +514,7 @@ export function ConsumableForm({
           {saving && <Loader2 size={15} className="animate-spin" />}
           {item ? "Save changes" : "Add item"}
         </button>
-        {!item && (
+        {!item && !offerPurchase && (
           <p className="text-center text-[11px] text-ink-muted">
             It starts at zero. Record a purchase to put stock on the shelf.
           </p>
