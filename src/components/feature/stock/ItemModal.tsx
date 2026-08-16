@@ -47,6 +47,7 @@ export function ItemModal({
   onClose,
   onSaved,
   supplier,
+  noOpeningStock,
 }: {
   itemId: string | null; // null = add new
   onClose: () => void;
@@ -61,6 +62,11 @@ export function ItemModal({
   // ask for an invoice number. Absent (the Stock page) neither happens, and the
   // modal behaves exactly as it always has.
   supplier?: Supplier;
+  // Set when the CALLER is the one bringing the stock in — the purchase form
+  // adds a line for the product it just created, and the invoice is what creates
+  // stock (0037 note 1). Initial Stock is then absent rather than zeroed, so the
+  // same quantity cannot be entered on both.
+  noOpeningStock?: boolean;
 }) {
   const items = useBakeryStore((s) => s.items);
   const currency = useBakeryStore((s) => s.bakery.currency);
@@ -207,7 +213,7 @@ export function ItemModal({
       setNameErr("Item name is required");
       return;
     }
-    const openingQty = parseFloat(qty) || 0;
+    const openingQty = noOpeningStock ? 0 : parseFloat(qty) || 0;
     const cost = parseFloat(costPrice) || 0;
     const expiry = tracksExpiry && expiryDate ? expiryDate : null;
     // An invoice needs goods on it, so the box only bites when there is opening
@@ -501,6 +507,11 @@ export function ItemModal({
             Change stock via Add Stock, Stock Out, or writing off a batch below.
           </p>
         </div>
+      ) : noOpeningStock ? (
+        <p className="mb-3.5 rounded-[11px] bg-cream px-3 py-2.5 text-[11.5px] text-ink-muted">
+          How much arrived goes on the purchase line, not here — the invoice is what
+          brings the stock in.
+        </p>
       ) : (
         <div className="mb-3.5">
           <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Initial Stock</label>

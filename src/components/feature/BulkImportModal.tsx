@@ -117,6 +117,7 @@ export function BulkImportModal({
   context,
   onClose,
   onDone,
+  onImported,
 }: {
   mode: ImportMode;
   context: {
@@ -140,6 +141,13 @@ export function BulkImportModal({
   };
   onClose: () => void;
   onDone: () => void;
+  /**
+   * "items" mode: when set, the modal does NOT file a purchase of its own. It
+   * creates the products with no stock and hands their quantities back, for a
+   * caller that is already building an invoice — the Purchases form, which posts
+   * one invoice for the whole delivery rather than two for the same goods.
+   */
+  onImported?: (stock: OpeningStock[]) => void;
 }) {
   const toast = useUIStore((s) => s.toast);
   const saveItem = useBakeryStore((s) => s.saveItem);
@@ -173,8 +181,11 @@ export function BulkImportModal({
   const purchaseSupplier =
     context.linkToSupplier ?? (suppliers ?? []).find((s) => s.id === pickedSupplierId);
 
+  // The caller is filing the invoice itself, so the modal must not offer to file
+  // a second one for the same goods.
+  const handOff = mode === "items" && !!onImported;
   const offerPurchase =
-    mode === "items" && !!purchaseSupplier && canPurchase;
+    mode === "items" && !!purchaseSupplier && canPurchase && !handOff;
   // Consumables are bought on the same invoice a product is (migration 0072),
   // so this is the same offer with the same fields. Posting brings the stock in
   // as a purchase movement, which is the only way consumable stock exists.
@@ -341,9 +352,11 @@ export function BulkImportModal({
                     // invoice is posting, that invoice stamps the batch instead.
                     supplierId: supplierId ?? null,
                   };
-                  const saved = await saveItem(posting ? withoutOpeningQty(input) : input);
+                  const saved = await saveItem(
+                    posting || handOff ? withoutOpeningQty(input) : input,
+                  );
                   if (!saved.itemId) return;
-                  if (posting) {
+                  if (posting || handOff) {
                     opening.push({
                       itemId: saved.itemId,
                       qty: r.value.qty,
@@ -427,6 +440,26 @@ export function BulkImportModal({
             }
           }
         }
+        // Nothing is filed here — the caller's invoice is the one that will bring
+        // this stock in, so the quantities go back to it as lines.
+        if (handOff && onImported) {
+          onImported(opening);
+          const withQty = opening.filter((o) => o.qty > 0).length;
+          const without = opening.length - withQty;
+          // A row with no quantity makes no line (qty > 0 is a table constraint),
+          // so it is called out rather than quietly dropped.
+          const skipped = without
+            ? ` ${without} row${without === 1 ? " had" : "s had"} no quantity, so ${without === 1 ? "it is" : "they are"} only in Stock — add ${without === 1 ? "it" : "them"} by hand if ${without === 1 ? "it" : "they"} arrived.`
+            : "";
+          purchase_ = {
+            ok: true,
+            message:
+              withQty === 0
+                ? `No lines were added — none of the rows had a quantity. The ${opening.length} product${opening.length === 1 ? " is" : "s are"} in Stock.`
+                : `Added ${withQty} line${withQty === 1 ? "" : "s"} to the purchase. Nothing is filed and no stock has moved until you post it.${skipped}`,
+          };
+        }
+
         // One invoice for the consumables too, exactly as above: posting it is
         // what puts the stock on the shelf, and it is the payable the supplier's
         // Transactions tab and Account summary read.
