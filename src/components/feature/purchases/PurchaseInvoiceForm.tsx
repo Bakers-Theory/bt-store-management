@@ -1,12 +1,17 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, Loader2, Plus, Trash2 } from "lucide-react";
+import { Check, Loader2, Plus, Trash2, Upload } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { useUIStore } from "@/lib/ui-store";
+import { useCurrentUser } from "@/components/system/AuthProvider";
+import { hasPermission } from "@/lib/permissions";
 import { rpcPostPurchaseInvoice, rpcSavePurchaseInvoice } from "@/lib/supabase-data";
 import { invoiceTotals, validateInvoiceDraft, type DraftLine } from "@/lib/purchase";
+import { linesFrom } from "@/lib/item-purchase";
 import { isoDateLocal } from "@/lib/excel";
+import { ItemModal } from "@/components/feature/stock/ItemModal";
+import { BulkImportModal } from "@/components/feature/BulkImportModal";
 import type { Supplier } from "@/lib/types";
 
 const labelCls = "mb-1.5 block text-xs font-bold text-[#8a6a3c]";
@@ -27,7 +32,11 @@ export function PurchaseInvoiceForm({
   suppliers: Supplier[];
   onPosted: () => void;
 }) {
+  const user = useCurrentUser();
   const items = useBakeryStore((s) => s.items);
+  const categories = useBakeryStore((s) => s.lists.categories);
+  const units = useBakeryStore((s) => s.lists.units);
+  const canCreateItem = hasPermission(user, "items.create");
   // Posting creates stock, so the store's item quantities and cost prices are
   // stale the moment it succeeds.
   const reloadStore = useBakeryStore((s) => s.load);
@@ -44,6 +53,8 @@ export function PurchaseInvoiceForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [serverError, setServerError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   // Only active suppliers can receive a new purchase — the RPC refuses an
   // inactive one, so offering it would be an error waiting to happen.
@@ -60,6 +71,19 @@ export function PurchaseInvoiceForm({
 
   const setLine = (i: number, patch: Partial<DraftLine>) =>
     setLines((ls) => ls.map((l, n) => (n === i ? { ...l, ...patch } : l)));
+
+  /**
+   * Products arriving from the New product modal or the CSV import become lines
+   * here. The blank line the form starts with is dropped rather than left above
+   * them, so an import of six products reads as six lines and not seven.
+   */
+  const addLines = (incoming: DraftLine[]) => {
+    if (incoming.length === 0) return;
+    setLines((ls) => {
+      const kept = ls.filter((l) => l.itemId !== "");
+      return [...kept, ...incoming];
+    });
+  };
 
   const reset = () => {
     setSupplierId("");
@@ -166,7 +190,60 @@ export function PurchaseInvoiceForm({
         </p>
       )}
 
-      <span className={labelCls}>Products</span>
+      <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+        <span className={labelCls + " mb-0"}>Products</span>
+        {/* The dropdown below only offers products that already exist. A delivery
+            that brings something new would otherwise mean leaving for Stock and
+            starting this invoice again. */}
+        {canCreateItem && (
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setCreating(true)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-warm-white px-3 py-1.5 text-[12.5px] font-bold text-ink-muted"
+            >
+              <Plus size={14} /> New product
+            </button>
+            <button
+              type="button"
+              onClick={() => setImporting(true)}
+              disabled={!supplier}
+              title={supplier ? undefined : "Choose the supplier first"}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-warm-white px-3 py-1.5 text-[12.5px] font-bold text-ink-muted disabled:opacity-50"
+            >
+              <Upload size={14} /> Import
+            </button>
+          </div>
+        )}
+      </div>
+
+      {creating && (
+        <ItemModal
+          itemId={null}
+          noOpeningStock
+          onSaved={(id) => id && addLines([{ ...emptyLine(), itemId: id }])}
+          onClose={() => setCreating(false)}
+        />
+      )}
+
+      {/* The same CSV import the supplier's Products tab uses, in hand-off mode:
+          it creates the products with no stock and returns them as lines, so this
+          invoice stays the one document that brings the delivery in. */}
+      {importing && supplier && (
+        <BulkImportModal
+          mode="items"
+          context={{
+            categories,
+            units,
+            existingItemNames: items.map((i) => i.name),
+            linkToSupplier: supplier,
+          }}
+          onImported={(stock) => addLines(linesFrom(stock))}
+          onDone={() => {}}
+          onClose={() => setImporting(false)}
+        />
+      )}
+
       {lines.map((l, i) => {
         const item = items.find((it) => it.id === l.itemId);
         return (

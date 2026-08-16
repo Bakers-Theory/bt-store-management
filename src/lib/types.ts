@@ -687,7 +687,11 @@ export type InvoiceStatus = "draft" | "posted" | "cancelled";
 
 export interface PurchaseInvoiceLine {
   id: string;
-  itemId: string;
+  /** Null when the line bought a consumable (migration 0072). */
+  itemId: string | null;
+  /** Null when the line bought a product. Exactly one of the two is set. */
+  consumableId: string | null;
+  /** Whichever of the two the line bought — the view coalesces them. */
   itemName: string;
   qty: number;
   unitCost: number;

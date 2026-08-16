@@ -345,7 +345,7 @@ export function planAssetImport(
 // ─── Consumables ────────────────────────────────────────────────────────────
 
 export const CONSUMABLE_CSV_HEADERS = [
-  "Name", "Category", "Unit", "Minimum", "Maximum", "Reorder level",
+  "Name", "Category", "Unit", "Opening qty", "Minimum", "Maximum", "Reorder level",
   "Reorder qty", "Cost per unit", "Bill mode", "HSN", "GST rate",
   "Vendor", "Expiry", "Storage", "Notes",
 ];
@@ -355,13 +355,26 @@ export interface ConsumableImportContext {
   units: string[];
   /** Every supplier, so a row can name the one it is usually bought from. */
   vendors: NamedRef[];
+  /**
+   * Set when the import is scoped to one supplier: every row belongs to it and
+   * the Vendor column is ignored, so the file cannot quietly file half a
+   * delivery against somebody else.
+   */
+  forceVendorId?: string;
 }
+
+/**
+ * The consumable a row describes, plus the quantity that arrived with it.
+ * Opening stock is not part of the record — a consumable's stock is the ledger's
+ * sum — so it rides alongside for the caller to file as a purchase.
+ */
+export type ConsumableImportValue = ConsumableInput & { openingQty: number };
 
 export function planConsumableImport(
   parsed: ParsedCsv,
   ctx: ConsumableImportContext,
-): ImportPlan<ConsumableInput> {
-  const rows: { line: number; value: ConsumableInput }[] = [];
+): ImportPlan<ConsumableImportValue> {
+  const rows: { line: number; value: ConsumableImportValue }[] = [];
   const errors: RowError[] = [];
   // The table's uniqueness is (name, unit), so the file is checked on that pair.
   const seen = new Set<string>();
@@ -385,7 +398,12 @@ export function planConsumableImport(
     const gstRaw = r.get("gst rate", "gst", "gst%", "tax rate");
     const gst = parseNumberCell(gstRaw);
     const vendorRaw = r.get("vendor", "supplier", "usually bought from", "bought from");
-    const vendorId = resolveRefCell(vendorRaw, vendors);
+    const vendorId = ctx.forceVendorId
+      ? ctx.forceVendorId
+      : resolveRefCell(vendorRaw, vendors);
+    const opening = parseNumberCell(
+      r.get("opening qty", "opening stock", "qty", "quantity", "received"),
+    );
 
     if (name === "") {
       fail("no name");
@@ -404,8 +422,12 @@ export function planConsumableImport(
       continue;
     }
     if (min === "invalid" || max === "invalid" || reorder === "invalid" ||
-        rqty === "invalid" || cost === "invalid") {
+        rqty === "invalid" || cost === "invalid" || opening === "invalid") {
       fail("a numeric column is not a number");
+      continue;
+    }
+    if (opening !== null && opening < 0) {
+      fail("opening quantity is negative");
       continue;
     }
     if (min === null) {
@@ -481,6 +503,7 @@ export function planConsumableImport(
         expiryDate: expiry,
         storageLocation: r.get("storage", "storage location", "kept at"),
         notes: r.get("notes", "remarks"),
+        openingQty: opening ?? 0,
       },
     });
   }

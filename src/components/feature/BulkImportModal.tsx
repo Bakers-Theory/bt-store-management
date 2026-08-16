@@ -9,10 +9,12 @@ import { isoDateLocal } from "@/lib/excel";
 import { hasPermission } from "@/lib/permissions";
 import { useCurrentUser } from "@/components/system/AuthProvider";
 import {
+  consumableLinesFrom,
   emptyItemPurchaseDraft,
   itemPurchaseError,
   linesFrom,
   withoutOpeningQty,
+  type OpeningConsumableStock,
   type OpeningStock,
 } from "@/lib/item-purchase";
 import { RecordAsPurchaseFields } from "@/components/feature/suppliers/RecordAsPurchaseFields";
@@ -115,6 +117,7 @@ export function BulkImportModal({
   context,
   onClose,
   onDone,
+  onImported,
 }: {
   mode: ImportMode;
   context: {
@@ -130,13 +133,21 @@ export function BulkImportModal({
     /** "items" mode only: names already in Stock, which a row may not clash with. */
     existingItemNames?: string[];
     /**
-     * "items" mode only: when set, every product imported is linked to this
-     * supplier, and the delivery can be filed as one purchase from them.
+     * "items" and "consumables" modes: when set, everything imported belongs to
+     * this supplier — products are linked to it, consumables are filed under it
+     * as their vendor — and the delivery can be recorded as a purchase from them.
      */
     linkToSupplier?: Supplier;
   };
   onClose: () => void;
   onDone: () => void;
+  /**
+   * "items" mode: when set, the modal does NOT file a purchase of its own. It
+   * creates the products with no stock and hands their quantities back, for a
+   * caller that is already building an invoice — the Purchases form, which posts
+   * one invoice for the whole delivery rather than two for the same goods.
+   */
+  onImported?: (stock: OpeningStock[]) => void;
 }) {
   const toast = useUIStore((s) => s.toast);
   const saveItem = useBakeryStore((s) => s.saveItem);
@@ -150,32 +161,51 @@ export function BulkImportModal({
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
 
-  const purchaseSupplier = context.linkToSupplier;
-  const offerPurchase =
-    mode === "items" &&
-    !!purchaseSupplier &&
-    hasPermission(user, "purchases.create") &&
-    hasPermission(user, "suppliers.view");
-  const [purchase, setPurchase] = useState(() => emptyItemPurchaseDraft(today));
-  const [purchaseErr, setPurchaseErr] = useState<string | null>(null);
-
   // A Vendor / Issued to cell names a supplier or a person, so those lists have
   // to be here to turn a name into an id. Fetched by the modal rather than asked
   // of every caller, which is also what the forms these mirror do. Until they
   // arrive a named vendor cannot be matched, so the Import button waits below.
-  const [vendors, setVendors] = useState<NamedRef[] | null>(null);
+  const [suppliers, setSuppliers] = useState<Supplier[] | null>(null);
   const [holders, setHolders] = useState<NamedRef[] | null>(null);
-  // Only "items" needs neither list: its products link to the one supplier the
-  // caller passed, and only a movement can name a person.
-  const needsVendors = mode !== "items";
+  // A supplier-scoped import needs neither list: everything belongs to the one
+  // supplier the caller passed, and only a movement can name a person.
+  const needsVendors = mode !== "items" && !context.linkToSupplier;
   const needsHolders = mode === "movements";
+
+  const canPurchase =
+    hasPermission(user, "purchases.create") && hasPermission(user, "suppliers.view");
+  // Off a supplier's page there is nobody to invoice until the operator says who
+  // the delivery came from, so the Consumables import asks. Picking one also
+  // makes them the vendor of every row — a file is one delivery.
+  const [pickedSupplierId, setPickedSupplierId] = useState("");
+  const purchaseSupplier =
+    context.linkToSupplier ?? (suppliers ?? []).find((s) => s.id === pickedSupplierId);
+
+  // The caller is filing the invoice itself, so the modal must not offer to file
+  // a second one for the same goods.
+  const handOff = mode === "items" && !!onImported;
+  const offerPurchase =
+    mode === "items" && !!purchaseSupplier && canPurchase && !handOff;
+  // Consumables are bought on the same invoice a product is (migration 0072),
+  // so this is the same offer with the same fields. Posting brings the stock in
+  // as a purchase movement, which is the only way consumable stock exists.
+  const offerConsumablePurchase =
+    mode === "consumables" &&
+    !!purchaseSupplier &&
+    canPurchase &&
+    hasPermission(user, "consumables.issue");
+  const [purchase, setPurchase] = useState(() => emptyItemPurchaseDraft(today));
+  const [purchaseErr, setPurchaseErr] = useState<string | null>(null);
+
+  const vendors: NamedRef[] | null =
+    suppliers === null ? null : suppliers.map((v) => ({ id: v.id, code: v.code, name: v.name }));
 
   useEffect(() => {
     let alive = true;
     if (needsVendors) {
       void fetchSuppliers()
-        .then((s) => alive && setVendors(s.map((v) => ({ id: v.id, code: v.code, name: v.name }))))
-        .catch(() => alive && setVendors([]));
+        .then((s) => alive && setSuppliers(s))
+        .catch(() => alive && setSuppliers([]));
     }
     if (needsHolders) {
       void fetchAssetHolders()
@@ -207,6 +237,7 @@ export function BulkImportModal({
           categories: context.categories,
           units: context.units ?? [],
           vendors: vendors ?? [],
+          forceVendorId: purchaseSupplier?.id,
         })
       : null;
   const movementPlan =
@@ -270,6 +301,18 @@ export function BulkImportModal({
         return;
       }
     }
+    const receiving =
+      offerConsumablePurchase &&
+      !!purchaseSupplier &&
+      purchase.record &&
+      (consumablePlan?.rows.length ?? 0) > 0;
+    if (receiving && purchaseSupplier) {
+      const problem = itemPurchaseError(purchase, purchaseSupplier.supplierType, today);
+      if (problem) {
+        setPurchaseErr(problem);
+        return;
+      }
+    }
     setPurchaseErr(null);
     setBusy(true);
     setOutcome(null);
@@ -287,6 +330,9 @@ export function BulkImportModal({
         // Filled by the item rows as they are created, so the invoice below can
         // reference products that did not exist when the file was read.
         const opening: OpeningStock[] = [];
+        // The consumable equivalent: what each created consumable arrived with,
+        // invoiced once every row has been saved.
+        const received: OpeningConsumableStock[] = [];
         const supplierId = purchaseSupplier?.id;
         const rows: { line: number; run: () => Promise<unknown> }[] = assetPlan
           ? assetPlan.rows.map((r) => ({ line: r.line, run: () => rpcSaveAsset(r.value) }))
@@ -306,9 +352,11 @@ export function BulkImportModal({
                     // invoice is posting, that invoice stamps the batch instead.
                     supplierId: supplierId ?? null,
                   };
-                  const saved = await saveItem(posting ? withoutOpeningQty(input) : input);
+                  const saved = await saveItem(
+                    posting || handOff ? withoutOpeningQty(input) : input,
+                  );
                   if (!saved.itemId) return;
-                  if (posting) {
+                  if (posting || handOff) {
                     opening.push({
                       itemId: saved.itemId,
                       qty: r.value.qty,
@@ -329,7 +377,17 @@ export function BulkImportModal({
               }))
             : (consumablePlan?.rows ?? []).map((r) => ({
                 line: r.line,
-                run: () => rpcSaveConsumable(r.value),
+                run: async () => {
+                  const id = await rpcSaveConsumable(r.value);
+                  if (receiving && id && r.value.openingQty > 0) {
+                    received.push({
+                      consumableId: id,
+                      qty: r.value.openingQty,
+                      costPerUnit: r.value.costPerUnit,
+                      gstRate: r.value.gstRate,
+                    });
+                  }
+                },
               }));
 
         for (const row of rows) {
@@ -382,6 +440,61 @@ export function BulkImportModal({
             }
           }
         }
+        // Nothing is filed here — the caller's invoice is the one that will bring
+        // this stock in, so the quantities go back to it as lines.
+        if (handOff && onImported) {
+          onImported(opening);
+          const withQty = opening.filter((o) => o.qty > 0).length;
+          const without = opening.length - withQty;
+          // A row with no quantity makes no line (qty > 0 is a table constraint),
+          // so it is called out rather than quietly dropped.
+          const skipped = without
+            ? ` ${without} row${without === 1 ? " had" : "s had"} no quantity, so ${without === 1 ? "it is" : "they are"} only in Stock — add ${without === 1 ? "it" : "them"} by hand if ${without === 1 ? "it" : "they"} arrived.`
+            : "";
+          purchase_ = {
+            ok: true,
+            message:
+              withQty === 0
+                ? `No lines were added — none of the rows had a quantity. The ${opening.length} product${opening.length === 1 ? " is" : "s are"} in Stock.`
+                : `Added ${withQty} line${withQty === 1 ? "" : "s"} to the purchase. Nothing is filed and no stock has moved until you post it.${skipped}`,
+          };
+        }
+
+        // One invoice for the consumables too, exactly as above: posting it is
+        // what puts the stock on the shelf, and it is the payable the supplier's
+        // Transactions tab and Account summary read.
+        if (receiving && purchaseSupplier) {
+          const lines = consumableLinesFrom(received);
+          if (lines.length === 0) {
+            purchase_ = {
+              ok: false,
+              message:
+                "No purchase was filed — none of the imported consumables had an opening quantity.",
+            };
+          } else {
+            try {
+              const inv = await rpcPostItemPurchase({
+                supplierId: purchaseSupplier.id,
+                invoiceNo: purchase.invoiceNo.trim(),
+                purchaseDate: purchase.purchaseDate,
+                notes: "",
+                lines,
+              });
+              purchase_ = {
+                ok: true,
+                message: `Filed ${inv.internalRef ?? inv.invoiceNo} against ${purchaseSupplier.name} — ${lines.length} line${lines.length === 1 ? "" : "s"}, stock included.`,
+              };
+            } catch (e) {
+              purchase_ = {
+                ok: false,
+                message:
+                  (e instanceof Error ? e.message : "the server refused the invoice") +
+                  ` — the ${lines.length} consumable${lines.length === 1 ? " was" : "s were"} created, but with no stock, since the invoice is what brings it in. File it on the Purchases page.`,
+              };
+            }
+          }
+        }
+
         setOutcome({ imported, failures, purchase: purchase_ });
       }
       onDone();
@@ -397,6 +510,10 @@ export function BulkImportModal({
       <div className="space-y-3">
         <p className="rounded-[11px] bg-cream px-3 py-2 text-[11.5px] text-ink">
           {copy.blurb}
+          {mode === "consumables" &&
+            (purchaseSupplier
+              ? ` Every row is filed under ${purchaseSupplier.name}, so the Vendor column is ignored. Opening qty is what arrived, and goes on the invoice below.`
+              : " Opening qty only counts once you name who the delivery came from below — without that there is nothing to file it against.")}
         </p>
 
         <div className="flex flex-wrap gap-2">
@@ -434,7 +551,40 @@ export function BulkImportModal({
           />
         </div>
 
-        {offerPurchase && purchaseSupplier && !outcome && (
+        {/* The Consumables page has no supplier of its own, so filing the
+            delivery as a purchase starts by naming who it came from. */}
+        {mode === "consumables" &&
+          !context.linkToSupplier &&
+          canPurchase &&
+          hasPermission(user, "consumables.issue") &&
+          !outcome && (
+            <div>
+              <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]" htmlFor="bi-from">
+                Bought from (optional)
+              </label>
+              <select
+                id="bi-from"
+                value={pickedSupplierId}
+                disabled={busy}
+                onChange={(e) => {
+                  setPickedSupplierId(e.target.value);
+                  setPurchaseErr(null);
+                }}
+                className="w-full rounded-[11px] border border-line bg-warm-white px-3 py-2.5 text-[13.5px] text-ink outline-none focus:border-brown"
+              >
+                <option value="">Not a delivery — just set these items up</option>
+                {(suppliers ?? [])
+                  .filter((s) => s.status === "active")
+                  .map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} · {s.code}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          )}
+
+        {(offerPurchase || offerConsumablePurchase) && purchaseSupplier && !outcome && (
           <RecordAsPurchaseFields
             supplier={purchaseSupplier}
             draft={purchase}

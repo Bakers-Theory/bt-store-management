@@ -82,6 +82,32 @@ export const linesFrom = (stock: OpeningStock[]): DraftLine[] =>
       expiry: s.expiryDate,
     }));
 
+/** One consumable's opening stock, as a form or an import row holds it. */
+export interface OpeningConsumableStock {
+  consumableId: string;
+  qty: number;
+  /** Null when the operator never priced it; the line then costs nothing. */
+  costPerUnit: number | null;
+  gstRate: number;
+}
+
+/**
+ * The same, for consumables (migration 0072). No expiry: a consumable's expiry
+ * is a property of the record rather than of the delivery, so there is nothing
+ * per-line to carry.
+ */
+export const consumableLinesFrom = (stock: OpeningConsumableStock[]): DraftLine[] =>
+  stock
+    .filter((s) => s.qty > 0)
+    .map((s) => ({
+      itemId: "",
+      consumableId: s.consumableId,
+      qty: s.qty,
+      unitCost: s.costPerUnit ?? 0,
+      gstRate: s.gstRate,
+      expiry: null,
+    }));
+
 /**
  * The same product input with its opening quantity removed, for creating an item
  * whose stock the invoice will bring in. `supplierId` goes too: the batch this

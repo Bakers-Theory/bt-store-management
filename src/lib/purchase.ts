@@ -19,7 +19,10 @@ export const isPurchaseMode = (v: unknown): v is PurchaseMode =>
 
 /** A line being entered, before it has an id. */
 export interface DraftLine {
+  /** Empty when the line buys a consumable instead (migration 0072). */
   itemId: string;
+  /** Set instead of `itemId`. Exactly one of the two carries a value. */
+  consumableId?: string;
   qty: number;
   unitCost: number;
   /** Percent. Must be 0 on an in-house receipt. */
