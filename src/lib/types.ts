@@ -476,6 +476,12 @@ export interface User {
   permissions: PermissionKey[];
   /** null = use the default layout. */
   dashboardLayout: StoredLayout | null;
+  /**
+   * When set, the staff member is archived (0074): they cannot sign in and hold
+   * no permissions, but everything they recorded stays where it is. Absent on
+   * the Owner, who cannot be archived.
+   */
+  archivedAt?: string | null;
 }
 
 /**

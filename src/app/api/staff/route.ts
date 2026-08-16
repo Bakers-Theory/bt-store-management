@@ -156,25 +156,7 @@ export async function PATCH(req: Request) {
   return NextResponse.json({ ok: true });
 }
 
-// Delete staff
-export async function DELETE(req: Request) {
-  const actorId = await requireStaffManager();
-  if (!actorId) return forbidden();
-  const { id } = (await req.json()) as { id: string };
-  if (!id) return bad("Missing user id.");
-
-  const admin = createAdminClient();
-  // Guard: never delete the Owner.
-  const { data: prof } = await admin.from("profiles").select("role,name").eq("id", id).single();
-  if (prof?.role === "Owner") return bad("The Owner account cannot be deleted.");
-
-  const { error } = await admin.auth.admin.deleteUser(id);
-  if (error) return bad(error.message);
-  // Log after deletion succeeds; actor survives the cascade.
-  await admin.from("activity_log").insert({
-    type: "staff_remove",
-    actor: actorId,
-    notes: `Removed staff ${prof?.name ?? ""}`.trim(),
-  });
-  return NextResponse.json({ ok: true });
-}
+// There is no delete. Removing a staff member deletes their profile row, and
+// attendance, employee_salary, salary_payment and staff_advance all cascade off
+// it — their work would go with them. `POST /api/staff/archive` switches the
+// account off instead and keeps every record intact (migration 0074).

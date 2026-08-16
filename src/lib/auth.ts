@@ -17,10 +17,12 @@ export interface ProfileRow {
   role: UserRole;
   perms: string[] | null;
   dashboard_layout: unknown;
+  archived_at?: string | null;
 }
 
 /** Columns to select for a profile (kept in one place). */
-export const PROFILE_COLUMNS = "id,user_id,name,role,perms,dashboard_layout";
+export const PROFILE_COLUMNS =
+  "id,user_id,name,role,perms,dashboard_layout,archived_at";
 
 /**
  * Adapt a Supabase profile row to the `User` shape the app uses.
@@ -37,5 +39,6 @@ export function profileToUser(p: ProfileRow): User {
     role: p.role,
     permissions: (p.perms ?? []).filter(isPermissionKey) as PermissionKey[],
     dashboardLayout: isStoredLayout(p.dashboard_layout) ? p.dashboard_layout : null,
+    archivedAt: p.archived_at ?? null,
   };
 }

@@ -51,7 +51,14 @@ export default function LoginPage() {
       password,
     });
     if (signErr || !auth.user) {
-      setError("Invalid User ID or Password");
+      // An archived account is banned in Supabase Auth (0074), which fails here
+      // like a wrong password would. Say what actually happened instead — the
+      // password is fine and retrying it will never work.
+      setError(
+        /banned/i.test(signErr?.message ?? "")
+          ? "This account has been archived. Please contact the owner."
+          : "Invalid User ID or Password",
+      );
       setBusy(false);
       return;
     }

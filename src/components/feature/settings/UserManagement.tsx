@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Loader2, Pencil, Plus } from "lucide-react";
 import { fetchStaff } from "@/lib/supabase-data";
+import { useAuth } from "@/components/system/AuthProvider";
 import { useUIStore } from "@/lib/ui-store";
 import { Modal } from "@/components/ui/Modal";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -34,16 +35,20 @@ function initials(name: string): string {
 
 export function UserManagement() {
   const toast = useUIStore((s) => s.toast);
+  const { user: me } = useAuth();
+  // Archiving locks a colleague out, so it is the Owner's alone — the API says
+  // the same, this just keeps the button off screens that would only get a 403.
+  const isOwner = me?.role === "Owner";
   const [users, setUsers] = useState<User[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
   const [retryToken, setRetryToken] = useState(0);
   const [modal, setModal] = useState<{ user: User | null } | null>(null);
   const [confirmUser, setConfirmUser] = useState<User | null>(null);
-  const [deleting, setDeleting] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState<Set<string>>(new Set());
 
-  const setDeletingId = (id: string, on: boolean) =>
-    setDeleting((prev) => {
+  const setBusyId = (id: string, on: boolean) =>
+    setBusy((prev) => {
       const next = new Set(prev);
       if (on) next.add(id);
       else next.delete(id);
@@ -83,26 +88,33 @@ export function UserManagement() {
     };
   }, [retryToken]);
 
-  const remove = async (u: User) => {
+  /**
+   * Switch an account off (or back on). Nothing they recorded is touched — an
+   * archived member simply cannot sign in and holds no permissions.
+   */
+  const setArchived = async (u: User, archived: boolean) => {
     setConfirmUser(null);
-    setDeletingId(u.id, true);
+    setBusyId(u.id, true);
     try {
-      const res = await fetch("/api/staff", {
-        method: "DELETE",
+      const res = await fetch("/api/staff/archive", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: u.id }),
+        body: JSON.stringify({ id: u.id, archived }),
       });
       const body = await res.json();
       if (!res.ok) {
-        toast(body.error ?? "Could not delete user", "error");
+        toast(body.error ?? "Could not update user", "error");
         return;
       }
-      toast("User deleted", "success");
+      toast(archived ? "Staff archived" : "Staff unarchived", "success");
       reload();
     } finally {
-      setDeletingId(u.id, false);
+      setBusyId(u.id, false);
     }
   };
+
+  const active = users.filter((u) => !u.archivedAt);
+  const archived = users.filter((u) => u.archivedAt);
 
   const permPill = (label: string, on: boolean) => (
     <span key={label} className={on ? permOnCls : permOffCls}>
@@ -111,14 +123,18 @@ export function UserManagement() {
   );
 
   const staffCard = (u: User) => {
-    const isOwner = u.role === "Owner";
+    const isOwnerRow = u.role === "Owner";
+    const archived = Boolean(u.archivedAt);
     const areas = permAreas(u);
     return (
-      <div key={u.id} className="rounded-[14px] border border-[#f0e2cc] p-3.5">
+      <div
+        key={u.id}
+        className={`rounded-[14px] border border-[#f0e2cc] p-3.5 ${archived ? "opacity-70" : ""}`}
+      >
         <div className="mb-[11px] flex items-center gap-[11px]">
           <div
             className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] text-sm font-bold ${
-              isOwner ? "bg-brown text-warm-white" : "bg-[#efdcc1] text-brown"
+              isOwnerRow ? "bg-brown text-warm-white" : "bg-[#efdcc1] text-brown"
             }`}
           >
             {initials(u.name)}
@@ -129,15 +145,19 @@ export function UserManagement() {
           </div>
           <span
             className={`rounded-full px-[11px] py-[3px] text-[11px] font-bold ${
-              isOwner ? "bg-brown text-warm-white" : "bg-[#f4e7d2] text-[#8a6a3c]"
+              archived
+                ? "bg-[#ece7e0] text-ink-light"
+                : isOwnerRow
+                  ? "bg-brown text-warm-white"
+                  : "bg-[#f4e7d2] text-[#8a6a3c]"
             }`}
           >
-            {roleLabel(u)}
+            {archived ? "Archived" : roleLabel(u)}
           </span>
         </div>
 
         <div className="flex flex-wrap gap-[7px]">
-          {isOwner ? (
+          {isOwnerRow ? (
             permPill("All access", true)
           ) : areas.length === 0 ? (
             permPill("No access", false)
@@ -151,23 +171,38 @@ export function UserManagement() {
           )}
         </div>
 
-        {!isOwner && (
+        {!isOwnerRow && (
           <div className="mt-[11px] flex items-center justify-end gap-1.5 border-t border-line-soft pt-[11px]">
-            <button
-              className="inline-flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg border border-line bg-warm-white text-xs font-bold text-ink-muted"
-              onClick={() => setModal({ user: u })}
-              aria-label={`Edit ${u.name}`}
-            >
-              <Pencil size={14} />
-            </button>
-            <button
-              className="inline-flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg border-none bg-danger text-xs text-white disabled:cursor-not-allowed disabled:opacity-60"
-              onClick={() => setConfirmUser(u)}
-              disabled={deleting.has(u.id)}
-              aria-label={`Delete ${u.name}`}
-            >
-              {deleting.has(u.id) ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-            </button>
+            {!archived && (
+              <button
+                className="inline-flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg border border-line bg-warm-white text-xs font-bold text-ink-muted"
+                onClick={() => setModal({ user: u })}
+                aria-label={`Edit ${u.name}`}
+              >
+                <Pencil size={14} />
+              </button>
+            )}
+            {isOwner && (
+              <button
+                className={`inline-flex h-11 cursor-pointer items-center justify-center gap-1.5 rounded-lg border-none px-3 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-60 ${
+                  archived ? "bg-brown" : "bg-danger"
+                }`}
+                onClick={() =>
+                  archived ? setArchived(u, false) : setConfirmUser(u)
+                }
+                disabled={busy.has(u.id)}
+                aria-label={`${archived ? "Unarchive" : "Archive"} ${u.name}`}
+              >
+                {busy.has(u.id) ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : archived ? (
+                  <ArchiveRestore size={14} />
+                ) : (
+                  <Archive size={14} />
+                )}
+                {/* {archived ? "Unarchive" : "Archive"} */}
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -213,7 +248,20 @@ export function UserManagement() {
         ) : users.length === 0 ? (
           <p className="py-6 text-center text-sm text-ink-muted">No staff added yet</p>
         ) : (
-          users.map(staffCard)
+          <>
+            {active.map(staffCard)}
+            {archived.length > 0 && (
+              <>
+                <div className="mt-2 flex items-center gap-2 border-t border-line-soft pt-3 text-[12.5px] font-bold text-ink-light">
+                  Archived
+                  <span className="rounded-full bg-[#f4ece0] px-2 py-[1px] text-[11px]">
+                    {archived.length}
+                  </span>
+                </div>
+                {archived.map(staffCard)}
+              </>
+            )}
+          </>
         )}
       </div>
 
@@ -226,10 +274,12 @@ export function UserManagement() {
       )}
 
       {confirmUser && (
-        <Modal title="Delete user" onClose={() => setConfirmUser(null)}>
+        <Modal title="Archive staff" onClose={() => setConfirmUser(null)}>
           <p className="text-sm text-ink-muted">
-            Delete user <span className="font-bold text-ink">{confirmUser.name}</span>? This
-            cannot be undone.
+            Archive <span className="font-bold text-ink">{confirmUser.name}</span>? They
+            will no longer be able to sign in. Everything they recorded — bills,
+            cash entries, attendance, salary and advances — stays exactly as it
+            is, and you can unarchive them at any time.
           </p>
           <div className="mt-5 flex gap-2.5">
             <button
@@ -240,9 +290,9 @@ export function UserManagement() {
             </button>
             <button
               className="btn-danger flex flex-1 items-center justify-center gap-2"
-              onClick={() => remove(confirmUser)}
+              onClick={() => setArchived(confirmUser, true)}
             >
-              <Trash2 size={16} /> Delete
+              <Archive size={16} /> Archive
             </button>
           </div>
         </Modal>
