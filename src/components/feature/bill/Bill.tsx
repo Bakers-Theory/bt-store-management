@@ -81,7 +81,7 @@ export function Bill() {
   const [view, setView] = useState<"grid" | "list">("grid");
   const [cartOpen, setCartOpen] = useState(false); // mobile bottom-sheet expansion
   const [customer, setCustomer] = useState({ name: "", phone: "" });
-  const [payment, setPayment] = useState<PaymentMethod>("Cash");
+  const [payment, setPayment] = useState<PaymentMethod>("UPI");
   const [invoiceType, setInvoiceType] = useState<InvoiceType>("non_gst");
   const [gstin, setGstin] = useState("");
   const [placeOfSupply, setPlaceOfSupply] = useState("");
