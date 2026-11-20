@@ -3,6 +3,7 @@
 import { Croissant, Phone } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
 import { amountInWords, hsnSummary } from "@/lib/gst";
+import { paidVia } from "@/lib/bill";
 import type { Bill } from "@/lib/types";
 import { gstRowsForBill } from "./gst-rows";
 
@@ -188,7 +189,7 @@ export function TaxReceipt({ bill }: { bill: Bill }) {
         <span className="font-bold">In words:</span> {amountInWords(bill.total)}
       </div>
       <div className="receipt-divider" />
-      <div className="receipt-row"><span>Paid via:</span><span className="font-bold">{bill.paymentMethod}</span></div>
+      <div className="receipt-row"><span>Paid via:</span><span className="font-bold">{paidVia(bill, cur)}</span></div>
       <div className="receipt-divider" />
 
       <div className="text-[10px] font-bold">HSN-wise tax summary</div>

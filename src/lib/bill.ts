@@ -1,4 +1,4 @@
-import type { BillConsumableLine, BillLine } from "./types";
+import type { Bill, BillConsumableLine, BillLine } from "./types";
 import { chargedConsumableRaw } from "./bill-consumable";
 
 export interface BillTotals {
@@ -68,4 +68,14 @@ export function computeTotals(
 export function shortfallFor(total: number, received: number | null): number {
   if (received === null || !Number.isFinite(received)) return 0;
   return round2(Math.min(total, Math.max(0, total - received)));
+}
+
+/** "Cash", "UPI", or "Cash ₹100.00 + UPI ₹5.00" for a split bill. */
+export function paidVia(
+  bill: Pick<Bill, "paymentMethod" | "cashAmount" | "upiAmount">,
+  currency: string,
+): string {
+  return bill.paymentMethod === "Both"
+    ? `Cash ${currency}${bill.cashAmount.toFixed(2)} + UPI ${currency}${bill.upiAmount.toFixed(2)}`
+    : bill.paymentMethod;
 }

@@ -1,5 +1,6 @@
 import type { Bakery, Bill, Customer, LoyaltySettings, OccasionKind } from "./types";
 import { redeemValue } from "./loyalty";
+import { paidVia } from "./bill";
 
 /**
  * A 10-digit Indian number prefixed with the 91 country code, or undefined when
@@ -82,7 +83,7 @@ export function buildBillText(bill: Bill, bakery: Bakery): string {
   lines.push(monoRow("TOTAL", money(bill.total)));
   lines.push("```", "");
 
-  lines.push(`💳 Paid via ${bill.paymentMethod}`);
+  lines.push(`💳 Paid via ${paidVia(bill, c)}`);
   if (bill.pointsEarned > 0) lines.push(`⭐ You earned ${bill.pointsEarned} points`);
   lines.push("", "_Thank you for your visit!_");
   lines.push(bakery.phone ? `_Please come again_` : `_${bakery.name}_`);
