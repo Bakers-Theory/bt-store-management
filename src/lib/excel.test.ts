@@ -37,7 +37,7 @@ const bill = (over: Partial<Bill>): Bill => ({
   id: "b", billNo: 1001, customerName: "", customerPhone: "",
   items: [{ itemId: "i1", name: "Bread", emoji: "🍞", imageUrl: null, unit: "pcs", qty: 2, price: 40, costPrice: 20, sellMode: "pack", packSize: null, hsn: "", gstRate: 0, taxableValue: 0, cgst: 0, sgst: 0, igst: 0, }],
   consumables: [],
-  subtotal: 80, tax: 0, total: 80, taxRate: 0, paymentMethod: "Cash", discountPercent: 0,
+  subtotal: 80, tax: 0, total: 80, taxRate: 0, paymentMethod: "Cash", cashAmount: 0, upiAmount: 0, discountPercent: 0,
   discountType: "percent", discountAmount: 0, shortfall: 0, shortfallNote: "", billerName: "",
   invoiceType: "non_gst", invoiceNo: null, customerGstin: "", placeOfSupply: "",
   isInterstate: false, taxableValue: 0, cgst: 0, sgst: 0, igst: 0,

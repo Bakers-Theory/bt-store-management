@@ -223,7 +223,8 @@ export type SellMode = "pack" | "piece";
 
 export type BillStatus = "active" | "cancelled";
 
-export type PaymentMethod = "Cash" | "UPI";
+/** "Both" = split between cash and UPI; the parts are on the bill. */
+export type PaymentMethod = "Cash" | "UPI" | "Both";
 
 export type BillMode = "none" | "charge" | "absorb";
 
@@ -349,6 +350,9 @@ export interface Bill {
   sgst: number;
   igst: number;
   paymentMethod: PaymentMethod;
+  /** The split parts when `paymentMethod` is "Both"; 0 otherwise. */
+  cashAmount: number;
+  upiAmount: number;
   discountPercent: number;
   discountType: "percent" | "flat";
   discountAmount: number; // actual money discounted (₹), for percent and flat alike

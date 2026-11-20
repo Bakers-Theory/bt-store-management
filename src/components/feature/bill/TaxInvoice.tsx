@@ -2,6 +2,7 @@
 
 import { useBakeryStore } from "@/lib/store";
 import { amountInWords, hsnSummary } from "@/lib/gst";
+import { paidVia } from "@/lib/bill";
 import type { Bill } from "@/lib/types";
 import { gstRowsForBill } from "./gst-rows";
 
@@ -121,7 +122,7 @@ export function TaxInvoice({ bill }: { bill: Bill }) {
           <div className="ti-label" style={{ marginTop: "6px" }}>
             Payment
           </div>
-          <div>{bill.paymentMethod}</div>
+          <div>{paidVia(bill, cur)}</div>
         </div>
       </div>
 

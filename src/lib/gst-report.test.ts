@@ -24,7 +24,7 @@ const bill = (over: Partial<Bill> = {}): Bill => ({
   id: "b1", billNo: 1, customerName: "", customerPhone: "",
   items: [], consumables: [],
   subtotal: 0, tax: 0, total: 0, taxRate: 0,
-  paymentMethod: "Cash", discountPercent: 0, discountType: "percent", discountAmount: 0,
+  paymentMethod: "Cash", cashAmount: 0, upiAmount: 0, discountPercent: 0, discountType: "percent", discountAmount: 0,
   shortfall: 0, shortfallNote: "", billerName: "",
   date: "2026-08-05T10:00:00.000Z", status: "active",
   invoiceType: "non_gst", invoiceNo: null, customerGstin: "", placeOfSupply: "",

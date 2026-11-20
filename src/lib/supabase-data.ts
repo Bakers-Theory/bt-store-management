@@ -44,7 +44,10 @@ interface BillRow {
   tax: number;
   total: number;
   tax_rate: number;
-  payment_method: "Cash" | "UPI";
+  payment_method: "Cash" | "UPI" | "Both";
+  // Migration 0076 — optional, see ItemRow.
+  cash_amount?: number | string;
+  upi_amount?: number | string;
   discount_percent: number;
   discount_type: "percent" | "flat";
   discount_amount: number;
@@ -281,6 +284,8 @@ export const mapBill = (
   sgst: Number(r.sgst ?? 0),
   igst: Number(r.igst ?? 0),
   paymentMethod: r.payment_method,
+  cashAmount: Number(r.cash_amount ?? 0),
+  upiAmount: Number(r.upi_amount ?? 0),
   discountPercent: r.discount_percent,
   discountType: r.discount_type,
   discountAmount: r.discount_amount,
@@ -945,6 +950,8 @@ export const rpcGenerateBill = async (
     discount: number; discountType: "percent" | "flat";
     /** What the customer actually handed over; omitted means paid in full. */
     received?: number; shortfallNote?: string;
+    /** UPI part of a "Both" payment; the server derives cash as total − this. */
+    upiAmount?: number;
     /**
      * Chosen on the bill screen. The server refuses to store any GST data on a
      * non-GST bill, so the two fields below are ignored there rather than

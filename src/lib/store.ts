@@ -145,6 +145,8 @@ interface StoreState {
       anniversary?: string;
       /** Points to burn. The server re-checks the balance, the floor and the grant. */
       redeemPoints?: number;
+      /** UPI part of a "Both" payment; the server derives the cash part. */
+      upiAmount?: number;
     },
     lines: BillLine[],
     paymentMethod: PaymentMethod,

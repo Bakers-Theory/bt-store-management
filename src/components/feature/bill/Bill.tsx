@@ -86,6 +86,8 @@ export function Bill() {
   const [gstin, setGstin] = useState("");
   const [placeOfSupply, setPlaceOfSupply] = useState("");
   const [cashReceived, setCashReceived] = useState("");
+  // UPI part of a "Both" payment; `cashReceived` holds the cash part then.
+  const [upiReceived, setUpiReceived] = useState("");
   const [shortNote, setShortNote] = useState("");
   // Set when Generate is pressed on a short-paid bill; the dialog it opens is
   // the only path to actually recording a loss, so a mistyped amount cannot.
@@ -241,7 +243,30 @@ export function Bill() {
   const parsedReceived = cashReceived === "" ? NaN : parseFloat(cashReceived);
   const received = Number.isFinite(parsedReceived) ? parsedReceived : null;
   const changeDue = (received ?? total) - total;
-  const shortfall = shortfallFor(total, received);
+  // A split is blocked until it covers the total, so it is never short-paid.
+  const shortfall = payment === "Both" ? 0 : shortfallFor(total, received);
+  const splitCash = parseFloat(cashReceived) || 0;
+  const splitUpi = parseFloat(upiReceived) || 0;
+  const splitBlocker =
+    payment !== "Both"
+      ? ""
+      : splitCash <= 0 || splitUpi <= 0
+        ? "Enter both a cash and a UPI amount above zero"
+        : Math.round((splitCash + splitUpi) * 100) < Math.round(total * 100)
+          ? "Cash + UPI must cover the total"
+          : "";
+  // Typing one side of a split fills the other with what is left of the total.
+  const setSplit = (side: "cash" | "upi", value: string) => {
+    const n = parseFloat(value);
+    const rest = Number.isFinite(n) ? Math.max(0, total - n).toFixed(2) : "";
+    if (side === "cash") {
+      setCashReceived(value);
+      setUpiReceived(rest);
+    } else {
+      setUpiReceived(value);
+      setCashReceived(rest);
+    }
+  };
 
   const stockOfConsumable = (id: string) =>
     available.find((a) => a.id === id)?.currentStock ?? 0;
@@ -283,7 +308,7 @@ export function Bill() {
         ? "Phone number must be exactly 10 digits"
         : badConsumableLine
           ? "Fix the highlighted consumable line"
-          : gstBlocker;
+          : gstBlocker || splitBlocker;
 
   // Each row carries its fresh (non-expired) qty + earliest fresh expiry.
   // Products with no fresh stock (out of stock, or only expired batches) are
@@ -570,6 +595,7 @@ export function Bill() {
     setLines([]);
     setConsumableLines([]);
     setCashReceived("");
+    setUpiReceived("");
     setShortNote("");
   };
 
@@ -602,12 +628,14 @@ export function Bill() {
           // entirely rather than sent as 0. Also gated on `enabled` so a
           // disabled programme never sends this field at all.
           ...(loyalty.enabled && redeemPoints >= loyalty.minRedeemPoints ? { redeemPoints } : {}),
+          // The server derives the cash part as total − UPI.
+          ...(payment === "Both" ? { upiAmount: splitUpi } : {}),
         },
         lines,
         payment,
         { mode: discountMode, value: discountValue },
         clientRef.current,
-        received === null ? undefined : { received, note: shortNote.trim() },
+        received === null || payment === "Both" ? undefined : { received, note: shortNote.trim() },
         consumableLines,
       );
       clientRef.current = null;
@@ -622,6 +650,7 @@ export function Bill() {
       setPlaceOfSupply("");
       invoiceTouched.current = false;
       setCashReceived("");
+      setUpiReceived("");
       setShortNote("");
       setDiscount("");
       setDob("");
@@ -1428,13 +1457,14 @@ export function Bill() {
                 <div className="mt-3 flex items-center justify-between">
                   <span className="text-[13px] font-semibold text-ink-muted">Paid via</span>
                   <div className="flex gap-1.5 rounded-[10px] bg-cream-dark p-[3px]">
-                    {(["UPI", "Cash"] as const).map((m) => (
+                    {(["UPI", "Cash", "Both"] as const).map((m) => (
                       <button
                         key={m}
                         type="button"
                         onClick={() => {
                           setPayment(m);
                           if (m !== "Cash") setCashReceived("");
+                          setUpiReceived("");
                         }}
                         className={`cursor-pointer rounded-[7px] border-none px-3.5 py-1 text-[12.5px] font-bold ${
                           payment === m
@@ -1448,9 +1478,18 @@ export function Bill() {
                   </div>
                 </div>
                 <>
-                  <div className="mt-2 flex items-center justify-between">
+                  {(payment === "Both"
+                    ? ([
+                        ["Cash received", cashReceived, (v: string) => setSplit("cash", v)],
+                        ["UPI received", upiReceived, (v: string) => setSplit("upi", v)],
+                      ] as const)
+                    : ([
+                        [payment === "Cash" ? "Cash received" : "Amount received", cashReceived, setCashReceived],
+                      ] as const)
+                  ).map(([label, value, onValue]) => (
+                  <div key={label} className="mt-2 flex items-center justify-between">
                     <span className="text-[13px] font-semibold text-ink-muted">
-                      {payment === "Cash" ? "Cash received" : "Amount received"}
+                      {label}
                     </span>
                     <div className="relative w-[110px]">
                       <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[13px] font-semibold text-ink-light">
@@ -1462,13 +1501,14 @@ export function Bill() {
                         step="0.01"
                         inputMode="decimal"
                         placeholder="0.00"
-                        value={cashReceived}
-                        onChange={(e) => setCashReceived(e.target.value)}
+                        value={value}
+                        onChange={(e) => onValue(e.target.value)}
                         className="num w-full rounded-[8px] border border-line bg-warm-white py-1 pl-6 pr-2 text-right text-[13px] outline-none focus:border-brown"
                       />
                     </div>
                   </div>
-                  {cashReceived !== "" && (
+                  ))}
+                  {payment !== "Both" && cashReceived !== "" && (
                     <div className="mt-1.5 flex justify-between text-[13px] font-bold">
                       <span className={shortfall > 0 ? "text-danger" : "text-ink"}>
                         {shortfall > 0 ? "Short by" : "Change due"}
@@ -1500,7 +1540,8 @@ export function Bill() {
                     (customer.phone.length > 0 && customer.phone.length !== 10) ||
                     // generate_bill rolls the whole checkout back on any of
                     // these, so block rather than let it fail at the counter.
-                    gstBlocker !== ""
+                    gstBlocker !== "" ||
+                    splitBlocker !== ""
                   }
                   className="mt-3.5 flex w-full items-center justify-center gap-2 rounded-[13px] border-none bg-brown p-3.5 text-[15px] font-extrabold text-warm-white shadow-[0_4px_14px_rgba(124,74,30,.3)] disabled:cursor-not-allowed disabled:opacity-60"
                 >

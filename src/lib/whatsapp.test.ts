@@ -41,7 +41,7 @@ const bill = (over: Partial<Bill> = {}): Bill => ({
   taxRate: 5,
   invoiceType: "non_gst", invoiceNo: null, customerGstin: "", placeOfSupply: "",
   isInterstate: false, taxableValue: 0, cgst: 0, sgst: 0, igst: 0,
-  paymentMethod: "UPI",
+  paymentMethod: "UPI", cashAmount: 0, upiAmount: 0,
   discountPercent: 0,
   discountType: "percent",
   discountAmount: 0,

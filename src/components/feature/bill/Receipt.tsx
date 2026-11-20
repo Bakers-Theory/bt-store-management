@@ -2,6 +2,7 @@
 
 import { Croissant, Phone } from "lucide-react";
 import { useBakeryStore } from "@/lib/store";
+import { paidVia } from "@/lib/bill";
 import type { Bill } from "@/lib/types";
 
 /** Rounds to 2 decimal places, avoiding float noise like 42.499999999999996. */
@@ -129,7 +130,7 @@ export function Receipt({ bill }: { bill: Bill }) {
         <span>TOTAL</span><span>{b.currency}{bill.total.toFixed(2)}</span>
       </div>
       <div className="receipt-divider" />
-      <div className="receipt-row"><span>Paid via:</span><span className="font-bold">{bill.paymentMethod}</span></div>
+      <div className="receipt-row"><span>Paid via:</span><span className="font-bold">{paidVia(bill, b.currency)}</span></div>
       {bill.pointsEarned > 0 && (
         <div className="receipt-row"><span>Points earned:</span><span className="font-bold">{bill.pointsEarned}</span></div>
       )}
