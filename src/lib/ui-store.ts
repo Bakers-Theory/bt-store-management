@@ -46,7 +46,7 @@ export const defaultPrintFormat = (bill: Bill): PrintFormat =>
 
 interface OwnerAuthRequest {
   label: string;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
 }
 
 export type ToastVariant = "info" | "success" | "error";
@@ -61,7 +61,7 @@ interface UIState {
 
   // Owner-password gate
   ownerAuth: OwnerAuthRequest | null;
-  requireOwnerAuth: (label: string, onConfirm: () => void) => void;
+  requireOwnerAuth: (label: string, onConfirm: () => void | Promise<void>) => void;
   closeOwnerAuth: () => void;
 
   // Bill printing
