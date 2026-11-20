@@ -14,6 +14,7 @@ const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
 export function OwnerAuthHost() {
   const req = useUIStore((s) => s.ownerAuth);
   const close = useUIStore((s) => s.closeOwnerAuth);
+  const toast = useUIStore((s) => s.toast);
   const user = useCurrentUser();
   const [pwd, setPwd] = useState("");
   const [err, setErr] = useState("");
@@ -52,7 +53,13 @@ export function OwnerAuthHost() {
     const cb = req.onConfirm;
     reset();
     close();
-    cb();
+    // The action runs after the modal closes, so a failure must surface here —
+    // otherwise a rejected delete just leaves the screen unchanged, silently.
+    try {
+      await cb();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Something went wrong", "error");
+    }
   };
 
   return (
