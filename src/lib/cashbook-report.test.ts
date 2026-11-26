@@ -117,6 +117,7 @@ const data = (over: Partial<CashbookReportData> = {}): CashbookReportData => ({
   openingBank: 0,
   prevEntries: [],
   cogs: null,
+  inventoryLoss: null,
   ...over,
 });
 
@@ -371,6 +372,16 @@ describe("incomeVsExpenseTables", () => {
       range,
     );
     expect(JSON.stringify(withKey)).toContain("Gross profit");
+  });
+
+  it("deducts declared inventory loss from profit", () => {
+    const t = incomeVsExpenseTables(
+      data({ entries: [entry({ direction: "in", amount: 1000 })], cogs: 400, inventoryLoss: 120 }),
+      range,
+    );
+    const summary = t.find((x) => x.heading === "Summary")!.rows;
+    expect(summary).toContainEqual(["Inventory loss / wastage", 120]);
+    expect(summary).toContainEqual(["Gross profit after loss", 480]);
   });
 
   it("excludes transfers from both sides — moving your own money is not income", () => {

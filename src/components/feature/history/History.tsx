@@ -747,6 +747,11 @@ export function History() {
                         <div className="break-words text-xs text-ink-light">
                           {logTypeLabel(l.type)}
                           {logMeta(l) ? ` · ${logMeta(l)}` : ""}
+                          {l.isLoss && (
+                            <span className="ml-1.5 rounded-full bg-danger-bg px-2 py-[1px] text-[10.5px] font-bold text-danger">
+                              Loss
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="shrink-0 text-right">

@@ -15,13 +15,18 @@ export function StockOutForm({ onSuccess }: { onSuccess?: () => void } = {}) {
   const [qty, setQty] = useState("");
   const [reason, setReason] = useState("");
   const [notes, setNotes] = useState("");
+  // null = not chosen yet: defaults to Yes for Expired, No otherwise (#111).
+  const [lossChoice, setLossChoice] = useState<boolean | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const activeReason = reason || reasons[0] || "";
+  const isLoss = lossChoice ?? activeReason.toLowerCase() === "expired";
 
   const submit = async () => {
     setBusy(true);
     try {
-      const r = await stockOut(itemId, parseFloat(qty), reason || reasons[0] || "", notes);
+      const r = await stockOut(itemId, parseFloat(qty), activeReason, notes, isLoss);
       if (!r.ok) {
         setErr(r.error ?? "");
         return;
@@ -31,6 +36,7 @@ export function StockOutForm({ onSuccess }: { onSuccess?: () => void } = {}) {
       setQty("");
       setReason("");
       setNotes("");
+      setLossChoice(null);
       setErr("");
       onSuccess?.();
     } finally {
@@ -58,11 +64,29 @@ export function StockOutForm({ onSuccess }: { onSuccess?: () => void } = {}) {
         </div>
         <div>
           <label className="mb-1.5 block text-xs font-bold text-[#8a6a3c]">Reason</label>
-          <select value={reason || reasons[0] || ""} onChange={(e) => setReason(e.target.value)}>
+          <select value={activeReason} onChange={(e) => setReason(e.target.value)}>
             {reasons.map((r) => (
               <option key={r}>{r}</option>
             ))}
           </select>
+        </div>
+      </div>
+      <div className="mb-3.5 flex items-center justify-between">
+        <span className="text-xs font-bold text-[#8a6a3c]">Declare as Loss?</span>
+        <div className="flex gap-1.5 rounded-[10px] bg-cream-dark p-[3px]">
+          {([true, false] as const).map((v) => (
+            <button
+              key={String(v)}
+              type="button"
+              aria-pressed={isLoss === v}
+              onClick={() => setLossChoice(v)}
+              className={`cursor-pointer rounded-[7px] border-none px-3.5 py-1 text-[12.5px] font-bold ${
+                isLoss === v ? "bg-brown text-warm-white" : "bg-transparent text-ink-muted"
+              }`}
+            >
+              {v ? "Yes" : "No"}
+            </button>
+          ))}
         </div>
       </div>
       <div className="mb-3.5">
