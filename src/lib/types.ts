@@ -404,6 +404,7 @@ export interface Log {
   billNo?: number;
   items?: string; // comma-joined item names
   total?: number;
+  isLoss?: boolean; // `out` declared as a loss; `total` is its value
   // who performed the operation
   user?: string;
 }

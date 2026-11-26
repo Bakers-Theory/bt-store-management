@@ -126,7 +126,7 @@ interface StoreState {
   setItemImage: (id: string, url: string | null) => Promise<void>;
   deleteItem: (id: string) => Promise<void>;
   stockIn: (itemId: string, qty: number, supplier: string, notes: string, expiry: string | null) => Promise<StockResult>;
-  stockOut: (itemId: string, qty: number, reason: string, notes: string) => Promise<StockResult>;
+  stockOut: (itemId: string, qty: number, reason: string, notes: string, isLoss: boolean) => Promise<StockResult>;
   writeOffBatch: (batchId: string) => Promise<Result>;
   updateBatchExpiry: (batchId: string, expiry: string) => Promise<Result>;
 
@@ -336,12 +336,12 @@ export const useBakeryStore = create<StoreState>()(
       }
     },
 
-    stockOut: async (itemId, qty, reason, notes) => {
+    stockOut: async (itemId, qty, reason, notes, isLoss) => {
       if (!itemId) return { ok: false, error: "Please select an item" };
       if (!qty || qty <= 0) return { ok: false, error: "Enter a valid quantity" };
       const item = get().items.find((i) => i.id === itemId);
       try {
-        const updated = await rpcStockOut(itemId, qty, reason, notes);
+        const updated = await rpcStockOut(itemId, qty, reason, notes, isLoss);
         patchItem(updated);
         return { ok: true, name: item?.name, unit: item?.unit, qty };
       } catch (e) {

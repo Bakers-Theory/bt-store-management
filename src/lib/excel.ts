@@ -231,7 +231,7 @@ export function buildStockLogReport(data: ReportData, range: DateRange, _now: Da
       Qty: l.qty || "",
       Details: l.type === "bill"
         ? l.items ?? ""
-        : (l.supplier ? `Supplier: ${l.supplier}` : l.reason || "") + (l.notes ? ` — ${l.notes}` : ""),
+        : (l.supplier ? `Supplier: ${l.supplier}` : l.reason || "") + (l.isLoss ? " (Loss)" : "") + (l.notes ? ` — ${l.notes}` : ""),
       [`Amount (${cur})`]: l.total || "",
     }));
   if (rows.length === 0) rows.push({ Date: "No activity in range" });

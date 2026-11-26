@@ -117,6 +117,8 @@ export interface CashbookReportData {
   prevEntries: CashEntry[];
   /** COGS for the range, or null without `dashboard.profit`. */
   cogs: number | null;
+  /** Stock-outs declared as a loss in range (#111), or null without `dashboard.profit`. */
+  inventoryLoss: number | null;
 }
 
 const signed = (e: CashEntry) => (e.direction === "in" ? e.amount : -e.amount);
@@ -453,6 +455,10 @@ export function incomeVsExpenseTables(
   if (data.cogs !== null) {
     summaryRows.push(["Cost of goods sold", data.cogs]);
     summaryRows.push(["Gross profit", round2(income - data.cogs)]);
+    if (data.inventoryLoss) {
+      summaryRows.push(["Inventory loss / wastage", data.inventoryLoss]);
+      summaryRows.push(["Gross profit after loss", round2(income - data.cogs - data.inventoryLoss)]);
+    }
   }
 
   return [

@@ -110,6 +110,7 @@ interface LogRow {
   items: string | null;
   total: number | null;
   actor_name: string | null;
+  is_loss?: boolean | null; // absent on activity_log_admin_v
 }
 interface CustomerRow {
   id: string;
@@ -338,6 +339,7 @@ const mapLog = (r: LogRow): Log => ({
   items: r.items ?? undefined,
   total: r.total ?? undefined,
   user: r.actor_name ?? undefined,
+  isLoss: r.is_loss ?? undefined,
 });
 
 const mapBakery = (r: SettingsRow): Bakery => ({
@@ -916,10 +918,12 @@ export async function rpcStockIn(
   );
 }
 export async function rpcStockOut(
-  itemId: string, qty: number, reason: string, notes: string,
+  itemId: string, qty: number, reason: string, notes: string, isLoss: boolean,
 ): Promise<Item> {
   return mapItem(
-    await rpc<ItemRow>("stock_out", { p_item: itemId, p_qty: qty, p_reason: reason, p_notes: notes }),
+    await rpc<ItemRow>("stock_out", {
+      p_item: itemId, p_qty: qty, p_reason: reason, p_notes: notes, p_is_loss: isLoss,
+    }),
   );
 }
 export async function rpcWriteOffBatch(batchId: string): Promise<Item> {
@@ -2840,13 +2844,14 @@ export async function fetchCashbookReportData(
     prevQ = prevQ.eq("on_date", "1900-01-01");
   }
 
-  const [entriesR, daysR, expR, prevR, opening, cogs] = await Promise.all([
+  const [entriesR, daysR, expR, prevR, opening, cogs, inventoryLoss] = await Promise.all([
     entriesQ,
     daysQ,
     expQ,
     prevQ,
     fetchOpeningBalances(range.from),
     fetchCashbookCogs(range),
+    fetchInventoryLoss(range),
   ]);
 
   for (const r of [entriesR, daysR, expR, prevR]) {
@@ -2862,6 +2867,7 @@ export async function fetchCashbookReportData(
     openingCash: opening.cash,
     openingBank: opening.bank,
     cogs,
+    inventoryLoss,
   };
 }
 
@@ -2902,6 +2908,18 @@ export async function fetchCashbookCogs(range: {
   to: string | null;
 }): Promise<number | null> {
   const v = await rpc<string | number | null>("cashbook_cogs", {
+    p_from: range.from,
+    p_to: range.to,
+  });
+  return v === null ? null : Number(v);
+}
+
+/** Stock declared as a loss in range (#111); null without `dashboard.profit`. */
+export async function fetchInventoryLoss(range: {
+  from: string | null;
+  to: string | null;
+}): Promise<number | null> {
+  const v = await rpc<string | number | null>("inventory_loss", {
     p_from: range.from,
     p_to: range.to,
   });
